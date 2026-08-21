@@ -54,6 +54,10 @@ async function createRunningGame(): Promise<{ tableId: string; gameId: string; o
     .set(authHeader(other.id, 'user'))
     .send({ joinAs: 'player' });
 
+  // song_ref is one global playlist shared by every integration test file;
+  // invalidate whatever another suite left behind so the song seeded next
+  // is deterministically the one drawn (this test asserts on its year).
+  await pool.query('UPDATE song_ref SET is_valid = FALSE');
   await seedSong(1990);
 
   const startResponse = await request(app)

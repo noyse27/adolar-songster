@@ -8,6 +8,7 @@ import { invitesRouter } from './routes/invites';
 import { adminRouter } from './routes/admin';
 import { tablesRouter } from './routes/tables';
 import { roundsRouter } from './routes/rounds';
+import { leaderboardRouter } from './routes/leaderboard';
 import { apiLimiter, authLimiter } from './middleware/rateLimit';
 
 export function createApp(): Express {
@@ -28,6 +29,7 @@ export function createApp(): Express {
   app.use('/api/v1/admin', adminRouter);
   app.use('/api/v1', tablesRouter);
   app.use('/api/v1', roundsRouter);
+  app.use('/api/v1', leaderboardRouter);
 
   return app;
 }
