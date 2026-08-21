@@ -143,26 +143,68 @@ POST /tables/{tableId}/new-game
 
 ## 5. Spiel und Runden
 
+Konkretisierung (Sprint 3, Rundenkern):
+- Beim Tischstart (POST /tables/{id}/start) erhaelt jeder aktive Spieler 2
+  Start-Jahresbloecke (FR-023), gezogen aus [minSongYear-10,
+  max(maxSongYear+10, aktuelles Jahr)] (FR-024). Ohne gueltige Songs im
+  Songpool schlaegt der Tischstart fehl (400).
+- Rundenablauf ist serverautoritativ per Timer: 3s Countdown (status
+  "countdown", FR-021) -> 25s Songfenster (status "playing", FR-022) ->
+  automatische Auswertung (status "resolved"). Diese Dauern sind ueber
+  ROUND_COUNTDOWN_MS/ROUND_SONG_DURATION_MS konfigurierbar (Testzwecke).
+- Songjahr wird erst nach Rundenaufloesung offengelegt.
+- Guess-Typ "exact_year" (Token-Mechanik) ist erst ab Sprint 4 implementiert.
+- WS-Broadcast der Rundenevents (Abschnitt 8) ist noch nicht verdrahtet;
+  Clients pollen aktuell GET /games/{gameId}/rounds/{roundId}.
+
 GET /games/{gameId}
-- Spielstatus, Spieler, Zwischenstand
+- Spielstatus, Spieler (inkl. aktueller Kartenanzahl), Zwischenstand
 - Enthalten: tableSessionId zur Nachvollziehbarkeit von "Neue Partie"-Folgen
 
+POST /games/{gameId}/rounds
+- Nur aktueller Tischadmin (oder globaler Admin)
+- Zieht naechsten Song aus dem Songpool (Feinkonzept 4.3) und startet die
+  Runde (status=countdown)
+- Response 409 ROUND_ALREADY_ACTIVE / GAME_NOT_ACTIVE / NO_SONGS_AVAILABLE
+
+GET /games/{gameId}/rounds/{roundId}
+- Rundenstatus; songYear und results (je Spieler: geratener Index,
+  correct) erst sichtbar nach status=resolved
+
 POST /games/{gameId}/rounds/{roundId}/guess
+- Nur waehrend status=playing (sonst 409 ROUND_LOCKED), mehrfache
+  Einsendung ueberschreibt vorherige (FR-025)
 - Request:
 {
   "type": "position|exact_year",
   "value": "string|number"
 }
+- "position": value = Einfuegeindex (0..Timelinelaenge) in die eigene
+  Timeline; korrekt wenn die relative Position zu den Nachbarkarten stimmt
+  (FR-026/027)
 
 POST /games/{gameId}/rounds/{roundId}/token-claim
-- Claim fuer Token-Race
+- Claim fuer Token-Race (Sprint 4)
 
 POST /games/{gameId}/rounds/{roundId}/token-submit
-- Exaktjahr durch Token-Gewinner
+- Exaktjahr durch Token-Gewinner (Sprint 4)
 - Request:
 {
   "year": 1993
 }
+
+## 5a. Songpool-Administration (Uebergangsloesung)
+
+Der reale Adolar-Connector ist noch nicht angebunden. Bis dahin pflegt ein
+Admin den Songpool manuell:
+
+POST /admin/songs
+- Nur Admin
+- Request: { "title": "string", "year": 1993, "durationSec": 180, "streamRef": "string optional", "source": "local|adolar" }
+
+GET /admin/songs
+- Nur Admin
+- Listet alle Songs im Pool
 
 ## 6. Scores und Karma
 

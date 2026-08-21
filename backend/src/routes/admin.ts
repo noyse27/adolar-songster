@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import crypto from 'crypto';
 import { pool } from '../db/pool';
 import { requireAdmin, requireAuth } from '../middleware/auth';
 
@@ -154,6 +155,56 @@ adminRouter.get('/invites/log', async (_req, res) => {
       maxUses: row.max_uses,
       usedCount: row.used_count,
       registeredUsernames: row.registered_usernames,
+    })),
+  });
+});
+
+// Minimal song-pool administration. The real Adolar connector (fetching
+// songs from the configured Adolar server) is out of scope for this
+// sprint; until it exists, an admin can seed song_ref rows directly so the
+// round engine has a playlist to draw from.
+adminRouter.post('/songs', async (req, res) => {
+  const { title, year, durationSec, streamRef, source = 'local' } = req.body ?? {};
+
+  if (!title || !Number.isInteger(year) || year < 1900 || year > 2100) {
+    res.status(400).json({ error: 'title and a valid year (1900-2100) are required' });
+    return;
+  }
+  if (!['adolar', 'local'].includes(source)) {
+    res.status(400).json({ error: 'source must be adolar or local' });
+    return;
+  }
+
+  const sourceSongId = crypto.randomUUID();
+  const result = await pool.query(
+    `INSERT INTO song_ref (source, source_song_id, title, year_value, duration_sec, stream_ref)
+     VALUES ($1, $2, $3, $4, $5, $6)
+     RETURNING id, title, year_value, duration_sec`,
+    [source, sourceSongId, title, year, durationSec ?? null, streamRef ?? null],
+  );
+
+  res.status(201).json({
+    songId: result.rows[0].id,
+    title: result.rows[0].title,
+    year: result.rows[0].year_value,
+    durationSec: result.rows[0].duration_sec,
+  });
+});
+
+adminRouter.get('/songs', async (_req, res) => {
+  const result = await pool.query(
+    `SELECT id, source, title, year_value, duration_sec, is_valid, created_at
+     FROM song_ref ORDER BY created_at DESC`,
+  );
+
+  res.status(200).json({
+    songs: result.rows.map((row) => ({
+      songId: row.id,
+      source: row.source,
+      title: row.title,
+      year: row.year_value,
+      durationSec: row.duration_sec,
+      isValid: row.is_valid,
     })),
   });
 });

@@ -7,6 +7,7 @@ import { setupRouter } from './routes/setup';
 import { invitesRouter } from './routes/invites';
 import { adminRouter } from './routes/admin';
 import { tablesRouter } from './routes/tables';
+import { roundsRouter } from './routes/rounds';
 import { apiLimiter, authLimiter } from './middleware/rateLimit';
 
 export function createApp(): Express {
@@ -26,6 +27,7 @@ export function createApp(): Express {
   app.use('/api/v1', invitesRouter);
   app.use('/api/v1/admin', adminRouter);
   app.use('/api/v1', tablesRouter);
+  app.use('/api/v1', roundsRouter);
 
   return app;
 }
