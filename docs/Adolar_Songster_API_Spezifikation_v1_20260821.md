@@ -217,12 +217,10 @@ POST /games/{gameId}/rounds/{roundId}/token-submit
 }
 - Response 200 { correct: boolean }
 
-GET /games/{gameId}/rounds/{roundId} liefert zusaetzlich:
-- mode ("normal"|"token")
-- tokenSoloUserId: aktueller/urspruenglicher Claim-Gewinner (waehrend und
-  nach der Token-Phase)
-- tokenWrongGuessYear: das falsch geratene Jahr des Claim-Gewinners,
-  sichtbar sobald status=token_others (FR-035)
+GET /games/{gameId}/rounds/{roundId} liefert zusaetzlich die Felder mode
+("normal" oder "token"), tokenSoloUserId (der Claim-Gewinner, waehrend und
+nach der Token-Phase gesetzt) und tokenWrongGuessYear (das falsch geratene
+Jahr des Claim-Gewinners, sichtbar sobald status=token_others, FR-035).
 
 ## 5a. Songpool-Administration (Uebergangsloesung)
 
