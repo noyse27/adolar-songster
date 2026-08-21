@@ -2,6 +2,7 @@ import { Router } from 'express';
 import crypto from 'crypto';
 import { pool } from '../db/pool';
 import { AuthenticatedRequest, requireAuth } from '../middleware/auth';
+import { evaluateOwnerHandover } from '../services/tableHandover';
 
 export const tablesRouter = Router();
 
@@ -95,4 +96,269 @@ tablesRouter.get('/tables/lobby', requireAuth, async (_req, res) => {
       activeSpectators: Number(row.active_spectators),
     })),
   });
+});
+
+async function loadTableDetail(tableId: string) {
+  const result = await pool.query(
+    `SELECT
+        t.id, t.name, t.visibility, t.join_code, t.allow_spectators,
+        t.max_players, t.max_spectators, t.state, t.owner_user_id, t.owner_left_at,
+        COUNT(*) FILTER (WHERE s.seat_type = 'player' AND s.left_at IS NULL) AS active_players,
+        COUNT(*) FILTER (WHERE s.seat_type = 'spectator' AND s.left_at IS NULL) AS active_spectators
+     FROM game_table t
+     LEFT JOIN table_seat s ON s.table_id = t.id
+     WHERE t.id = $1
+     GROUP BY t.id`,
+    [tableId],
+  );
+  return result.rows[0];
+}
+
+tablesRouter.get('/tables/:tableId', requireAuth, async (req, res) => {
+  const { tableId } = req.params;
+
+  await evaluateOwnerHandover(tableId);
+  const table = await loadTableDetail(tableId);
+
+  if (!table) {
+    res.status(404).json({ error: 'table not found' });
+    return;
+  }
+
+  res.status(200).json({
+    tableId: table.id,
+    name: table.name,
+    visibility: table.visibility,
+    joinCode: table.join_code,
+    allowSpectators: table.allow_spectators,
+    maxPlayers: table.max_players,
+    maxSpectators: table.max_spectators,
+    state: table.state,
+    ownerUserId: table.owner_user_id,
+    ownerReconnectDeadlinePending: Boolean(table.owner_left_at),
+    activePlayers: Number(table.active_players),
+    activeSpectators: Number(table.active_spectators),
+  });
+});
+
+tablesRouter.post('/tables/:tableId/join', requireAuth, async (req: AuthenticatedRequest, res) => {
+  const requesterId = req.userId as string;
+  const { tableId } = req.params;
+  const { joinAs, joinCode } = req.body ?? {};
+
+  if (!['player', 'spectator'].includes(joinAs)) {
+    res.status(400).json({ error: 'joinAs must be player or spectator' });
+    return;
+  }
+
+  await evaluateOwnerHandover(tableId);
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const tableResult = await client.query(
+      `SELECT id, owner_user_id, visibility, join_code, allow_spectators, max_players,
+              max_spectators, state
+       FROM game_table WHERE id = $1 FOR UPDATE`,
+      [tableId],
+    );
+    if (tableResult.rowCount === 0) {
+      await client.query('ROLLBACK');
+      res.status(404).json({ error: 'table not found' });
+      return;
+    }
+    const table = tableResult.rows[0];
+
+    if (table.state === 'closed' || table.state === 'finished') {
+      await client.query('ROLLBACK');
+      res.status(409).json({ error: 'TABLE_NOT_JOINABLE' });
+      return;
+    }
+    if (joinAs === 'player' && table.state !== 'open') {
+      await client.query('ROLLBACK');
+      res.status(409).json({ error: 'TABLE_NOT_JOINABLE' });
+      return;
+    }
+    if (joinAs === 'spectator' && !table.allow_spectators) {
+      await client.query('ROLLBACK');
+      res.status(409).json({ error: 'TABLE_NOT_JOINABLE' });
+      return;
+    }
+    if (table.visibility === 'private' && joinCode !== table.join_code) {
+      await client.query('ROLLBACK');
+      res.status(403).json({ error: 'TABLE_JOIN_CODE_INVALID' });
+      return;
+    }
+
+    const existingSeatResult = await client.query(
+      `SELECT id, seat_type FROM table_seat WHERE table_id = $1 AND user_id = $2 AND left_at IS NULL`,
+      [tableId, requesterId],
+    );
+    if ((existingSeatResult.rowCount ?? 0) > 0) {
+      if (requesterId === table.owner_user_id) {
+        await client.query(`UPDATE game_table SET owner_left_at = NULL WHERE id = $1`, [tableId]);
+      }
+      await client.query('COMMIT');
+      res.status(200).json({
+        tableId,
+        seatType: existingSeatResult.rows[0].seat_type,
+        alreadyJoined: true,
+      });
+      return;
+    }
+
+    const countResult = await client.query(
+      `SELECT
+          COUNT(*) FILTER (WHERE seat_type = 'player') AS active_players,
+          COUNT(*) FILTER (WHERE seat_type = 'spectator') AS active_spectators
+       FROM table_seat WHERE table_id = $1 AND left_at IS NULL`,
+      [tableId],
+    );
+    const activePlayers = Number(countResult.rows[0].active_players);
+    const activeSpectators = Number(countResult.rows[0].active_spectators);
+
+    if (joinAs === 'player' && activePlayers >= table.max_players) {
+      await client.query('ROLLBACK');
+      res.status(409).json({ error: 'TABLE_FULL' });
+      return;
+    }
+    if (joinAs === 'spectator' && activeSpectators >= table.max_spectators) {
+      await client.query('ROLLBACK');
+      res.status(409).json({ error: 'TABLE_FULL' });
+      return;
+    }
+
+    await client.query(
+      `INSERT INTO table_seat (table_id, user_id, seat_type) VALUES ($1, $2, $3)`,
+      [tableId, requesterId, joinAs],
+    );
+
+    if (requesterId === table.owner_user_id) {
+      await client.query(`UPDATE game_table SET owner_left_at = NULL WHERE id = $1`, [tableId]);
+    }
+
+    await client.query('COMMIT');
+    res.status(200).json({ tableId, seatType: joinAs, alreadyJoined: false });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+});
+
+tablesRouter.post('/tables/:tableId/leave', requireAuth, async (req: AuthenticatedRequest, res) => {
+  const requesterId = req.userId as string;
+  const { tableId } = req.params;
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const tableResult = await client.query(
+      `SELECT owner_user_id FROM game_table WHERE id = $1 FOR UPDATE`,
+      [tableId],
+    );
+    if (tableResult.rowCount === 0) {
+      await client.query('ROLLBACK');
+      res.status(404).json({ error: 'table not found' });
+      return;
+    }
+
+    const seatResult = await client.query(
+      `UPDATE table_seat SET left_at = NOW()
+       WHERE table_id = $1 AND user_id = $2 AND left_at IS NULL
+       RETURNING id`,
+      [tableId, requesterId],
+    );
+    if (seatResult.rowCount === 0) {
+      await client.query('ROLLBACK');
+      res.status(404).json({ error: 'not seated at this table' });
+      return;
+    }
+
+    const isOwner = tableResult.rows[0].owner_user_id === requesterId;
+    if (isOwner) {
+      await client.query(`UPDATE game_table SET owner_left_at = NOW() WHERE id = $1`, [tableId]);
+    }
+
+    await client.query('COMMIT');
+    res.status(200).json({ tableId, ownerReconnectWindowStarted: isOwner });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+});
+
+tablesRouter.post('/tables/:tableId/start', requireAuth, async (req: AuthenticatedRequest, res) => {
+  const requesterId = req.userId as string;
+  const requesterRole = req.userRole;
+  const { tableId } = req.params;
+
+  await evaluateOwnerHandover(tableId);
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const tableResult = await client.query(
+      `SELECT id, owner_user_id, state FROM game_table WHERE id = $1 FOR UPDATE`,
+      [tableId],
+    );
+    if (tableResult.rowCount === 0) {
+      await client.query('ROLLBACK');
+      res.status(404).json({ error: 'table not found' });
+      return;
+    }
+    const table = tableResult.rows[0];
+
+    if (table.owner_user_id !== requesterId && requesterRole !== 'admin') {
+      await client.query('ROLLBACK');
+      res.status(403).json({ error: 'only the table admin can start the game' });
+      return;
+    }
+    if (table.state !== 'open') {
+      await client.query('ROLLBACK');
+      res.status(409).json({ error: 'table is not open' });
+      return;
+    }
+
+    const countResult = await client.query(
+      `SELECT COUNT(*)::int AS active_players FROM table_seat
+       WHERE table_id = $1 AND seat_type = 'player' AND left_at IS NULL`,
+      [tableId],
+    );
+    if (countResult.rows[0].active_players < 2) {
+      await client.query('ROLLBACK');
+      res.status(400).json({ error: 'at least 2 active players are required to start' });
+      return;
+    }
+
+    const sessionResult = await client.query(
+      `INSERT INTO table_session (table_id) VALUES ($1) RETURNING id`,
+      [tableId],
+    );
+    const gameResult = await client.query(
+      `INSERT INTO game (table_id, table_session_id, status, started_at)
+       VALUES ($1, $2, 'active', NOW())
+       RETURNING id`,
+      [tableId, sessionResult.rows[0].id],
+    );
+    await client.query(`UPDATE game_table SET state = 'running' WHERE id = $1`, [tableId]);
+
+    await client.query('COMMIT');
+    res.status(200).json({
+      tableId,
+      tableSessionId: sessionResult.rows[0].id,
+      gameId: gameResult.rows[0].id,
+    });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
 });
