@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import { pool } from '../db/pool';
 import { AuthenticatedRequest, requireAuth } from '../middleware/auth';
 import { evaluateOwnerHandover } from '../services/tableHandover';
+import { computeYearRange, generateStartBlocks } from '../services/timeline';
 
 export const tablesRouter = Router();
 
@@ -326,14 +327,22 @@ tablesRouter.post('/tables/:tableId/start', requireAuth, async (req: Authenticat
       return;
     }
 
-    const countResult = await client.query(
-      `SELECT COUNT(*)::int AS active_players FROM table_seat
+    const activePlayersResult = await client.query(
+      `SELECT user_id FROM table_seat
        WHERE table_id = $1 AND seat_type = 'player' AND left_at IS NULL`,
       [tableId],
     );
-    if (countResult.rows[0].active_players < 2) {
+    const activePlayerIds: string[] = activePlayersResult.rows.map((row) => row.user_id);
+    if (activePlayerIds.length < 2) {
       await client.query('ROLLBACK');
       res.status(400).json({ error: 'at least 2 active players are required to start' });
+      return;
+    }
+
+    const range = await computeYearRange(client);
+    if (!range) {
+      await client.query('ROLLBACK');
+      res.status(400).json({ error: 'SONG_METADATA_INVALID: no valid songs in the playlist yet' });
       return;
     }
 
@@ -347,6 +356,7 @@ tablesRouter.post('/tables/:tableId/start', requireAuth, async (req: Authenticat
        RETURNING id`,
       [tableId, sessionResult.rows[0].id],
     );
+    await generateStartBlocks(client, gameResult.rows[0].id, activePlayerIds);
     await client.query(`UPDATE game_table SET state = 'running' WHERE id = $1`, [tableId]);
 
     await client.query('COMMIT');
