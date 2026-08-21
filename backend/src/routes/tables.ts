@@ -5,6 +5,9 @@ import { AuthenticatedRequest, requireAuth } from '../middleware/auth';
 import { evaluateOwnerHandover } from '../services/tableHandover';
 import { computeYearRange, generateStartBlocks } from '../services/timeline';
 import { applyEarlyLeavePenalty } from '../services/matchOutcome';
+import { AdolarClientError, isPlaylistAvailable } from '../services/adolarClient';
+import { loadAdolarBatch } from '../services/adolarBatch';
+import { RoundEngineError } from '../services/errors';
 
 export const tablesRouter = Router();
 
@@ -48,6 +51,7 @@ tablesRouter.post('/tables', requireAuth, async (req: AuthenticatedRequest, res)
     allowSpectators = true,
     maxPlayers = 5,
     maxSpectators = 10,
+    sourcePlaylistId = null,
   } = req.body ?? {};
 
   if (!name || !['public', 'private'].includes(visibility)) {
@@ -62,6 +66,32 @@ tablesRouter.post('/tables', requireAuth, async (req: AuthenticatedRequest, res)
     res.status(400).json({ error: 'maxSpectators must be between 0 and 50' });
     return;
   }
+  if (sourcePlaylistId !== null && !Number.isInteger(sourcePlaylistId)) {
+    res.status(400).json({ error: 'sourcePlaylistId must be an integer Adolar playlist id' });
+    return;
+  }
+
+  // Section 4.2: checked at table creation so an unavailable playlist is a
+  // clear error to the table admin right away instead of a later failure
+  // at session start.
+  if (sourcePlaylistId !== null) {
+    try {
+      const available = await isPlaylistAvailable(sourcePlaylistId);
+      if (!available) {
+        res.status(409).json({
+          error: 'ADOLAR_PLAYLIST_UNAVAILABLE',
+          message: 'the selected Adolar playlist is not available',
+        });
+        return;
+      }
+    } catch (err) {
+      if (err instanceof AdolarClientError) {
+        res.status(502).json({ error: err.code, message: err.message });
+        return;
+      }
+      throw err;
+    }
+  }
 
   const joinCode = visibility === 'private' ? generateJoinCode() : null;
 
@@ -71,10 +101,14 @@ tablesRouter.post('/tables', requireAuth, async (req: AuthenticatedRequest, res)
 
     const tableResult = await client.query(
       `INSERT INTO game_table
-         (owner_user_id, name, visibility, join_code, allow_spectators, max_players, max_spectators)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
-       RETURNING id, name, visibility, join_code, state`,
-      [requesterId, name, visibility, joinCode, Boolean(allowSpectators), maxPlayers, maxSpectators],
+         (owner_user_id, name, visibility, join_code, allow_spectators, max_players, max_spectators,
+          source_playlist_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       RETURNING id, name, visibility, join_code, state, source_playlist_id`,
+      [
+        requesterId, name, visibility, joinCode, Boolean(allowSpectators), maxPlayers, maxSpectators,
+        sourcePlaylistId,
+      ],
     );
     const table = tableResult.rows[0];
 
@@ -91,6 +125,7 @@ tablesRouter.post('/tables', requireAuth, async (req: AuthenticatedRequest, res)
       visibility: table.visibility,
       joinCode: table.join_code,
       state: table.state,
+      sourcePlaylistId: table.source_playlist_id,
     });
   } catch (err) {
     await client.query('ROLLBACK');
@@ -357,7 +392,7 @@ tablesRouter.post('/tables/:tableId/start', requireAuth, async (req: Authenticat
     await client.query('BEGIN');
 
     const tableResult = await client.query(
-      `SELECT id, owner_user_id, state FROM game_table WHERE id = $1 FOR UPDATE`,
+      `SELECT id, owner_user_id, state, source_playlist_id FROM game_table WHERE id = $1 FOR UPDATE`,
       [tableId],
     );
     if (tableResult.rowCount === 0) {
@@ -390,30 +425,73 @@ tablesRouter.post('/tables/:tableId/start', requireAuth, async (req: Authenticat
       return;
     }
 
-    const range = await computeYearRange(client);
-    if (!range) {
-      await client.query('ROLLBACK');
-      res.status(400).json({ error: 'SONG_METADATA_INVALID: no valid songs in the playlist yet' });
-      return;
+    // Section 4.3: the fixed 50-song batch is drawn once, here, at session
+    // start - re-checking availability rather than trusting the check done
+    // at table creation, since the playlist could have been deactivated on
+    // the Adolar side in the meantime.
+    let adolarBatchSongRefIds: string[] | null = null;
+    if (table.source_playlist_id !== null) {
+      try {
+        const available = await isPlaylistAvailable(table.source_playlist_id);
+        if (!available) {
+          await client.query('ROLLBACK');
+          res.status(409).json({
+            error: 'ADOLAR_PLAYLIST_UNAVAILABLE',
+            message: 'the selected Adolar playlist is no longer available',
+          });
+          return;
+        }
+        adolarBatchSongRefIds = await loadAdolarBatch(client, table.source_playlist_id);
+      } catch (err) {
+        await client.query('ROLLBACK');
+        if (err instanceof AdolarClientError) {
+          res.status(502).json({ error: err.code, message: err.message });
+          return;
+        }
+        if (err instanceof RoundEngineError) {
+          res.status(409).json({ error: err.code, message: err.message });
+          return;
+        }
+        throw err;
+      }
     }
 
     const sessionResult = await client.query(
       `INSERT INTO table_session (table_id) VALUES ($1) RETURNING id`,
       [tableId],
     );
+    const tableSessionId = sessionResult.rows[0].id;
+
+    if (adolarBatchSongRefIds) {
+      for (const songRefId of adolarBatchSongRefIds) {
+        await client.query(
+          `INSERT INTO table_session_song_pool (table_session_id, song_ref_id)
+           VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+          [tableSessionId, songRefId],
+        );
+      }
+    }
+
+    const range = await computeYearRange(client, tableSessionId);
+    if (!range) {
+      await client.query('ROLLBACK');
+      res.status(400).json({ error: 'SONG_METADATA_INVALID: no valid songs in the playlist yet' });
+      return;
+    }
+
     const gameResult = await client.query(
       `INSERT INTO game (table_id, table_session_id, status, started_at)
        VALUES ($1, $2, 'active', NOW())
        RETURNING id`,
-      [tableId, sessionResult.rows[0].id],
+      [tableId, tableSessionId],
     );
-    await generateStartBlocks(client, gameResult.rows[0].id, activePlayerIds);
+    await generateStartBlocks(client, gameResult.rows[0].id, activePlayerIds, tableSessionId);
     await client.query(`UPDATE game_table SET state = 'running' WHERE id = $1`, [tableId]);
 
     await client.query('COMMIT');
     res.status(200).json({
       tableId,
-      tableSessionId: sessionResult.rows[0].id,
+      tableSessionId,
       gameId: gameResult.rows[0].id,
     });
   } catch (err) {

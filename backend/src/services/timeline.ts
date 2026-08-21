@@ -60,11 +60,32 @@ export async function insertCardAndReindex(
   );
 }
 
-export async function computeYearRange(client: Queryable): Promise<{ lower: number; upper: number } | null> {
-  const result = await client.query(
-    `SELECT MIN(year_value) AS min_year, MAX(year_value) AS max_year
-     FROM song_ref WHERE is_valid = TRUE AND year_value IS NOT NULL`,
-  );
+// When tableSessionId is given and that session has a scoped song pool
+// (table_session_song_pool - populated for Adolar-sourced tables, see
+// adolarBatch.ts), the range is derived from just that pool instead of the
+// entire song_ref library, matching Feinkonzept 4.3's "range derived from
+// the current playlist's song years". A session with no scoped pool rows
+// (the local-admin-maintained-songs fallback) keeps the original,
+// library-wide behavior.
+export async function computeYearRange(
+  client: Queryable,
+  tableSessionId?: string,
+): Promise<{ lower: number; upper: number } | null> {
+  const result = tableSessionId
+    ? await client.query(
+        `SELECT MIN(sr.year_value) AS min_year, MAX(sr.year_value) AS max_year
+         FROM song_ref sr
+         WHERE sr.is_valid = TRUE AND sr.year_value IS NOT NULL
+           AND (
+             NOT EXISTS (SELECT 1 FROM table_session_song_pool WHERE table_session_id = $1)
+             OR sr.id IN (SELECT song_ref_id FROM table_session_song_pool WHERE table_session_id = $1)
+           )`,
+        [tableSessionId],
+      )
+    : await client.query(
+        `SELECT MIN(year_value) AS min_year, MAX(year_value) AS max_year
+         FROM song_ref WHERE is_valid = TRUE AND year_value IS NOT NULL`,
+      );
   const { min_year: minYear, max_year: maxYear } = result.rows[0];
   if (minYear === null || maxYear === null) {
     return null;
@@ -84,8 +105,9 @@ export async function generateStartBlocks(
   client: Queryable,
   gameId: string,
   playerUserIds: string[],
+  tableSessionId?: string,
 ): Promise<void> {
-  const range = await computeYearRange(client);
+  const range = await computeYearRange(client, tableSessionId);
   if (!range) {
     throw new Error('cannot generate start blocks without any valid songs in the playlist');
   }
