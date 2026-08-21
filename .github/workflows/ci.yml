@@ -68,7 +68,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Trivy file system scan
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: 'fs'
           format: 'table'
@@ -111,7 +111,7 @@ jobs:
         run: docker build -t adolar-songster:ci .
 
       - name: Trivy image scan
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: 'adolar-songster:ci'
           format: 'table'
