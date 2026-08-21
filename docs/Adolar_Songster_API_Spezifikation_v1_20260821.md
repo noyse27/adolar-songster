@@ -144,9 +144,15 @@ POST /tables/{tableId}/start
 - Erzeugt table_session und game, setzt Tisch auf state=running
 
 POST /tables/{tableId}/new-game
-- Nur Tischadmin
-- Startet nach Spielende eine neue Partie mit gleicher Spielerzusammensetzung und gleichen Tischeinstellungen.
-- Bleibt in derselben Tischsession (fuer sessionweite Songpool-Regeln).
+- Nur aktueller Tischadmin (oder globaler Admin)
+- Voraussetzung: Tisch state=finished (vorherige Partie beendet)
+- Startet nach Spielende eine neue Partie mit gleicher Spielerzusammensetzung
+  (kein Neu-Join noetig, AK-009) und gleichen Tischeinstellungen; mindestens
+  2 aktive Spieler weiterhin erforderlich
+- Bleibt in derselben Tischsession wie die vorherige Partie (table_session_id
+  unveraendert), damit die sessionweite Songpool-Regel (AK-011) weiter gilt
+- Response 200: { tableId, tableSessionId, gameId }; 409 falls Tisch noch
+  nicht state=finished
 
 ## 5. Spiel und Runden
 
@@ -277,11 +283,24 @@ GET /users/{userId}/karma-ledger
 
 ## 7. Setup und Health
 
+GET /setup/status
+- Oeffentlich, keine Seiteneffekte
+- Response: { adminExists: boolean } - steuert im Browser-Wizard (FR-062),
+  ob Schritt 1 (Admin anlegen) angezeigt wird
+
 POST /setup/bootstrap
-- Erstsetup (Admin anlegen)
+- Erstsetup (Admin anlegen); nur nutzbar solange kein Admin existiert (409
+  danach)
 
 POST /setup/self-test
-- Fuehrt Funktionstest aus (Healthcheck + Testsong + Simulationsrunde)
+- Nur Admin
+- FR-063: Funktionstest ohne Seiteneffekte auf echte Tische/Spiele -
+  prueft Datenbankverbindung, ob der Songpool mindestens einen gueltigen
+  Song enthaelt, und die Kern-Rundenlogik (Platzierungsauswertung) anhand
+  synthetischer Daten
+- Response 200 { healthy: true, checks: {...} } wenn alles gruen, sonst 503
+  mit gleicher Struktur (checks zeigt, was fehlt, z. B. leerer Songpool vor
+  Anbindung des Adolar-Connectors)
 
 GET /health
 - Basis-Gesundheitsstatus

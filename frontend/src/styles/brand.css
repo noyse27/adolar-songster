@@ -1,0 +1,85 @@
+/* Adolar brand tokens, sourced from
+   https://github.com/noyse27/adolar-brand-images (palette/colors.svg,
+   docs/styleguide.md) per BR-001..BR-005. */
+
+:root {
+  --adolar-violet-dark: #4f2ec8;
+  --adolar-violet: #6e44ff;
+  --adolar-lavender: #a98bff;
+  --adolar-lavender-light: #d9ccff;
+  --adolar-cyan: #31d5ff;
+  --adolar-navy: #15113d;
+  --adolar-orange: #ff9500;
+  --adolar-yellow: #ffd35a;
+  --adolar-white: #ffffff;
+
+  --adolar-font-stack: 'Orbitron', 'Segoe UI', sans-serif;
+}
+
+body {
+  margin: 0;
+  background: var(--adolar-navy);
+  color: var(--adolar-white);
+  font-family: 'Segoe UI', sans-serif;
+}
+
+.adolar-heading {
+  font-family: var(--adolar-font-stack);
+}
+
+.wizard {
+  max-width: 480px;
+  margin: 0 auto;
+  padding: 2.5rem 1.5rem;
+  text-align: center;
+}
+
+.wizard-logo {
+  width: 160px;
+  margin-bottom: 1rem;
+}
+
+.wizard-title {
+  color: var(--adolar-lavender-light);
+  margin-bottom: 1.5rem;
+}
+
+.wizard-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  text-align: left;
+}
+
+.wizard-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.9rem;
+}
+
+.wizard-form input {
+  padding: 0.5rem;
+  border-radius: 6px;
+  border: 1px solid var(--adolar-violet);
+  background: var(--adolar-navy);
+  color: var(--adolar-white);
+}
+
+button {
+  font-family: var(--adolar-font-stack);
+  background: var(--adolar-violet);
+  color: var(--adolar-white);
+  border: none;
+  border-radius: 8px;
+  padding: 0.6rem 1.2rem;
+  cursor: pointer;
+}
+
+button:hover {
+  background: var(--adolar-violet-dark);
+}
+
+.wizard-error {
+  color: var(--adolar-orange);
+}
