@@ -81,6 +81,10 @@ async function createPlayingRound(): Promise<{
     .set(authHeader(other.id, 'user'))
     .send({ joinAs: 'player' });
 
+  // song_ref is one global playlist shared by every integration test file;
+  // invalidate whatever another suite left behind so the song seeded next
+  // is deterministically the one drawn (this test asserts on its year).
+  await pool.query('UPDATE song_ref SET is_valid = FALSE');
   const songYear = 1990;
   await seedSong(songYear);
 
@@ -151,6 +155,11 @@ describe('token claim race (FR-030/031/032/036)', () => {
 
   it('rejects a claim once a player has used both tokens for the game', async () => {
     const { gameId, roundId: firstRoundId, owner } = await createPlayingRound();
+
+    // Each round needs its own not-yet-played-in-this-game song; only the
+    // first round's song was seeded by createPlayingRound.
+    await seedSong(1991);
+    await seedSong(1992);
 
     // Burn token #1 on the round createPlayingRound already started.
     await request(app)

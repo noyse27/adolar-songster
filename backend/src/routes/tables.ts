@@ -4,8 +4,37 @@ import { pool } from '../db/pool';
 import { AuthenticatedRequest, requireAuth } from '../middleware/auth';
 import { evaluateOwnerHandover } from '../services/tableHandover';
 import { computeYearRange, generateStartBlocks } from '../services/timeline';
+import { applyEarlyLeavePenalty } from '../services/matchOutcome';
 
 export const tablesRouter = Router();
+
+// FR-045: technical disconnect gets a 90s rejoin window without penalty;
+// overridable via env for fast, deterministic tests.
+const REJOIN_GRACE_MS = Number(process.env.REJOIN_GRACE_MS ?? 90000);
+
+function scheduleEarlyLeavePenaltyCheck(gameId: string, tableId: string, userId: string): void {
+  setTimeout(() => {
+    (async () => {
+      const rejoinedResult = await pool.query(
+        `SELECT id FROM table_seat WHERE table_id = $1 AND user_id = $2 AND left_at IS NULL LIMIT 1`,
+        [tableId, userId],
+      );
+      if ((rejoinedResult.rowCount ?? 0) > 0) {
+        return; // rejoined within the grace window - no penalty (FR-045)
+      }
+
+      const gameResult = await pool.query(`SELECT status FROM game WHERE id = $1`, [gameId]);
+      if (gameResult.rows[0]?.status !== 'active') {
+        return; // match already ended by other means - nothing to penalize
+      }
+
+      await applyEarlyLeavePenalty(pool, gameId, tableId, userId);
+    })().catch((err) => {
+      // eslint-disable-next-line no-console
+      console.error('failed to evaluate early-leave penalty', err);
+    });
+  }, REJOIN_GRACE_MS);
+}
 
 function generateJoinCode(): string {
   return crypto.randomBytes(4).toString('hex').toUpperCase();
@@ -177,9 +206,18 @@ tablesRouter.post('/tables/:tableId/join', requireAuth, async (req: Authenticate
       return;
     }
     if (joinAs === 'player' && table.state !== 'open') {
-      await client.query('ROLLBACK');
-      res.status(409).json({ error: 'TABLE_NOT_JOINABLE' });
-      return;
+      // FR-045: a player who already sat at this table (i.e. is
+      // reconnecting mid-match) may rejoin while the table is running;
+      // a brand-new player may only join while the table is still open.
+      const priorSeatResult = await client.query(
+        `SELECT id FROM table_seat WHERE table_id = $1 AND user_id = $2 LIMIT 1`,
+        [tableId, requesterId],
+      );
+      if (table.state !== 'running' || (priorSeatResult.rowCount ?? 0) === 0) {
+        await client.query('ROLLBACK');
+        res.status(409).json({ error: 'TABLE_NOT_JOINABLE' });
+        return;
+      }
     }
     if (joinAs === 'spectator' && !table.allow_spectators) {
       await client.query('ROLLBACK');
@@ -284,7 +322,20 @@ tablesRouter.post('/tables/:tableId/leave', requireAuth, async (req: Authenticat
       await client.query(`UPDATE game_table SET owner_left_at = NOW() WHERE id = $1`, [tableId]);
     }
 
+    // FR-044/045: leaving mid-match starts a 90s rejoin grace period
+    // before the early-leave karma penalty is applied.
+    const activeGameResult = await client.query(
+      `SELECT id FROM game WHERE table_id = $1 AND status = 'active' LIMIT 1`,
+      [tableId],
+    );
+    const activeGameId = activeGameResult.rows[0]?.id as string | undefined;
+
     await client.query('COMMIT');
+
+    if (activeGameId) {
+      scheduleEarlyLeavePenaltyCheck(activeGameId, tableId, requesterId);
+    }
+
     res.status(200).json({ tableId, ownerReconnectWindowStarted: isOwner });
   } catch (err) {
     await client.query('ROLLBACK');

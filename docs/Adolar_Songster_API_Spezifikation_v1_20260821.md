@@ -125,11 +125,18 @@ POST /tables/{tableId}/join
 - Response 409 TABLE_FULL / TABLE_NOT_JOINABLE, 403 TABLE_JOIN_CODE_INVALID
 - Erneuter Join des Tischadmins innerhalb des Reconnect-Fensters storniert die
   laufende Admin-Uebergabe (FR-016)
+- Spieler-Join bei state=running nur erlaubt, wenn der Nutzer bereits
+  irgendwann an diesem Tisch gesessen hat (Rejoin nach Disconnect, FR-045);
+  neue Spieler koennen nur bei state=open beitreten
 
 POST /tables/{tableId}/leave
 - Verlaesst der Tischadmin den Tisch, startet das 60s-Reconnect-Fenster
   (FR-016); danach automatische Uebergabe an den laengst anwesenden aktiven
   Spieler beim naechsten Join/Leave/Start/Detail-Aufruf fuer diesen Tisch
+- Verlaesst ein Spieler waehrend einer laufenden Partie (game.status=active),
+  startet ein 90s-Rejoin-Fenster (FR-045). Rejoin per POST .../join
+  innerhalb des Fensters: kein Karma-Malus. Kein Rejoin: Karma -5, zusaetzlich
+  -1 pro zu diesem Zeitpunkt noch aktivem Mitspieler (FR-044)
 
 POST /tables/{tableId}/start
 - Nur aktueller Tischadmin (oder globaler Admin)
@@ -157,14 +164,32 @@ Konkretisierung (Sprint 3, Rundenkern):
 - WS-Broadcast der Rundenevents (Abschnitt 8) ist noch nicht verdrahtet;
   Clients pollen aktuell GET /games/{gameId}/rounds/{roundId}.
 
+Konkretisierung (Sprint 5, Sieg/Bonusrunde):
+- Nach jeder kartenvergebenden Aufloesung (normale Runde, Token-Solo,
+  Token-Gegenspieler) wird geprueft, ob ein Spieler die Siegschwelle von 10
+  Karten erreicht hat (FR-040). Genau ein Spieler an der Schwelle: Partie
+  endet sofort (game.status=finished, winner_user_id gesetzt, Tisch
+  state=finished), Score/Karma werden verbucht (FR-042/043).
+- Erreichen mehrere Spieler die Schwelle in derselben Runde gleichzeitig,
+  bleibt die Partie aktiv (Gleichstand). Der naechste POST .../rounds-Aufruf
+  erkennt das automatisch und startet statt einer normalen Runde eine
+  Bonusrunde (mode=bonus, Stichsong, FR-041).
+- Bonusrunde: nur die gleichauf liegenden Spieler duerfen per POST .../guess
+  mit {"type":"exact_year","value":<jahr>} genau einen Exaktjahr-Versuch
+  abgeben; Aufloesung am Fensterende (BONUS_WINDOW_MS, Default 10s), gleicher
+  50ms-Tie-Break wie beim Token-Claim. Niemand korrekt: Partie bleibt im
+  Gleichstand, naechster Stichsong bei erneutem Rundenstart.
+
 GET /games/{gameId}
-- Spielstatus, Spieler (inkl. aktueller Kartenanzahl), Zwischenstand
+- Spielstatus (inkl. finished/winnerUserId), Spieler (inkl. aktueller
+  Kartenanzahl), Zwischenstand
 - Enthalten: tableSessionId zur Nachvollziehbarkeit von "Neue Partie"-Folgen
 
 POST /games/{gameId}/rounds
 - Nur aktueller Tischadmin (oder globaler Admin)
 - Zieht naechsten Song aus dem Songpool (Feinkonzept 4.3) und startet die
-  Runde (status=countdown)
+  Runde (status=countdown); mode=bonus bei bestehendem Gleichstand (FR-041),
+  sonst mode=normal
 - Response 409 ROUND_ALREADY_ACTIVE / GAME_NOT_ACTIVE / NO_SONGS_AVAILABLE
 
 GET /games/{gameId}/rounds/{roundId}
@@ -237,11 +262,18 @@ GET /admin/songs
 
 ## 6. Scores und Karma
 
+Highscoreformel (FR-042): Gewinner erhaelt 1 Siegpunkt + 1 Punkt pro
+Gegner (bei n aktiven Spielern also n Punkte). Karma (FR-043/044):
+komplett gespieltes Match +5 fuer jeden noch aktiven Spieler; vorzeitiges
+Verlassen einer laufenden Partie -5, zusaetzlich -1 pro zu diesem
+Zeitpunkt noch aktivem Mitspieler, sofern kein Rejoin innerhalb 90s
+(FR-045).
+
 GET /leaderboard
-- Liefert Highscore-Ranking
+- Liefert bis zu 100 Nutzer sortiert nach scorePoints, dann karmaPoints
 
 GET /users/{userId}/karma-ledger
-- Verlauf der Karma-Buchungen
+- Verlauf der Karma-Buchungen (reason: match_completed | early_leave)
 
 ## 7. Setup und Health
 

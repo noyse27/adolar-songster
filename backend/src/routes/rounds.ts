@@ -2,7 +2,7 @@ import { Response, Router } from 'express';
 import { pool } from '../db/pool';
 import { AuthenticatedRequest, requireAuth } from '../middleware/auth';
 import { RoundEngineError } from '../services/errors';
-import { claimToken, startRound, submitGuess, submitTokenGuess } from '../services/roundEngine';
+import { claimToken, startRound, submitBonusGuess, submitGuess, submitTokenGuess } from '../services/roundEngine';
 
 export const roundsRouter = Router();
 
@@ -94,17 +94,18 @@ roundsRouter.get('/games/:gameId/rounds/:roundId', requireAuth, async (req, res)
   }
   const round = roundResult.rows[0];
 
-  let results: Array<{ userId: string; guessedIndex: number; correct: boolean }> = [];
-  if (round.status === 'resolved') {
+  let results: Array<{ userId: string; value: number; correct: boolean }> = [];
+  if (round.status === 'resolved' && round.mode !== 'token') {
+    const guessType = round.mode === 'bonus' ? 'exact_year' : 'position';
     const guessResult = await pool.query(
       `SELECT DISTINCT ON (user_id) user_id, value_number, is_correct
-       FROM guess WHERE round_id = $1 AND guess_type = 'position'
+       FROM guess WHERE round_id = $1 AND guess_type = $2
        ORDER BY user_id, submitted_at DESC`,
-      [roundId],
+      [roundId, guessType],
     );
     results = guessResult.rows.map((row) => ({
       userId: row.user_id,
-      guessedIndex: row.value_number,
+      value: row.value_number,
       correct: row.is_correct,
     }));
   }
@@ -147,14 +148,20 @@ roundsRouter.post(
   async (req: AuthenticatedRequest, res) => {
     const { type, value } = req.body ?? {};
 
-    if (type !== 'position') {
-      res.status(400).json({ error: 'only position guesses are supported in this sprint' });
-      return;
-    }
-
     try {
-      const result = await submitGuess(req.params.roundId, req.userId as string, Number(value));
-      res.status(200).json(result);
+      if (type === 'position') {
+        const result = await submitGuess(req.params.roundId, req.userId as string, Number(value));
+        res.status(200).json(result);
+        return;
+      }
+      if (type === 'exact_year') {
+        // Bonus-round (Stichsong) exact-year guess (FR-041); the token
+        // mechanic's exact-year guess has its own dedicated endpoint.
+        const result = await submitBonusGuess(req.params.roundId, req.userId as string, Number(value));
+        res.status(200).json(result);
+        return;
+      }
+      res.status(400).json({ error: 'type must be position or exact_year' });
     } catch (err) {
       if (!handleEngineError(err, res)) throw err;
     }

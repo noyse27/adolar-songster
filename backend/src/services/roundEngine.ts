@@ -1,5 +1,7 @@
+import { PoolClient } from 'pg';
 import { pool } from '../db/pool';
 import { RoundEngineError } from './errors';
+import { checkForWinOrTie, finishGame } from './matchOutcome';
 import { selectSongForGame } from './songPool';
 import { fetchTimeline, findSortedInsertIndex, insertCardAndReindex, isPlacementCorrect } from './timeline';
 import { resolveClaimWinner } from './tokenRace';
@@ -20,7 +22,22 @@ export const TOKEN_CLAIM_GRACE_MS = Number(process.env.TOKEN_CLAIM_GRACE_MS ?? 1
 export const TOKEN_SOLO_WINDOW_MS = Number(process.env.TOKEN_SOLO_WINDOW_MS ?? 10000);
 export const TOKEN_OTHERS_WINDOW_MS = Number(process.env.TOKEN_OTHERS_WINDOW_MS ?? 10000);
 
+// FR-041: a Stichsong bonus round for players tied at the winning card
+// count; fastest correct exact-year guess wins the match outright.
+export const BONUS_WINDOW_MS = Number(process.env.BONUS_WINDOW_MS ?? 10000);
+
 const ACTIVE_ROUND_STATUSES = ['countdown', 'playing', 'token_solo', 'token_others'];
+
+// Called (within the same transaction as a card award) after any round
+// that could push a player to the winning threshold. A single leader
+// finishes the game (FR-040/042/043); a tie is left for the next
+// startRound() call to resolve via a bonus round (FR-041).
+async function checkForGameEnd(client: PoolClient, gameId: string): Promise<void> {
+  const outcome = await checkForWinOrTie(client, gameId);
+  if ('winnerUserId' in outcome) {
+    await finishGame(client, gameId, outcome.winnerUserId);
+  }
+}
 
 export interface RoundGuessResult {
   userId: string;
@@ -61,6 +78,11 @@ export async function startRound(gameId: string, requesterId: string, requesterR
       throw new RoundEngineError('ROUND_ALREADY_ACTIVE', 'a round is already in progress');
     }
 
+    // FR-041: if the previous round left players tied at the winning card
+    // count, this round is a Stichsong bonus round instead of a normal one.
+    const outcome = await checkForWinOrTie(client, gameId);
+    const isBonusRound = 'tiedUserIds' in outcome;
+
     const song = await selectSongForGame(client, gameId, game.table_session_id);
 
     const nextIndexResult = await client.query(
@@ -71,9 +93,9 @@ export async function startRound(gameId: string, requesterId: string, requesterR
 
     const roundResult = await client.query(
       `INSERT INTO round (game_id, index_no, song_id, mode, status, started_at)
-       VALUES ($1, $2, $3, 'normal', 'countdown', NOW())
+       VALUES ($1, $2, $3, $4, 'countdown', NOW())
        RETURNING id, index_no`,
-      [gameId, indexNo, song.id],
+      [gameId, indexNo, song.id, isBonusRound ? 'bonus' : 'normal'],
     );
     const round = roundResult.rows[0];
 
@@ -87,16 +109,21 @@ export async function startRound(gameId: string, requesterId: string, requesterR
 
     await client.query('COMMIT');
 
-    scheduleRoundTransitions(round.id);
+    if (isBonusRound) {
+      scheduleBonusRoundTransitions(round.id);
+    } else {
+      scheduleRoundTransitions(round.id);
+    }
 
     return {
       roundId: round.id as string,
       indexNo: round.index_no as number,
       status: 'countdown' as const,
+      mode: isBonusRound ? ('bonus' as const) : ('normal' as const),
       songTitle: song.title,
       songDurationSec: song.durationSec,
       countdownSeconds: COUNTDOWN_MS / 1000,
-      songWindowSeconds: SONG_DURATION_MS / 1000,
+      songWindowSeconds: isBonusRound ? BONUS_WINDOW_MS / 1000 : SONG_DURATION_MS / 1000,
     };
   } catch (err) {
     await client.query('ROLLBACK');
@@ -122,6 +149,24 @@ function scheduleRoundTransitions(roundId: string): void {
       console.error('failed to resolve round', err);
     });
   }, COUNTDOWN_MS + SONG_DURATION_MS);
+}
+
+function scheduleBonusRoundTransitions(roundId: string): void {
+  setTimeout(() => {
+    pool
+      .query(`UPDATE round SET status = 'playing' WHERE id = $1 AND status = 'countdown'`, [roundId])
+      .catch((err) => {
+        // eslint-disable-next-line no-console
+        console.error('failed to transition bonus round to playing', err);
+      });
+  }, COUNTDOWN_MS);
+
+  setTimeout(() => {
+    resolveBonusRound(roundId).catch((err) => {
+      // eslint-disable-next-line no-console
+      console.error('failed to resolve bonus round', err);
+    });
+  }, COUNTDOWN_MS + BONUS_WINDOW_MS);
 }
 
 export async function submitGuess(
@@ -230,8 +275,121 @@ export async function resolveRound(
 
     await client.query(`UPDATE round SET status = 'resolved', ended_at = NOW() WHERE id = $1`, [roundId]);
 
+    await checkForGameEnd(client, round.game_id);
+
     await client.query('COMMIT');
     return { roundId, songYear, results };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+export async function submitBonusGuess(
+  roundId: string,
+  userId: string,
+  year: number,
+): Promise<{ correct: boolean }> {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const roundResult = await client.query(
+      `SELECT id, game_id, song_id, status, mode FROM round WHERE id = $1 FOR UPDATE`,
+      [roundId],
+    );
+    if (roundResult.rowCount === 0) {
+      throw new RoundEngineError('ROUND_NOT_FOUND', 'round not found');
+    }
+    const round = roundResult.rows[0];
+
+    if (round.mode !== 'bonus' || round.status !== 'playing') {
+      throw new RoundEngineError('ROUND_LOCKED', 'no bonus guess window is open');
+    }
+    if (!Number.isInteger(year)) {
+      throw new RoundEngineError('INVALID_GUESS', 'year must be an integer');
+    }
+
+    const tieResult = await checkForWinOrTie(client, round.game_id);
+    if (!('tiedUserIds' in tieResult) || !tieResult.tiedUserIds.includes(userId)) {
+      throw new RoundEngineError('TOKEN_NOT_AVAILABLE', 'you are not tied for the win in this round');
+    }
+
+    const existingAttemptResult = await client.query(
+      `SELECT id FROM guess WHERE round_id = $1 AND user_id = $2 AND guess_type = 'exact_year'`,
+      [roundId, userId],
+    );
+    if ((existingAttemptResult.rowCount ?? 0) > 0) {
+      throw new RoundEngineError('TOKEN_ALREADY_USED', 'already attempted this bonus round');
+    }
+
+    const songResult = await client.query(`SELECT year_value FROM song_ref WHERE id = $1`, [
+      round.song_id,
+    ]);
+    const correct = year === (songResult.rows[0].year_value as number);
+
+    await client.query(
+      `INSERT INTO guess (round_id, user_id, guess_type, value_number, submitted_at, is_correct)
+       VALUES ($1, $2, 'exact_year', $3, NOW(), $4)`,
+      [roundId, userId, year, correct],
+    );
+
+    await client.query('COMMIT');
+    return { correct };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+async function resolveBonusRound(roundId: string): Promise<void> {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const roundResult = await client.query(
+      `SELECT id, game_id, status, mode FROM round WHERE id = $1 FOR UPDATE`,
+      [roundId],
+    );
+    if (roundResult.rowCount === 0 || roundResult.rows[0].mode !== 'bonus' || roundResult.rows[0].status !== 'playing') {
+      await client.query('ROLLBACK');
+      return;
+    }
+    const round = roundResult.rows[0];
+
+    const correctGuessesResult = await client.query(
+      `SELECT id, user_id, submitted_at FROM guess
+       WHERE round_id = $1 AND guess_type = 'exact_year' AND is_correct = TRUE
+       ORDER BY submitted_at ASC`,
+      [roundId],
+    );
+
+    if ((correctGuessesResult.rowCount ?? 0) > 0) {
+      const winner = resolveClaimWinner(
+        correctGuessesResult.rows.map((row) => ({
+          id: row.id,
+          claimedAtMs: new Date(row.submitted_at).getTime(),
+        })),
+      );
+      const winnerUserId = correctGuessesResult.rows.find((row) => row.id === winner.id).user_id;
+
+      await client.query(`UPDATE round SET status = 'resolved', ended_at = NOW() WHERE id = $1`, [
+        roundId,
+      ]);
+      await finishGame(client, round.game_id, winnerUserId);
+    } else {
+      // Nobody guessed correctly - stays tied. The next POST .../rounds
+      // call will detect the tie again and draw another Stichsong.
+      await client.query(`UPDATE round SET status = 'resolved', ended_at = NOW() WHERE id = $1`, [
+        roundId,
+      ]);
+    }
+
+    await client.query('COMMIT');
   } catch (err) {
     await client.query('ROLLBACK');
     throw err;
@@ -454,6 +612,7 @@ export async function submitTokenGuess(
         await client.query(`UPDATE round SET status = 'resolved', ended_at = NOW() WHERE id = $1`, [
           roundId,
         ]);
+        await checkForGameEnd(client, round.game_id);
         await client.query('COMMIT');
         return { correct: true };
       }
@@ -556,6 +715,8 @@ async function resolveOthersWindow(roundId: string): Promise<void> {
     }
 
     await client.query(`UPDATE round SET status = 'resolved', ended_at = NOW() WHERE id = $1`, [roundId]);
+
+    await checkForGameEnd(client, round.game_id);
 
     await client.query('COMMIT');
   } catch (err) {
