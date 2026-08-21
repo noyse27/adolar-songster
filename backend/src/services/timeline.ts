@@ -30,9 +30,23 @@ export function isPlacementCorrect(timeline: TimelineEntry[], index: number, son
   return (lower === null || lower <= songYear) && (upper === null || songYear <= upper);
 }
 
+// Used when a card is awarded without a guessed position (token win: the
+// player already proved they know the exact year, so it is inserted at
+// its objectively correct sorted position).
+export function findSortedInsertIndex(timeline: TimelineEntry[], year: number): number {
+  return timeline.filter((entry) => entry.yearValue <= year).length;
+}
+
 export async function insertCardAndReindex(
   client: Queryable,
-  opts: { gameId: string; userId: string; sourceRoundId: string | null; songYear: number; index: number },
+  opts: {
+    gameId: string;
+    userId: string;
+    sourceRoundId: string | null;
+    songYear: number;
+    index: number;
+    specialType?: 'normal' | 'token_win';
+  },
 ): Promise<void> {
   await client.query(
     `UPDATE timeline_card SET placed_position = placed_position + 1
@@ -41,8 +55,8 @@ export async function insertCardAndReindex(
   );
   await client.query(
     `INSERT INTO timeline_card (game_id, user_id, source_round_id, year_value, special_type, placed_position)
-     VALUES ($1, $2, $3, $4, 'normal', $5)`,
-    [opts.gameId, opts.userId, opts.sourceRoundId, opts.songYear, opts.index],
+     VALUES ($1, $2, $3, $4, $6, $5)`,
+    [opts.gameId, opts.userId, opts.sourceRoundId, opts.songYear, opts.index, opts.specialType ?? 'normal'],
   );
 }
 

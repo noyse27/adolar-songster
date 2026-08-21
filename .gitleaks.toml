@@ -1,0 +1,14 @@
+title = "Adolar Songster gitleaks config"
+
+[extend]
+useDefault = true
+
+# docs/ contains prose specification documents, not application code or
+# config. Entropy-based rules (e.g. generic-api-key) occasionally flag
+# ordinary German sentences here as false positives; real credentials
+# still get caught in every other path.
+[allowlist]
+description = "Documentation prose is not a source of credentials"
+paths = [
+  '''docs/.*''',
+]
