@@ -15,6 +15,21 @@ und Frontend (Port 5173).
 - Frontend: http://localhost:5173
 - Backend-Health: http://localhost:4000/api/v1/health
 
+### Ersten Admin anlegen
+
+Auf einem frischen System existiert noch kein Account. Einmalig:
+
+```bash
+curl -X POST http://localhost:4000/api/v1/setup/bootstrap \
+  -H "Content-Type: application/json" \
+  -d '{"username":"admin","email":"admin@example.test","password":"..."}'
+```
+
+Danach per `POST /api/v1/auth/login` einloggen und mit dem `accessToken`
+Invites erzeugen (`POST /api/v1/invites`), damit sich weitere Nutzer
+registrieren koennen. Details siehe
+[docs/Adolar_Songster_API_Spezifikation_v1_20260821.md](docs/Adolar_Songster_API_Spezifikation_v1_20260821.md).
+
 ## Lokale Entwicklung ohne Docker
 
 Voraussetzung: Node.js 22, laufende PostgreSQL-Instanz.

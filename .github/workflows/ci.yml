@@ -66,6 +66,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # gitleaks diffs against the parent commit on PR events; a
+          # shallow checkout has no parent commit to diff against.
+          fetch-depth: 0
 
       - name: Trivy file system scan
         uses: aquasecurity/trivy-action@v0.36.0

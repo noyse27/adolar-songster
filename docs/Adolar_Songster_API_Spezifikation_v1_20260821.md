@@ -44,6 +44,14 @@ GET /users/me
 
 ## 3. Invite-Management
 
+Konkretisierung (Sprint 1, ergaenzt die urspruengliche Spezifikation):
+- Admin: unbegrenzte Invite-Erzeugung, kann anderen Nutzern das Recht zur
+  Invite-Erzeugung erteilen/entziehen.
+- Freigeschalteter Nutzer (can_create_invites): maximal 3 Invites pro
+  Kalendermonat. Zaehlfenster kann durch Admin vorzeitig zurueckgesetzt werden.
+- Default je Invite (falls nicht angegeben): maxUses=1, expiresInDays=14
+  (FR-004).
+
 POST /invites
 - Berechtigung: admin oder freigeschalteter Nutzer
 - Request:
@@ -51,12 +59,41 @@ POST /invites
   "maxUses": 1,
   "expiresInDays": 14
 }
+- Response 429 bei ausgeschoepftem Monatslimit, 403 ohne Berechtigung
 
 GET /invites
-- Listet eigene oder adminseitig alle Invites
+- Listet eigene Invites; Admin sieht alle Invites
 
 POST /invites/{inviteId}/disable
-- deaktiviert Invite sofort
+- Deaktiviert eigenes Invite sofort; Admin kann jedes Invite deaktivieren
+
+POST /admin/users/{userId}/invite-permission
+- Nur Admin
+- Request: { "canCreateInvites": true|false }
+- Erteilt oder entzieht das Recht zur Invite-Erzeugung
+
+POST /admin/users/{userId}/revoke-invites
+- Nur Admin
+- Request:
+{
+  "invalidateCreatedInvites": true,
+  "deactivateRegisteredUsers": true
+}
+- Entzieht das Invite-Recht; optional werden alle vom Nutzer erzeugten
+  Invites deaktiviert und/oder alle darueber registrierten Nutzer gesperrt
+
+POST /admin/users/{userId}/reset-invite-quota
+- Nur Admin
+- Setzt das Monatslimit des Nutzers sofort zurueck
+
+GET /admin/invites/log
+- Nur Admin
+- Liefert je Invite: Ersteller (Username), Code, Status, und alle darueber
+  registrierten Nutzer (Username)
+
+POST /setup/bootstrap
+- Legt den ersten Admin-Account an; nur nutzbar solange noch kein Admin
+  existiert (danach 409)
 
 ## 4. Lobby und Tische
 
