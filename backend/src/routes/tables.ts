@@ -423,3 +423,93 @@ tablesRouter.post('/tables/:tableId/start', requireAuth, async (req: Authenticat
     client.release();
   }
 });
+
+// FR-017/AK-009: starts a new game at the same table, with the same
+// player composition and table settings, without requiring anyone to
+// rejoin. AK-011: stays in the same table_session so the session-wide
+// song no-repeat-until-exhausted rule keeps applying across "Neue Partie".
+tablesRouter.post('/tables/:tableId/new-game', requireAuth, async (req: AuthenticatedRequest, res) => {
+  const requesterId = req.userId as string;
+  const requesterRole = req.userRole;
+  const { tableId } = req.params;
+
+  await evaluateOwnerHandover(tableId);
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const tableResult = await client.query(
+      `SELECT id, owner_user_id, state FROM game_table WHERE id = $1 FOR UPDATE`,
+      [tableId],
+    );
+    if (tableResult.rowCount === 0) {
+      await client.query('ROLLBACK');
+      res.status(404).json({ error: 'table not found' });
+      return;
+    }
+    const table = tableResult.rows[0];
+
+    if (table.owner_user_id !== requesterId && requesterRole !== 'admin') {
+      await client.query('ROLLBACK');
+      res.status(403).json({ error: 'only the table admin can start a new game' });
+      return;
+    }
+    if (table.state !== 'finished') {
+      await client.query('ROLLBACK');
+      res.status(409).json({ error: 'the current game has not finished yet' });
+      return;
+    }
+
+    const previousGameResult = await client.query(
+      `SELECT table_session_id FROM game WHERE table_id = $1 ORDER BY created_at DESC LIMIT 1`,
+      [tableId],
+    );
+    if (previousGameResult.rowCount === 0) {
+      await client.query('ROLLBACK');
+      res.status(409).json({ error: 'no previous game found for this table' });
+      return;
+    }
+    const tableSessionId = previousGameResult.rows[0].table_session_id;
+
+    const activePlayersResult = await client.query(
+      `SELECT user_id FROM table_seat
+       WHERE table_id = $1 AND seat_type = 'player' AND left_at IS NULL`,
+      [tableId],
+    );
+    const activePlayerIds: string[] = activePlayersResult.rows.map((row) => row.user_id);
+    if (activePlayerIds.length < 2) {
+      await client.query('ROLLBACK');
+      res.status(400).json({ error: 'at least 2 active players are required to start' });
+      return;
+    }
+
+    const range = await computeYearRange(client);
+    if (!range) {
+      await client.query('ROLLBACK');
+      res.status(400).json({ error: 'SONG_METADATA_INVALID: no valid songs in the playlist yet' });
+      return;
+    }
+
+    const gameResult = await client.query(
+      `INSERT INTO game (table_id, table_session_id, status, started_at)
+       VALUES ($1, $2, 'active', NOW())
+       RETURNING id`,
+      [tableId, tableSessionId],
+    );
+    await generateStartBlocks(client, gameResult.rows[0].id, activePlayerIds);
+    await client.query(`UPDATE game_table SET state = 'running' WHERE id = $1`, [tableId]);
+
+    await client.query('COMMIT');
+    res.status(200).json({
+      tableId,
+      tableSessionId,
+      gameId: gameResult.rows[0].id,
+    });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+});
