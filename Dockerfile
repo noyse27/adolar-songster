@@ -19,6 +19,7 @@ COPY frontend/package.json frontend/package.json
 RUN npm ci --workspace backend --omit=dev
 COPY --from=build /app/backend/dist ./backend/dist
 COPY --from=build /app/backend/migrations ./backend/migrations
+RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack
 WORKDIR /app/backend
 EXPOSE 4000
 USER node
