@@ -2,10 +2,10 @@ import { Router } from 'express';
 import argon2 from 'argon2';
 import jwt from 'jsonwebtoken';
 import { pool } from '../db/pool';
+import { JWT_SECRET } from '../middleware/auth';
 
 export const authRouter = Router();
 
-const JWT_SECRET = process.env.JWT_SECRET ?? 'dev-secret-change-me';
 const JWT_EXPIRES_IN_SECONDS = 3600;
 
 authRouter.post('/auth/register', async (req, res) => {
@@ -48,10 +48,10 @@ authRouter.post('/auth/register', async (req, res) => {
     const passwordHash = await argon2.hash(password);
 
     const userResult = await client.query(
-      `INSERT INTO app_user (username, email, password_hash)
-       VALUES ($1, $2, $3)
+      `INSERT INTO app_user (username, email, password_hash, registered_via_invite_id)
+       VALUES ($1, $2, $3, $4)
        RETURNING id, username`,
-      [username, email, passwordHash],
+      [username, email, passwordHash, invite.id],
     );
 
     await client.query(

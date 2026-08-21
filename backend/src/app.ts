@@ -3,6 +3,10 @@ import cors from 'cors';
 import helmet from 'helmet';
 import { healthRouter } from './routes/health';
 import { authRouter } from './routes/auth';
+import { setupRouter } from './routes/setup';
+import { invitesRouter } from './routes/invites';
+import { adminRouter } from './routes/admin';
+import { tablesRouter } from './routes/tables';
 
 export function createApp(): Express {
   const app = express();
@@ -13,6 +17,10 @@ export function createApp(): Express {
 
   app.use('/api/v1', healthRouter);
   app.use('/api/v1', authRouter);
+  app.use('/api/v1', setupRouter);
+  app.use('/api/v1', invitesRouter);
+  app.use('/api/v1/admin', adminRouter);
+  app.use('/api/v1', tablesRouter);
 
   return app;
 }
