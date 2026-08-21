@@ -72,6 +72,15 @@ Sie verweist auf alle relevanten Dokumente, die fuer Umsetzung, Uebergabe und Ab
 - Inhalt: Urspruenglicher Fragebogen ohne Ausfuellung.
 - Verwendung: Vorlage fuer spaetere Varianten/Projekte.
 
+## 3.11 Adolar-Integration (Phase-2-Vorbereitung)
+- Datei: Adolar_Songster_Adolar_Integration_Konzept_v1_20260821.md
+- Inhalt: Aenderungen am Adolar-Repo (F:\claude\musicapp) fuer Songster-
+  Playlisten, Sichtbarkeitsabgrenzung, Client-Identifikation; Songster-
+  seitiger Batch-Lademechanismus mit Diversitaets- und Malusregeln.
+- Verwendung: Voraussetzung fuer Phase 2 (lokaler Ordner-Scan) - muss vor
+  Phase 2 abgeschlossen sein, da Songster im Adolar-Modus erst vollstaendig
+  funktionieren soll.
+
 ## 4. Bildmaterial
 - songster_home.png
 - songster_playboard.png
@@ -98,3 +107,4 @@ Danach pruefen:
 
 ## 7. Aenderungsprotokoll
 - v1.0: Initialer Masterindex erstellt.
+- 2026-08-21: Adolar-Integrationskonzept ergaenzt (Abschnitt 3.11).
