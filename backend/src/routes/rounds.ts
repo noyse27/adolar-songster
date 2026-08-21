@@ -2,7 +2,7 @@ import { Response, Router } from 'express';
 import { pool } from '../db/pool';
 import { AuthenticatedRequest, requireAuth } from '../middleware/auth';
 import { RoundEngineError } from '../services/errors';
-import { startRound, submitGuess } from '../services/roundEngine';
+import { claimToken, startRound, submitGuess, submitTokenGuess } from '../services/roundEngine';
 
 export const roundsRouter = Router();
 
@@ -15,6 +15,8 @@ const STATUS_BY_ERROR_CODE: Record<string, number> = {
   ROUND_NOT_FOUND: 404,
   ROUND_LOCKED: 409,
   INVALID_GUESS: 400,
+  TOKEN_NOT_AVAILABLE: 409,
+  TOKEN_ALREADY_USED: 409,
 };
 
 function handleEngineError(err: unknown, res: Response): boolean {
@@ -79,7 +81,7 @@ roundsRouter.get('/games/:gameId/rounds/:roundId', requireAuth, async (req, res)
   const { roundId } = req.params;
 
   const roundResult = await pool.query(
-    `SELECT r.id, r.index_no, r.status, r.started_at, r.ended_at,
+    `SELECT r.id, r.index_no, r.status, r.mode, r.started_at, r.ended_at,
             CASE WHEN r.status = 'resolved' THEN sr.year_value ELSE NULL END AS song_year
      FROM round r
      JOIN song_ref sr ON sr.id = r.song_id
@@ -96,7 +98,7 @@ roundsRouter.get('/games/:gameId/rounds/:roundId', requireAuth, async (req, res)
   if (round.status === 'resolved') {
     const guessResult = await pool.query(
       `SELECT DISTINCT ON (user_id) user_id, value_number, is_correct
-       FROM guess WHERE round_id = $1
+       FROM guess WHERE round_id = $1 AND guess_type = 'position'
        ORDER BY user_id, submitted_at DESC`,
       [roundId],
     );
@@ -107,14 +109,35 @@ roundsRouter.get('/games/:gameId/rounds/:roundId', requireAuth, async (req, res)
     }));
   }
 
+  let tokenSoloUserId: string | null = null;
+  let tokenWrongGuessYear: number | null = null;
+  if (['token_solo', 'token_others', 'resolved'].includes(round.status) && round.mode === 'token') {
+    const tokenResult = await pool.query(
+      `SELECT tu.user_id, tu.result, g.value_number AS wrong_year
+       FROM token_usage tu
+       LEFT JOIN guess g ON g.round_id = tu.round_id AND g.user_id = tu.user_id AND g.guess_type = 'exact_year'
+       WHERE tu.round_id = $1
+         AND (tu.result IN ('solo_wrong', 'solo_correct', 'solo_timeout') OR tu.resolved_at IS NULL)`,
+      [roundId],
+    );
+    const row = tokenResult.rows[0];
+    if (row) {
+      tokenSoloUserId = row.user_id;
+      tokenWrongGuessYear = row.result === 'solo_wrong' ? row.wrong_year : null;
+    }
+  }
+
   res.status(200).json({
     roundId: round.id,
     indexNo: round.index_no,
     status: round.status,
+    mode: round.mode,
     startedAt: round.started_at,
     endedAt: round.ended_at,
     songYear: round.song_year,
     results,
+    tokenSoloUserId,
+    tokenWrongGuessYear,
   });
 });
 
@@ -131,6 +154,34 @@ roundsRouter.post(
 
     try {
       const result = await submitGuess(req.params.roundId, req.userId as string, Number(value));
+      res.status(200).json(result);
+    } catch (err) {
+      if (!handleEngineError(err, res)) throw err;
+    }
+  },
+);
+
+roundsRouter.post(
+  '/games/:gameId/rounds/:roundId/token-claim',
+  requireAuth,
+  async (req: AuthenticatedRequest, res) => {
+    try {
+      const result = await claimToken(req.params.roundId, req.userId as string);
+      res.status(202).json(result);
+    } catch (err) {
+      if (!handleEngineError(err, res)) throw err;
+    }
+  },
+);
+
+roundsRouter.post(
+  '/games/:gameId/rounds/:roundId/token-submit',
+  requireAuth,
+  async (req: AuthenticatedRequest, res) => {
+    const { year } = req.body ?? {};
+
+    try {
+      const result = await submitTokenGuess(req.params.roundId, req.userId as string, Number(year));
       res.status(200).json(result);
     } catch (err) {
       if (!handleEngineError(err, res)) throw err;

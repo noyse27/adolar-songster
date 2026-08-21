@@ -69,6 +69,13 @@ afterAll(async () => {
 
 describe('table start seeds a starting timeline (FR-023)', () => {
   it('refuses to start a table with no songs in the playlist', async () => {
+    // song_ref is a single global playlist shared by every test file; other
+    // suites (or earlier tests in this run) may have already seeded songs,
+    // so force an empty playlist for this specific assertion. CASCADE only
+    // reaches round-derived tables (round/guess/timeline_card/token_usage/
+    // session_song_history), not tables/games/users from other suites.
+    await pool.query('TRUNCATE TABLE song_ref CASCADE');
+
     const owner = await createUserDirect({});
     const other = await createUserDirect({});
     const tableResponse = await request(app)

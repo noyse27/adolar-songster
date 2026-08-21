@@ -183,15 +183,46 @@ POST /games/{gameId}/rounds/{roundId}/guess
   Timeline; korrekt wenn die relative Position zu den Nachbarkarten stimmt
   (FR-026/027)
 
+Konkretisierung Token-Mechanik (Sprint 4):
+- Jeder Claim verbraucht sofort einen der 2 Tokens des Spielers (FR-031),
+  unabhaengig davon ob er das Race gewinnt (result "race_lost" bei
+  Verlust, "solo_correct"/"solo_wrong"/"solo_timeout" beim Gewinner).
+- Nach dem ersten Claim sammelt der Server 150ms lang weitere Claims
+  (Grace-Fenster) und ermittelt danach den Gewinner: fruehester
+  Server-Zeitstempel gewinnt; liegen mehrere Claims innerhalb von 50ms,
+  entscheidet Zufall (FR-036). Ab dem ersten Claim ist die Runde fuer
+  normale Positions-Guesses gesperrt (Song gilt als gestoppt, FR-032).
+- Solo-Fenster 10s (FR-033): korrekt -> token_win-Karte, Runde sofort
+  resolved. Falsch -> 10s Gegenspielerfenster (FR-034); Zeitueberschreitung
+  ohne Eingabe -> Runde resolved ohne Karte, kein Gegenspielerfenster.
+- Gegenspielerfenster: jeder Gegenspieler (ausser dem urspruenglichen
+  Claimer) hat genau einen Versuch. Aufgeloest wird erst am Fensterende
+  (nicht beim ersten Treffer), damit alle Gegner eine faire Chance haben;
+  bei mehreren korrekten Treffern entscheidet derselbe Tie-Break wie beim
+  Claim-Race.
+
 POST /games/{gameId}/rounds/{roundId}/token-claim
-- Claim fuer Token-Race (Sprint 4)
+- Response 202 { accepted: true, graceMs }
+- Response 409 TOKEN_NOT_AVAILABLE (kein Claim-Fenster offen) /
+  TOKEN_ALREADY_USED (bereits fuer diese Runde geclaimt oder Kontingent
+  dieses Spiels erschoepft)
 
 POST /games/{gameId}/rounds/{roundId}/token-submit
-- Exaktjahr durch Token-Gewinner (Sprint 4)
+- Waehrend status=token_solo: nur der aktuelle Claim-Gewinner
+- Waehrend status=token_others: jeder aktive Spieler ausser dem
+  urspruenglichen Claimer, genau ein Versuch
 - Request:
 {
   "year": 1993
 }
+- Response 200 { correct: boolean }
+
+GET /games/{gameId}/rounds/{roundId} liefert zusaetzlich:
+- mode ("normal"|"token")
+- tokenSoloUserId: aktueller/urspruenglicher Claim-Gewinner (waehrend und
+  nach der Token-Phase)
+- tokenWrongGuessYear: das falsch geratene Jahr des Claim-Gewinners,
+  sichtbar sobald status=token_others (FR-035)
 
 ## 5a. Songpool-Administration (Uebergangsloesung)
 
