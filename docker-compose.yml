@@ -38,6 +38,9 @@ services:
       PORT: 4000
       DATABASE_URL: postgres://songster:songster@db:5432/adolar_songster
       JWT_SECRET: ${JWT_SECRET:-dev-secret-change-me}
+      ADOLAR_BASE_URL: ${ADOLAR_BASE_URL:-}
+      ADOLAR_API_TOKEN: ${ADOLAR_API_TOKEN:-}
+      ADOLAR_CLIENT_VERSION: ${ADOLAR_CLIENT_VERSION:-0.1.0}
     ports:
       - "4000:4000"
     depends_on:

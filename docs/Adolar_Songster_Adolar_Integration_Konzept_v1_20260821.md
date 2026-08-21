@@ -237,15 +237,48 @@ Abschnitt 3/4 vermerkt):
 
 ## 6. Vorgeschlagene Umsetzungsreihenfolge
 
-1. Adolar: Migration (`songster_enabled`-Spalte, `connection_log`-
-   Erweiterung um Client-Version), Settings-Flag "Songster aktivieren".
-2. Adolar: `/api/songster/*`-Routen (Login, Playlist-Liste, paginierte
-   Tracks), Sichtbarkeitsfilter in `list_radio_stations()`.
-3. Adolar: UI - Menüeintrag, "Songster Playlists"-Dialog (Wiederverwendung
-   Radio-Sender-Editor minus Jingle/Scope-Auswahl), Freischalt-Button.
-4. Songster: Adolar-Client (Login, paginiertes Abrufen), Batch-Algorithmus
-   (4.3), `song_ref.last_played_at`-Migration, Integration in
-   Tischerstellung (`sourcePlaylistId`).
-5. End-to-End-Test: Adolar-Sender anlegen, in Songster Tisch mit dieser
-   Playlist erstellen, mehrere Partien/Neue-Partie-Laeufe spielen, Song-
-   Wiederholungsregeln und Malus-Verhalten verifizieren.
+1. **Erledigt** (musicapp): Migration (`songster_enabled`-Spalte,
+   `connection_log`-Erweiterung um Client-Version), Settings-Flag
+   "Songster aktivieren".
+2. **Erledigt** (musicapp): `/api/songster/*`-Routen - **nicht** per
+   Login-Endpoint wie hier urspruenglich geplant, sondern per bestehendem
+   API-Token-Mechanismus (Bearer, wie Taggster - siehe
+   `musicapp/docs/INTEGRATION_STANDARDS.md` Abschnitt 3). Playlist-Liste,
+   paginierte Tracks, Sichtbarkeitsfilter in `list_radio_stations()`.
+3. **Erledigt** (musicapp): UI - Menüeintrag, "Songster Playlists"-Dialog
+   (Wiederverwendung Radio-Sender-Editor minus Jingle/Scope-Auswahl),
+   Freischalt-Button. Details/Abweichungen (Zwei-Flags-Modell
+   `songster_managed`/`songster_enabled`) in
+   `musicapp/docs/PRODUCT_INTEGRATIONS.md` Abschnitt 5.
+4. **Erledigt** (Songster, dieses Repo): Adolar-Client
+   (`backend/src/services/adolarClient.ts`) - Bearer-Token statt
+   Login-Endpoint (folgt aus Schritt 2), Batch-Algorithmus
+   (`backend/src/services/adolarBatch.ts`, Abschnitt 4.3),
+   `song_ref.last_played_at`-Migration, `table_session_song_pool`
+   (scoped Session-Pool, neu - siehe unten), Integration in
+   Tischerstellung (`sourcePlaylistId`) und Tischsession-Start
+   (`backend/src/routes/tables.ts`).
+   - **Neu gegenueber dem urspruenglichen Konzept**: `song_ref` ist eine
+     einzige globale Tabelle, aus der `selectSongForGame()` bisher ohne
+     Einschraenkung waehlte. Ein 50er-Adolar-Batch darf aber nicht einfach
+     in diese globale Tabelle einfliessen, sonst waeren die 50 Songs auch
+     fuer *andere* Tische (inkl. lokal-admin-gepflegter) waehlbar, und ein
+     lokal-admin-gepflegter Tisch koennte versehentlich Adolar-Songs
+     ziehen. Neue Tabelle `table_session_song_pool(table_session_id,
+     song_ref_id)` scoped die Kandidatenmenge pro Tischsession: vorhanden
+     -> nur diese Songs zaehlen (Adolar-Batch), keine Zeilen -> gesamte
+     `song_ref`-Bibliothek zaehlt (unveraendertes Verhalten fuer den
+     lokal-admin-Fallback). `computeYearRange()` und `selectSongForGame()`
+     respektieren dieses Scoping identisch.
+   - Verfuegbarkeitspruefung (`GET /api/songster/playlists/{id}/status`
+     aus dem urspruenglichen Konzept) wird durch einen Mitgliedschaftstest
+     gegen `GET /api/songster/playlists` ersetzt (kein zusaetzlicher
+     Adolar-Endpoint noetig) - selbe Faktenlage (existiert +
+     `songster_enabled=1`), ein Request weniger.
+5. **Offen**: End-to-End-Test gegen einen echten Adolar-Server (bisher nur
+   gegen einen mit `global.fetch`-Mocks simulierten Adolar in
+   `backend/test/integration/adolarIntegration.test.ts`): Adolar-Sender
+   anlegen, in Songster Tisch mit dieser Playlist erstellen, mehrere
+   Partien/Neue-Partie-Laeufe spielen, Song-Wiederholungsregeln und
+   Malus-Verhalten verifizieren. Frontend hat noch keine UI zur Auswahl
+   eines `sourcePlaylistId` bei Tischerstellung (nur die Backend-API).

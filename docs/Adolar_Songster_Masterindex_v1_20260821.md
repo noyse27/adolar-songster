@@ -108,3 +108,6 @@ Danach pruefen:
 ## 7. Aenderungsprotokoll
 - v1.0: Initialer Masterindex erstellt.
 - 2026-08-21: Adolar-Integrationskonzept ergaenzt (Abschnitt 3.11).
+- 2026-08-21: Adolar-Integration Schritt 4 umgesetzt (Songster-seitiger
+  Adolar-Client, Batch-Algorithmus, `sourcePlaylistId`-Integration in
+  Tischerstellung/-start) - siehe Abschnitt 6 im Integrationskonzept-Dokument.

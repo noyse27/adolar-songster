@@ -22,11 +22,23 @@ export async function selectSongForGame(
   const candidates = await fetchCandidates(client, gameId, tableSessionId);
 
   if (candidates.length > 0) {
-    return pickRandom(candidates);
+    const song = pickRandom(candidates);
+    await markPlayed(client, song.id);
+    return song;
   }
 
+  // A scoped pool (Adolar-sourced table, see adolarBatch.ts) is the "total"
+  // to compare the session history against for exhaustion, not the whole
+  // song_ref library - otherwise a 50-song batch table would never be seen
+  // as exhausted while other tables' songs still sit in the shared library.
   const totalValidResult = await client.query(
-    `SELECT COUNT(*)::int AS count FROM song_ref WHERE is_valid = TRUE`,
+    `SELECT COUNT(*)::int AS count FROM song_ref sr
+     WHERE sr.is_valid = TRUE
+       AND (
+         NOT EXISTS (SELECT 1 FROM table_session_song_pool WHERE table_session_id = $1)
+         OR sr.id IN (SELECT song_ref_id FROM table_session_song_pool WHERE table_session_id = $1)
+       )`,
+    [tableSessionId],
   );
   const historyCountResult = await client.query(
     `SELECT COUNT(*)::int AS count FROM session_song_history WHERE table_session_id = $1`,
@@ -40,13 +52,27 @@ export async function selectSongForGame(
     await client.query(`DELETE FROM session_song_history WHERE table_session_id = $1`, [tableSessionId]);
     const candidatesAfterReset = await fetchCandidates(client, gameId, tableSessionId);
     if (candidatesAfterReset.length > 0) {
-      return pickRandom(candidatesAfterReset);
+      const song = pickRandom(candidatesAfterReset);
+      await markPlayed(client, song.id);
+      return song;
     }
   }
 
   throw new RoundEngineError('NO_SONGS_AVAILABLE', 'no eligible songs left in the playlist');
 }
 
+// Section 4.4: malus/repeat-avoidance bookkeeping, independent of Adolar's
+// own play_count. Updated on every actual selection, not on every pool
+// insert (see adolarBatch.ts, which deliberately leaves this untouched).
+async function markPlayed(client: Queryable, songId: string): Promise<void> {
+  await client.query(`UPDATE song_ref SET last_played_at = NOW() WHERE id = $1`, [songId]);
+}
+
+// A session with a scoped pool (table_session_song_pool) is restricted to
+// just those song_ref rows (the fixed 50-song Adolar batch drawn once at
+// session start, see adolarBatch.ts); a session with no scoped pool rows
+// keeps drawing from the entire song_ref library, unchanged from before the
+// Adolar integration.
 async function fetchCandidates(
   client: Queryable,
   gameId: string,
@@ -58,7 +84,11 @@ async function fetchCandidates(
      WHERE sr.is_valid = TRUE
        AND sr.year_value IS NOT NULL
        AND sr.id NOT IN (SELECT song_id FROM round WHERE game_id = $1)
-       AND sr.id NOT IN (SELECT song_ref_id FROM session_song_history WHERE table_session_id = $2)`,
+       AND sr.id NOT IN (SELECT song_ref_id FROM session_song_history WHERE table_session_id = $2)
+       AND (
+         NOT EXISTS (SELECT 1 FROM table_session_song_pool WHERE table_session_id = $2)
+         OR sr.id IN (SELECT song_ref_id FROM table_session_song_pool WHERE table_session_id = $2)
+       )`,
     [gameId, tableSessionId],
   );
   return result.rows.map((row) => ({
