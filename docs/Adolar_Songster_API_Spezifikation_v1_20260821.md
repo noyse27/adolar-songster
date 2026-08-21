@@ -111,18 +111,30 @@ POST /tables
 GET /tables/lobby
 - Liefert offene Public-Tische
 
+GET /tables/{tableId}
+- Tischdetails inkl. aktueller Besetzung; wertet bei Aufruf das
+  Admin-Uebergabe-Zeitfenster aus (siehe unten)
+
 POST /tables/{tableId}/join
 - Request:
 {
   "joinAs": "player|spectator",
   "joinCode": "string optional"
 }
+- Spieler-Join nur wenn state=open; Zuschauer-Join auch waehrend state=running
+- Response 409 TABLE_FULL / TABLE_NOT_JOINABLE, 403 TABLE_JOIN_CODE_INVALID
+- Erneuter Join des Tischadmins innerhalb des Reconnect-Fensters storniert die
+  laufende Admin-Uebergabe (FR-016)
 
 POST /tables/{tableId}/leave
+- Verlaesst der Tischadmin den Tisch, startet das 60s-Reconnect-Fenster
+  (FR-016); danach automatische Uebergabe an den laengst anwesenden aktiven
+  Spieler beim naechsten Join/Leave/Start/Detail-Aufruf fuer diesen Tisch
 
 POST /tables/{tableId}/start
-- Nur Tischadmin
-- Voraussetzung: mindestens 2 aktive Spieler
+- Nur aktueller Tischadmin (oder globaler Admin)
+- Voraussetzung: Tisch state=open, mindestens 2 aktive Spieler (FR-020)
+- Erzeugt table_session und game, setzt Tisch auf state=running
 
 POST /tables/{tableId}/new-game
 - Nur Tischadmin
