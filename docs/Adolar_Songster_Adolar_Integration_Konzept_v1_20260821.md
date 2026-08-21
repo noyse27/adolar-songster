@@ -49,9 +49,30 @@ Neuer Schalter im Admin-Einstellungsdialog. Verhalten:
 - Aktiviert: Songster-Verbindungen werden akzeptiert, der Menüeintrag
   "Songster" erscheint im User-Dropdown.
 
-Persistierung: neuer Eintrag in der bestehenden Settings-/Config-Tabelle
-(Adolar-Recherche noch offen: exakter Mechanismus fuer globale Booleans in
-Adolar; vermutlich analog zu bestehenden Feature-Flags dort).
+Persistierung: `control.settings`-Tabelle (Key-Value, `db.py:173-176`,
+Helfer `get_setting`/`set_setting`, `db.py:2003-2011`), Key
+`songster_enabled` ("1"/"0", Default "0") - exakt das Muster, das bereits
+fuer den Adolar4U-Global-Toggle verwendet wird (`adolar4u_enabled`,
+`adolar/adolar4u/service.py:17-52`). Songster folgt diesem Vorbild 1:1:
+- `adolar/songster/service.py`: `get_global_settings()` /
+  `update_global_settings()`, analog `adolar4u/service.py`
+- `GET/PUT /api/admin/songster/settings` (admin-only, audit-geloggt wie
+  bei Adolar4U)
+- `GET /api/songster/status` (fuer jeden eingeloggten Nutzer lesbar) liefert
+  `{ enabled: bool }`, steuert clientseitig die Sichtbarkeit des
+  Menüeintrags (`app.js`, analog `btn-adolar4u`-Handling bei Zeile 5112)
+- Jede `/api/songster/*`-Route prueft `get_global_settings()["enabled"]`
+  serverseitig (403 wenn deaktiviert) - Last.fm-Muster (rein clientseitig,
+  kein globaler Schalter) ist hier NICHT das Vorbild, Adolar4U schon.
+
+**Geklaert (Ruecksprache Produktverantwortlicher, 2026-08-21):**
+- Songster-Sender sind in der normalen Adolar-Radio-/Disco-Ansicht NICHT
+  nutzbar (WHERE songster_enabled=0 in list_radio_stations() fuer diese
+  Ansichten, siehe 3.2).
+- Kein Auto-Freischalt-Zwischenzustand: `songster_enabled` ist bei jedem
+  neu erstellten Sender immer 0, unabhaengig vom Erstellungsweg (auch ueber
+  den neuen "Songster Playlists"-Dialog). Freischalten ist immer ein
+  separater, expliziter Schritt ueber den Play-Button.
 
 ### 3.2 Datenmodell-Erweiterung `radio_stations`
 
@@ -65,17 +86,11 @@ ALTER TABLE radio_stations ADD COLUMN songster_enabled INTEGER NOT NULL DEFAULT 
 `songster_enabled = 1` markiert einen Sender als fuer Songster freigegeben.
 Kein neuer scope-Wert, keine Ueberladung der bestehenden Sichtbarkeitsachse.
 
-Sichtbarkeitsregeln (neu zu ergaenzen an den bestehenden Stellen):
-- `list_radio_stations()` (normale Radio-/Disco-Ansicht): weiterhin wie
-  bisher, zusaetzlich implizit ohne Aenderung - Songster-Sender sind normale
-  Sender und wuerden dort weiter auftauchen, AUSSER sie werden explizit
-  ausgeblendet. Offene Entscheidung (siehe Abschnitt 5): sollen
-  songster_enabled-Sender in der normalen Radio-Liste unsichtbar sein, oder
-  duerfen sie dort parallel auch normal genutzt werden? Nutzeraussage "sollen
-  nicht im Adolar oder Adolar Radio zur Verfuegung stehen" spricht fuer
-  Ausblenden - Vorschlag: `list_radio_stations()` bekommt einen Parameter/
-  WHERE-Zusatz `AND songster_enabled = 0`, der neue Songster-Endpoint
-  (3.4) fragt umgekehrt `WHERE songster_enabled = 1`.
+Sichtbarkeitsregeln:
+- **Geklaert**: Songster-Sender sind in der normalen Adolar-Ansicht
+  (Web/Radio/Disco) nicht nutzbar. `list_radio_stations()` bekommt fuer
+  diese Aufrufer einen WHERE-Zusatz `AND songster_enabled = 0`; der neue
+  Songster-Endpoint (3.4) fragt umgekehrt `WHERE songster_enabled = 1`.
 
 ### 3.3 Songster-Playlist-Verwaltung (UI)
 
@@ -88,10 +103,14 @@ Abweichungen vom bestehenden Radio-Sender-Dialog:
 - Leerer Dialog beim ersten Aufruf (keine vorbefuellten Eintraege wie
   Adolar Radio/Adolar4U - das waren nur Beispiele in der Konzeptphase). Nur
   "+ Neue Playlist erstellen" und "Schliessen".
-- Liste zeigt ausschliesslich Sender mit `songster_enabled = 1` ODER neu
-  erstellte (noch nicht freigeschaltete) Songster-Kandidaten - zu klaeren,
-  ob "neu erstellen" direkt freischaltet oder ein Zwischenzustand existiert
-  (siehe 5).
+- Liste zeigt alle Sender, die ueber diesen Dialog erstellt wurden
+  (unabhaengig vom `songster_enabled`-Status - sonst waeren frisch
+  angelegte, noch nicht freigeschaltete Sender nirgends sichtbar/
+  editierbar). Abgrenzung von "normalen" Radio-Sendern erfolgt ueber ein
+  Herkunfts-Flag oder eine eigene Sicht (Detail bei Umsetzung).
+- **Geklaert**: kein Auto-Freischalt-Zwischenzustand. `songster_enabled`
+  ist bei Erstellung immer 0. Freischalten ist immer ein separater,
+  expliziter Klick auf den Freischalt-Button.
 - Je Zeile: Play-Icon wird zum Freischalt-Button (toggelt
   `songster_enabled`), Zahnrad bleibt Bearbeiten, Papierkorb bleibt Loeschen.
   Kein separates Checkbox-Element.
@@ -101,8 +120,7 @@ Abweichungen vom bestehenden Radio-Sender-Dialog:
   Songster-Sender schlicht nicht gesetzt/angezeigt).
 - Scope-Auswahl (Global/Privat) im Erstellen-Dialog entfernt - neu erstellte
   Songster-Sender sind immer `scope='global'` (fuer alle Adolar-Admins
-  sichtbar/verwaltbar) und zusaetzlich `songster_enabled` (Default je nach
-  Klaerung 5).
+  sichtbar/verwaltbar), `songster_enabled` startet bei 0.
 
 ### 3.4 Neue API fuer den Songster-Client
 
@@ -131,26 +149,55 @@ GET /api/songster/playlists/{id}/tracks?page=1&per_page=50
   (alles bereits native Spalten auf tracks, keine Schemaaenderung noetig)
 - Filter wird bei jedem Aufruf live ausgewertet (siehe 2.) - neue
   Compilations erscheinen ohne Zusatzaufwand
+
+GET /api/songster/playlists/{id}/status
+- Prueft ob eine zuvor gewaehlte Playlist noch existiert und
+  songster_enabled=1 ist (kann in der Zwischenzeit deaktiviert worden
+  sein) - wird von Songster bei Tischerstellung aufgerufen (siehe 4.2)
 ```
+
+**Geklaert (Rate-Limits, Schaetzung)**: Songster kontaktiert Adolar laut
+Produktverantwortlichem NUR bei Tischerstellung (Playlist-Auswahl +
+Verfuegbarkeitspruefung + Batch-Abruf), nicht laufend waehrend einer Partie
+(siehe 4.1 - kein Dauerverbindungsmanagement). Bei 5-10 gleichzeitigen
+Tischen ergibt sich im Worst Case (alle Tische fast zeitgleich erstellt) ein
+kurzer Burst von grob 5 Requests je Tischerstellung (Status-Check + 3-4
+Seiten Track-Abruf) = ca. 50 Requests in wenigen Sekunden. Empfehlung,
+analog zum bereits in Songster etablierten Muster (apiLimiter/authLimiter,
+Sprint 1):
+- `/api/songster/*` generell: 60 Requests/Minute pro Songster-Client
+- `/api/songster/login`: enger, 10 Requests/Minute (Login ist selten -
+  nur bei Tischerstellung, kein Dauerbetrieb)
 
 ## 4. Aenderungen in Songster
 
 ### 4.1 Verbindungsaufbau
 
+**Geklaert**: Songster kontaktiert Adolar ausschliesslich bei
+Tischerstellung (Playlist-Auswahl inkl. Verfuegbarkeitspruefung, danach
+Batch-Abruf) - keine Dauerverbindung, kein laufendes Token-Refresh waehrend
+einer Partie. Vereinfacht die Umsetzung erheblich: kein Hintergrundprozess,
+kein Session-Management ueber die Tischsession hinaus.
+
 Neue Backend-Konfiguration (ENV): `ADOLAR_BASE_URL`, `ADOLAR_CLIENT_VERSION`
-(= package.json-Version). Login gegen `/api/songster/login` beim Start bzw.
-bei Bedarf, Token serverseitig cachen/erneuern.
+(= package.json-Version). Login gegen `/api/songster/login` bedarfsweise
+(lazy, bei der ersten Playlist-Auswahl nach Songster-Start), Token
+serverseitig kurzlebig cachen; kein periodisches Refresh noetig, da nur
+punktuell genutzt.
 
 ### 4.2 Playlist-Auswahl bei Tischerstellung
 
 `POST /tables` bekommt ein optionales Feld `sourcePlaylistId` (Adolar-
-Sender-ID). Ohne Angabe: Fallback auf lokal per Admin gepflegte Songs
-(`/admin/songs`, wie bisher) - erlaubt schrittweise Migration, bricht nichts
-Bestehendes.
+Sender-ID). Ablauf bei Angabe: `GET /api/songster/playlists/{id}/status`
+pruefen (noch aktiv? siehe 3.4) - bei Nichtverfuegbarkeit klarer Fehler an
+den Tischadmin statt spaeterem Fehlschlag beim Rundenstart. Ohne Angabe:
+Fallback auf lokal per Admin gepflegte Songs (`/admin/songs`, wie bisher) -
+erlaubt schrittweise Migration, bricht nichts Bestehendes.
 
 ### 4.3 Batch-Lademechanismus (50er-Fenster)
 
-Bei Tischsession-Start (sobald `sourcePlaylistId` gesetzt ist):
+Bei Tischsession-Start (sobald `sourcePlaylistId` gesetzt und verfuegbar
+ist):
 1. Kandidaten von `GET /api/songster/playlists/{id}/tracks` seitenweise
    holen (page/per_page=50), bis genug Kandidaten fuer die Auswahl vorliegen
    (z. B. 3-4 Seiten als Rohmaterial, konfigurierbar).
@@ -179,19 +226,14 @@ Session-Reset erst nach vollstaendiger Ausschoepfung) greifen unveraendert
 auf dieser kleineren Menge - Reset-Zyklen werden dadurch bewusst haeufiger,
 was fuer einen Spieleabend angemessen ist.
 
-## 5. Offene Punkte (vor Umsetzung zu klaeren)
+## 5. Entscheidungen (Ruecksprache Produktverantwortlicher, 2026-08-21)
 
-1. Sollen `songster_enabled=1`-Sender in der normalen Radio-Senderliste
-   (Adolar Web/Radio/Disco) komplett verschwinden, oder dort weiter parallel
-   nutzbar bleiben (nur zusaetzlich fuer Songster freigegeben)?
-2. Gibt es einen Zwischenzustand "Songster-Sender erstellt, aber noch nicht
-   freigeschaltet" (songster_enabled=0 direkt nach Erstellung, muss explizit
-   ueber den Freischalt-Button aktiviert werden), oder wird beim Erstellen
-   ueber den Songster-Dialog sofort songster_enabled=1 gesetzt?
-3. Persistenzmechanismus fuer globale Boolean-Einstellungen in Adolar
-   (welche Tabelle/welches Muster) - noch nicht recherchiert.
-4. Rate-Limits/Quoten fuer den neuen `/api/songster/*`-Client analog zu
-   bestehenden Clients?
+Alle vier zuvor offenen Punkte sind geklaert (Details jeweils inline in
+Abschnitt 3/4 vermerkt):
+1. Songster-Sender sind in Adolar Web/Radio/Disco nicht nutzbar (3.2).
+2. Kein Auto-Freischalt-Zwischenzustand; immer manuelles Freischalten (3.1).
+3. Persistenz ueber `control.settings` + Adolar4U-Muster (3.1).
+4. Rate-Limit-Schaetzung: 60/min generell, 10/min fuer Login (3.4).
 
 ## 6. Vorgeschlagene Umsetzungsreihenfolge
 
