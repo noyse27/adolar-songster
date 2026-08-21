@@ -1,14 +1,24 @@
 # Adolar Songster - CI, Security und Stability Konzept
 
-Version: 1.0
+Version: 1.1
 Stand: 2026-08-21
 Status: verbindlich fuer Projektstart
+
+Referenz: Die produktuebergreifende Baseline fuer die gesamte Adolar-Familie
+steht in `musicapp/docs/INTEGRATION_STANDARDS.md` Abschnitt 7 (Pflicht-
+Quality-Gates, Security-Baseline, Stabilitaets-Baseline). Dieses Dokument
+uebernimmt diese Baseline nicht mehr wortwoertlich, sondern verweist darauf
+und fuehrt nur Songster-spezifische Ergaenzungen (Testpyramide-Inhalte,
+CI-Laufstrategie-Details, Metrik-Zielwerte). Bei Aenderung der zentralen
+Baseline: dieses Dokument nicht separat nachpflegen, es zieht die
+Referenz automatisch nach.
 
 ## 1. Ziel
 Sicherheit und Stabilitaet sind ab Projektbeginn Teil der Lieferqualitaet und nicht nachgelagert.
 Jeder Merge muss automatisierte Qualitaetspruefungen bestehen.
 
 ## 2. Pflicht-Quality-Gates (ab Sprint 0)
+Entspricht der Familie-Baseline (`INTEGRATION_STANDARDS.md` Abschnitt 7):
 1. Linting (Frontend + Backend)
 2. Unit-Tests
 3. Integrations-Tests (API + DB)
@@ -38,17 +48,21 @@ Merge-Regel:
 - Ein komplettes Testspiel
 
 ## 4. Security-Baseline
-1. Secret Management nur ueber CI-Secrets/Umgebungsvariablen.
-2. Keine Secrets im Repository (automatischer Secret-Scan).
-3. Dependency Updates regelmaessig (z. B. Dependabot/Renovate).
-4. Kritische Schwachstellen blockieren Releases.
+Uebernommen aus `INTEGRATION_STANDARDS.md` Abschnitt 7 (Punkte 1-4 dort
+identisch). Songster-spezifische Ergaenzung:
 5. Security-relevante Fehler in Ticket/Issue mit Prioritaet dokumentieren.
+6. Aenderungen, die die Adolar-Anbindung betreffen (siehe
+   `Adolar_Songster_Adolar_Integration_Konzept_v1_20260821.md`), halten
+   sich an das Namensraum-Prinzip aus `INTEGRATION_STANDARDS.md`
+   Abschnitt 2 - kein Zugriff auf/Ueberladen von Feldern anderer
+   Adolar-Produkte.
 
 ## 5. Stabilitaets-Baseline
-1. Regressionstestpflicht bei jeder Regelanpassung.
-2. Reproduzierbare Testdaten fuer Kernflows.
-3. Deterministische Zeitsteuerung in Tests (Mock/Clock).
-4. Healthchecks fuer Backend und DB.
+Uebernommen aus `INTEGRATION_STANDARDS.md` Abschnitt 7 (Regressionstest-
+pflicht bei geteilten Routen/Tabellen, reproduzierbare Testdaten,
+Healthchecks). Songster-spezifische Ergaenzung:
+1. Deterministische Zeitsteuerung in Tests (Mock/Clock) - insbesondere fuer
+   Malus-/`last_played_at`-Logik (Integrationskonzept Abschnitt 4.4).
 
 ## 6. CI-Laufstrategie
 1. Pull Request Pipeline
@@ -71,3 +85,6 @@ Merge-Regel:
 1. Jeder PR-Ersteller stellt gruene Pipeline sicher.
 2. Reviewer pruefen zusaetzlich Regeltests bei Spiellogik-Aenderungen.
 3. Maintainer halten Branch-Protection und CI-Definition aktuell.
+4. PRs, die die Adolar-Anbindung aendern, aktualisieren zusaetzlich
+   `musicapp/docs/PRODUCT_INTEGRATIONS.md` Abschnitt 5 (Songster) - siehe
+   `INTEGRATION_STANDARDS.md` Abschnitt 6 (Aenderungsprozess).
