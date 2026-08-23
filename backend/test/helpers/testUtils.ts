@@ -35,6 +35,16 @@ export async function createUserDirect(opts: {
   return result.rows[0];
 }
 
+/** Marks a seated player ready directly via SQL - used by tests that need
+ * a table to actually start (see tables.ts's /ready gate) but aren't
+ * themselves testing the readiness mechanic. */
+export async function markSeatReadyDirect(tableId: string, userId: string): Promise<void> {
+  await pool.query(
+    `UPDATE table_seat SET ready = TRUE WHERE table_id = $1 AND user_id = $2 AND left_at IS NULL`,
+    [tableId, userId],
+  );
+}
+
 export async function createInviteDirect(createdBy: string, overrides: Partial<{
   maxUses: number;
   expiresAt: Date | null;

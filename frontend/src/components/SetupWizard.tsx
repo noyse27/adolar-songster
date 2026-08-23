@@ -1,18 +1,22 @@
 import { FormEvent, useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { apiFetch, ApiError } from '../api';
 import adolarLogo from '../assets/brand/adolar-logo.svg';
 
-// FR-062: browser onboarding wizard - admin creation, first invite, test
-// table. FR-063: integrated function test at the end.
+// FR-062: browser onboarding wizard - admin creation, music source,
+// first invite, test table. FR-063: integrated function test at the end.
 type WizardStep =
   | 'loading'
-  | 'alreadySetUp'
+  | 'reauth'
   | 'createAdmin'
+  | 'configureMusicSource'
   | 'createInvite'
   | 'createTestTable'
   | 'selfTest'
   | 'done'
   | 'error';
+
+type MusicSourceSubStep = 'enterUrl' | 'enterToken' | 'confirmed';
 
 interface SelfTestResult {
   healthy: boolean;
@@ -20,6 +24,7 @@ interface SelfTestResult {
 }
 
 export function SetupWizard() {
+  const navigate = useNavigate();
   const [step, setStep] = useState<WizardStep>('loading');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -27,18 +32,53 @@ export function SetupWizard() {
   const [adminToken, setAdminToken] = useState<string | null>(null);
   const [adminUsername, setAdminUsername] = useState<string | null>(null);
 
+  // Resuming after a page reload: we know from /setup/status which step to
+  // land on, but the admin bearer token only ever lived in memory, so a
+  // fresh login is needed first (see handleReauth below).
+  const [pendingStep, setPendingStep] = useState<WizardStep | null>(null);
+  const [reauthForm, setReauthForm] = useState({ usernameOrEmail: '', password: '' });
+
+  const [musicSourceSubStep, setMusicSourceSubStep] = useState<MusicSourceSubStep>('enterUrl');
+  const [adolarBaseUrl, setAdolarBaseUrl] = useState('');
+  const [adolarApiToken, setAdolarApiToken] = useState('');
+  const [adolarPlaylistCount, setAdolarPlaylistCount] = useState<number | null>(null);
+  const [testingConnection, setTestingConnection] = useState(false);
+
   const [inviteCode, setInviteCode] = useState<string | null>(null);
   const [testTableName, setTestTableName] = useState<string | null>(null);
   const [selfTest, setSelfTest] = useState<SelfTestResult | null>(null);
 
   useEffect(() => {
-    apiFetch<{ adminExists: boolean }>('/setup/status')
-      .then((status) => setStep(status.adminExists ? 'alreadySetUp' : 'createAdmin'))
+    apiFetch<{ adminExists: boolean; musicSourceConfigured: boolean }>('/setup/status')
+      .then((status) => {
+        if (!status.adminExists) {
+          setStep('createAdmin');
+          return;
+        }
+        setPendingStep(status.musicSourceConfigured ? 'createInvite' : 'configureMusicSource');
+        setStep('reauth');
+      })
       .catch(() => {
         setErrorMessage('Backend nicht erreichbar. Bitte Compose-Setup pruefen.');
         setStep('error');
       });
   }, []);
+
+  async function handleReauth(event: FormEvent) {
+    event.preventDefault();
+    setErrorMessage(null);
+    try {
+      const login = await apiFetch<{ accessToken: string; user: { username: string } }>('/auth/login', {
+        method: 'POST',
+        body: reauthForm,
+      });
+      setAdminToken(login.accessToken);
+      setAdminUsername(login.user.username);
+      setStep(pendingStep ?? 'createInvite');
+    } catch (err) {
+      setErrorMessage(describeError(err, 'Anmeldung fehlgeschlagen.'));
+    }
+  }
 
   async function handleCreateAdmin(event: FormEvent) {
     event.preventDefault();
@@ -51,9 +91,38 @@ export function SetupWizard() {
       );
       setAdminToken(login.accessToken);
       setAdminUsername(login.user.username);
-      setStep('createInvite');
+      setStep('configureMusicSource');
     } catch (err) {
       setErrorMessage(describeError(err, 'Admin-Anlage fehlgeschlagen.'));
+    }
+  }
+
+  function handleMusicSourceUrlNext(event: FormEvent) {
+    event.preventDefault();
+    setErrorMessage(null);
+    setMusicSourceSubStep('enterToken');
+  }
+
+  async function handleMusicSourceTestConnection(event: FormEvent) {
+    event.preventDefault();
+    setErrorMessage(null);
+    setTestingConnection(true);
+    try {
+      const result = await apiFetch<{ ok: true; baseUrl: string; playlistCount: number }>(
+        '/setup/music-source',
+        {
+          method: 'POST',
+          body: { source: 'adolar', baseUrl: adolarBaseUrl, apiToken: adolarApiToken },
+          token: adminToken ?? undefined,
+        },
+      );
+      setAdolarBaseUrl(result.baseUrl);
+      setAdolarPlaylistCount(result.playlistCount);
+      setMusicSourceSubStep('confirmed');
+    } catch (err) {
+      setErrorMessage(describeMusicSourceError(err));
+    } finally {
+      setTestingConnection(false);
     }
   }
 
@@ -77,7 +146,7 @@ export function SetupWizard() {
     try {
       const table = await apiFetch<{ name: string }>('/tables', {
         method: 'POST',
-        body: { name: 'Testtisch', visibility: 'public' },
+        body: { name: 'Testtisch', visibility: 'private' },
         token: adminToken ?? undefined,
       });
       setTestTableName(table.name);
@@ -117,13 +186,37 @@ export function SetupWizard() {
 
       {step === 'loading' && <p>Lade Setup-Status...</p>}
 
-      {step === 'alreadySetUp' && (
-        <p>Ein Admin-Account existiert bereits. Der Einrichtungsassistent ist nur fuer die Erstinstallation gedacht.</p>
+      {step === 'reauth' && (
+        <section>
+          <h2 className="adolar-heading">Weiter geht's</h2>
+          <p>Ein Admin-Account existiert bereits. Zum Fortsetzen bitte nochmal anmelden.</p>
+          <form onSubmit={handleReauth} className="wizard-form">
+            <label>
+              Benutzername oder E-Mail
+              <input
+                required
+                autoFocus
+                value={reauthForm.usernameOrEmail}
+                onChange={(e) => setReauthForm({ ...reauthForm, usernameOrEmail: e.target.value })}
+              />
+            </label>
+            <label>
+              Passwort
+              <input
+                type="password"
+                required
+                value={reauthForm.password}
+                onChange={(e) => setReauthForm({ ...reauthForm, password: e.target.value })}
+              />
+            </label>
+            <button type="submit">Anmelden</button>
+          </form>
+        </section>
       )}
 
       {step === 'createAdmin' && (
         <section>
-          <h2 className="adolar-heading">Schritt 1 von 3: Admin anlegen</h2>
+          <h2 className="adolar-heading">Schritt 1 von 4: Admin anlegen</h2>
           <form onSubmit={handleCreateAdmin} className="wizard-form">
             <label>
               Benutzername
@@ -157,28 +250,131 @@ export function SetupWizard() {
         </section>
       )}
 
+      {step === 'configureMusicSource' && (
+        <section>
+          <h2 className="adolar-heading">Schritt 2 von 4: Musikdaten</h2>
+
+          <label style={{ display: 'block', marginBottom: '1rem' }}>
+            Musikquelle
+            <select value="adolar" disabled>
+              <option value="adolar">Adolar</option>
+            </select>
+          </label>
+
+          {musicSourceSubStep === 'enterUrl' && (
+            <form onSubmit={handleMusicSourceUrlNext} className="wizard-form">
+              <label>
+                Adolar-Serveradresse
+                <input
+                  required
+                  placeholder="adolar.beispiel.de"
+                  value={adolarBaseUrl}
+                  onChange={(e) => setAdolarBaseUrl(e.target.value)}
+                />
+              </label>
+              <p style={{ fontSize: '0.85em', opacity: 0.8 }}>
+                http:// oder https:// kann weggelassen werden - https wird dann automatisch angenommen.
+              </p>
+              <button type="submit">Weiter</button>
+            </form>
+          )}
+
+          {musicSourceSubStep === 'enterToken' && (
+            <form onSubmit={handleMusicSourceTestConnection} className="wizard-form">
+              <p>
+                Server: <code>{adolarBaseUrl}</code>
+              </p>
+              <label>
+                App-Token
+                <input
+                  required
+                  autoFocus
+                  type="password"
+                  disabled={testingConnection}
+                  value={adolarApiToken}
+                  onChange={(e) => setAdolarApiToken(e.target.value)}
+                />
+              </label>
+              <p style={{ fontSize: '0.85em', opacity: 0.8 }}>
+                Erzeugt in Adolar Web unter API-Zugriff (Produkt "songster").
+              </p>
+              {testingConnection && <p>Server wird kontaktiert…</p>}
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <button
+                  type="button"
+                  disabled={testingConnection}
+                  onClick={() => {
+                    setErrorMessage(null);
+                    setMusicSourceSubStep('enterUrl');
+                  }}
+                >
+                  Zurück
+                </button>
+                <button type="submit" disabled={testingConnection}>
+                  {testingConnection ? 'Verbindung testen…' : 'Verbindung testen'}
+                </button>
+              </div>
+            </form>
+          )}
+
+          {musicSourceSubStep === 'confirmed' && (
+            <>
+              <p>
+                Verbindung bestätigt: <code>{adolarBaseUrl}</code> ({adolarPlaylistCount}{' '}
+                {adolarPlaylistCount === 1 ? 'Playlist' : 'Playlists'} gefunden).
+              </p>
+              <button onClick={() => setStep('createInvite')}>Weiter</button>
+            </>
+          )}
+        </section>
+      )}
+
       {step === 'createInvite' && (
         <section>
-          <h2 className="adolar-heading">Schritt 2 von 3: Erste Einladung</h2>
+          <h2 className="adolar-heading">Schritt 3 von 4: Erste Einladung</h2>
           <p>Admin "{adminUsername}" angelegt.</p>
-          <button onClick={handleCreateInvite}>Einladung erstellen</button>
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <button onClick={handleCreateInvite}>Einladung erstellen</button>
+            <button
+              type="button"
+              onClick={() => {
+                setErrorMessage(null);
+                setStep('createTestTable');
+              }}
+            >
+              Überspringen
+            </button>
+          </div>
         </section>
       )}
 
       {step === 'createTestTable' && (
         <section>
-          <h2 className="adolar-heading">Schritt 3 von 3: Testtisch</h2>
-          <p>
-            Einladungscode: <code>{inviteCode}</code>
-          </p>
-          <button onClick={handleCreateTestTable}>Testtisch erstellen</button>
+          <h2 className="adolar-heading">Schritt 4 von 4: Testtisch</h2>
+          {inviteCode && (
+            <p>
+              Einladungscode: <code>{inviteCode}</code>
+            </p>
+          )}
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <button onClick={handleCreateTestTable}>Testtisch erstellen</button>
+            <button
+              type="button"
+              onClick={() => {
+                setErrorMessage(null);
+                setStep('selfTest');
+              }}
+            >
+              Überspringen
+            </button>
+          </div>
         </section>
       )}
 
       {step === 'selfTest' && (
         <section>
           <h2 className="adolar-heading">Funktionstest</h2>
-          <p>Testtisch "{testTableName}" erstellt.</p>
+          <p>{testTableName ? `Testtisch "${testTableName}" erstellt.` : 'Kein Testtisch angelegt.'}</p>
           <button onClick={handleSelfTest}>Funktionstest starten</button>
         </section>
       )}
@@ -192,6 +388,7 @@ export function SetupWizard() {
             <li>Rundenlogik: {selfTest.checks.roundLogic ? 'OK' : 'Fehler'}</li>
           </ul>
           <p>{selfTest.healthy ? 'Alle Funktionstests erfolgreich.' : 'Bitte offene Punkte pruefen.'}</p>
+          <button onClick={() => navigate('/')}>Fertig</button>
         </section>
       )}
     </main>
@@ -204,4 +401,13 @@ function describeError(err: unknown, fallback: string): string {
     return body?.message ?? body?.error ?? fallback;
   }
   return fallback;
+}
+
+function describeMusicSourceError(err: unknown): string {
+  if (err instanceof ApiError) {
+    const body = err.body as { error?: string; detail?: string } | null;
+    if (body?.detail) return `Verbindung fehlgeschlagen: ${body.detail}`;
+    return body?.error ?? 'Verbindung zu Adolar fehlgeschlagen.';
+  }
+  return 'Backend nicht erreichbar. Bitte später erneut versuchen.';
 }

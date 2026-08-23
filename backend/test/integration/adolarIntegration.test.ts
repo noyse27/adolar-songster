@@ -1,7 +1,8 @@
 import request from 'supertest';
 import { createApp } from '../../src/app';
 import { pool } from '../../src/db/pool';
-import { authHeader, createUserDirect, uniqueSuffix } from '../helpers/testUtils';
+import { syncAllAdolarPlaylists } from '../../src/services/adolarSync';
+import { authHeader, createUserDirect, markSeatReadyDirect, uniqueSuffix } from '../helpers/testUtils';
 
 const app = createApp();
 
@@ -143,6 +144,14 @@ describe('Adolar integration (Adolar_Songster_Adolar_Integration_Konzept section
     // local songs must not leak into this Adolar-sourced session's pool.
     await pool.query(`UPDATE song_ref SET is_valid = FALSE`);
 
+    // Session start no longer talks to Adolar live (see adolarBatch.ts) -
+    // it reads whatever the daily/manual sync already upserted, so a test
+    // (like a real admin) has to run that sync at least once first.
+    await syncAllAdolarPlaylists();
+
+    await markSeatReadyDirect(tableId, owner.id);
+    await markSeatReadyDirect(tableId, other.id);
+
     const startResponse = await request(app)
       .post(`/api/v1/tables/${tableId}/start`)
       .set(authHeader(owner.id, 'user'));
@@ -195,6 +204,9 @@ describe('Adolar integration (Adolar_Songster_Adolar_Integration_Konzept section
     // between table creation and session start.
     mockAdolar({ playlistIds: [] });
 
+    await markSeatReadyDirect(tableId, owner.id);
+    await markSeatReadyDirect(tableId, other.id);
+
     const startResponse = await request(app)
       .post(`/api/v1/tables/${tableId}/start`)
       .set(authHeader(owner.id, 'user'));
@@ -224,6 +236,9 @@ describe('Adolar integration (Adolar_Songster_Adolar_Integration_Konzept section
        VALUES ('local', $1, $2, 1990, 180)`,
       [`local_${uniqueSuffix()}`, `Local Song ${uniqueSuffix()}`],
     );
+
+    await markSeatReadyDirect(tableId, owner.id);
+    await markSeatReadyDirect(tableId, other.id);
 
     const startResponse = await request(app)
       .post(`/api/v1/tables/${tableId}/start`)

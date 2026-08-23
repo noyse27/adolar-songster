@@ -1,4 +1,4 @@
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '/api/v1';
+export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '/api/v1';
 
 export class ApiError extends Error {
   status: number;
@@ -29,6 +29,15 @@ export async function apiFetch<T>(
   const data = response.status === 204 ? null : await response.json().catch(() => null);
 
   if (!response.ok) {
+    // A 401 on a call that *presented* a token means that token is no
+    // longer valid (expired, or the user behind it no longer exists/active
+    // - e.g. after a dev DB reset). Only fires for authenticated calls, not
+    // e.g. a failed /auth/login attempt (no token sent there). AuthProvider
+    // listens for this to clear the stale session so every page's existing
+    // "bitte anmelden" guard takes over, instead of the app looking dead.
+    if (response.status === 401 && options.token) {
+      window.dispatchEvent(new CustomEvent('adolar-songster:unauthorized'));
+    }
     throw new ApiError(response.status, data);
   }
 

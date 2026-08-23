@@ -3,6 +3,8 @@ import argon2 from 'argon2';
 import { checkDbConnection, pool } from '../db/pool';
 import { requireAdmin, requireAuth } from '../middleware/auth';
 import { isPlacementCorrect } from '../services/timeline';
+import { testAdolarConnection } from '../services/adolarClient';
+import { getSetting, setSetting } from '../services/systemSettings';
 
 export const setupRouter = Router();
 
@@ -10,7 +12,60 @@ export const setupRouter = Router();
 // to show the "create admin" step or skip straight past it.
 setupRouter.get('/setup/status', async (_req, res) => {
   const result = await pool.query(`SELECT id FROM app_user WHERE role = 'admin' LIMIT 1`);
-  res.status(200).json({ adminExists: (result.rowCount ?? 0) > 0 });
+  const adolarBaseUrl = await getSetting('adolar.base_url');
+  res.status(200).json({
+    adminExists: (result.rowCount ?? 0) > 0,
+    musicSourceConfigured: adolarBaseUrl !== null,
+  });
+});
+
+// Setup wizard "Musikdaten" step: pick a music source (only Adolar for
+// now) and configure the connection. Tested with the submitted credentials
+// before anything is persisted, so a typo never gets saved as "working".
+setupRouter.post('/setup/music-source', requireAuth, requireAdmin, async (req, res) => {
+  const { source = 'adolar', baseUrl: rawBaseUrl, apiToken: rawApiToken } = req.body ?? {};
+
+  if (source !== 'adolar') {
+    res.status(400).json({ error: 'source must be adolar' });
+    return;
+  }
+  if (!rawBaseUrl || typeof rawBaseUrl !== 'string' || !rawApiToken || typeof rawApiToken !== 'string') {
+    res.status(400).json({ error: 'baseUrl and apiToken are required' });
+    return;
+  }
+  // Defensive: copy-pasted tokens/URLs commonly carry a trailing newline or
+  // stray whitespace, which would otherwise turn into a confusing 401.
+  const baseUrl = rawBaseUrl.trim();
+  const apiToken = rawApiToken.trim();
+
+  const schemeGiven = /^https?:\/\//i.test(baseUrl);
+  const httpsUrl = schemeGiven ? baseUrl : `https://${baseUrl}`;
+
+  let result = await testAdolarConnection(httpsUrl, apiToken);
+  let normalizedBaseUrl = httpsUrl;
+
+  // No scheme was given, so we guessed https first (secure by default);
+  // a lot of Adolar installs run plain http on a LAN (e.g. a bare IP:port),
+  // so fall back to that before giving up - matches "url ohne http/https"
+  // actually working rather than silently only trying https.
+  if (!result.ok && !schemeGiven) {
+    const httpUrl = `http://${baseUrl}`;
+    const httpResult = await testAdolarConnection(httpUrl, apiToken);
+    if (httpResult.ok) {
+      result = httpResult;
+      normalizedBaseUrl = httpUrl;
+    }
+  }
+
+  if (!result.ok) {
+    res.status(400).json({ error: 'connection test failed', detail: result.error });
+    return;
+  }
+
+  await setSetting('adolar.base_url', normalizedBaseUrl);
+  await setSetting('adolar.api_token', apiToken);
+
+  res.status(200).json({ ok: true, baseUrl: normalizedBaseUrl, playlistCount: result.playlistCount });
 });
 
 // One-time bootstrap: creates the first admin account. Only usable while

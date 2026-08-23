@@ -2,10 +2,58 @@ import { Router } from 'express';
 import crypto from 'crypto';
 import { pool } from '../db/pool';
 import { requireAdmin, requireAuth } from '../middleware/auth';
+import { getSetting } from '../services/systemSettings';
+import { syncAllAdolarPlaylists } from '../services/adolarSync';
 
 export const adminRouter = Router();
 
 adminRouter.use(requireAuth, requireAdmin);
+
+// Read-only complement to POST /setup/music-source (which the admin page
+// reuses to reconfigure) - never returns the token itself.
+adminRouter.get('/music-source', async (_req, res) => {
+  const baseUrl = await getSetting('adolar.base_url');
+  const lastSyncResult = await pool.query(`SELECT MAX(synced_at) AS last_synced_at FROM adolar_playlist_track`);
+  res.status(200).json({
+    configured: baseUrl !== null,
+    baseUrl,
+    lastSyncedAt: lastSyncResult.rows[0].last_synced_at,
+  });
+});
+
+// Manual trigger for the same full-library sync the daily schedule runs
+// (see scheduler.ts) - lets an admin make a freshly-created/just-enabled
+// Adolar playlist usable right away instead of waiting for the next
+// scheduled run. Synchronous: a real playlist can take well over a minute
+// to page through, and the admin page shows a "running" state while it waits.
+adminRouter.post('/adolar-sync', async (_req, res) => {
+  const result = await syncAllAdolarPlaylists();
+  res.status(200).json(result);
+});
+
+// Backs the admin user-management screen: the mutation endpoints below
+// (invite-permission, revoke-invites, reset-invite-quota) all need a
+// userId, and this is the only way to discover one.
+adminRouter.get('/users', async (_req, res) => {
+  const result = await pool.query(
+    `SELECT id, username, email, role, status, can_create_invites, karma_points, score_points, created_at
+     FROM app_user ORDER BY created_at DESC`,
+  );
+
+  res.status(200).json({
+    users: result.rows.map((row) => ({
+      userId: row.id,
+      username: row.username,
+      email: row.email,
+      role: row.role,
+      status: row.status,
+      canCreateInvites: row.can_create_invites,
+      karmaPoints: row.karma_points,
+      scorePoints: row.score_points,
+      createdAt: row.created_at,
+    })),
+  });
+});
 
 // Grant or revoke a user's right to create invites.
 adminRouter.post('/users/:userId/invite-permission', async (req, res) => {

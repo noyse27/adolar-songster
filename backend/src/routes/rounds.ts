@@ -3,6 +3,9 @@ import { pool } from '../db/pool';
 import { AuthenticatedRequest, requireAuth } from '../middleware/auth';
 import { RoundEngineError } from '../services/errors';
 import { claimToken, startRound, submitBonusGuess, submitGuess, submitTokenGuess } from '../services/roundEngine';
+import { setRoundReady } from '../services/roundReady';
+import { loadGameState } from '../services/gameState';
+import { BONUS_WINDOW_MS, COUNTDOWN_MS, SONG_DURATION_MS } from '../services/roundConfig';
 
 export const roundsRouter = Router();
 
@@ -17,6 +20,7 @@ const STATUS_BY_ERROR_CODE: Record<string, number> = {
   INVALID_GUESS: 400,
   TOKEN_NOT_AVAILABLE: 409,
   TOKEN_ALREADY_USED: 409,
+  SITTING_OUT: 403,
 };
 
 function handleEngineError(err: unknown, res: Response): boolean {
@@ -68,6 +72,40 @@ roundsRouter.get('/games/:gameId', requireAuth, async (req, res) => {
   });
 });
 
+// Consolidated snapshot for the Playboard client (players + full timelines
+// + current round incl. reveal-if-resolved) - what GET /games/:gameId and
+// GET .../rounds/:roundId each give separately, merged into the one shape
+// the socket broadcaster (broadcastGame) also emits on every state change.
+roundsRouter.get('/games/:gameId/state', requireAuth, async (req, res) => {
+  const state = await loadGameState(req.params.gameId, COUNTDOWN_MS, SONG_DURATION_MS, BONUS_WINDOW_MS);
+  if (!state) {
+    res.status(404).json({ error: 'game not found' });
+    return;
+  }
+  res.status(200).json(state);
+});
+
+// Self-service per-round readiness (see roundReady.ts): any active player
+// marks themselves ready for the next round. Auto-starts the round once
+// everyone is ready, or after the 30s window with stragglers sitting the
+// round out - there is no response payload describing the outcome, the
+// caller (and everyone else) finds out via the game:update broadcast.
+roundsRouter.post('/games/:gameId/ready', requireAuth, async (req: AuthenticatedRequest, res) => {
+  const { ready = true } = req.body ?? {};
+  if (typeof ready !== 'boolean') {
+    res.status(400).json({ error: 'ready must be a boolean' });
+    return;
+  }
+  try {
+    await setRoundReady(req.params.gameId, req.userId as string, ready);
+    res.status(200).json({ accepted: true });
+  } catch (err) {
+    if (!handleEngineError(err, res)) throw err;
+  }
+});
+
+// Manual/admin override - see roundEngine.startRound's comment. Normal
+// play uses POST /games/:id/ready instead.
 roundsRouter.post('/games/:gameId/rounds', requireAuth, async (req: AuthenticatedRequest, res) => {
   try {
     const round = await startRound(req.params.gameId, req.userId as string, req.userRole);

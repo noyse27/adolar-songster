@@ -1,0 +1,127 @@
+import { useEffect, useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import './pages.css';
+import { useAuth } from '../auth/AuthContext';
+import { apiFetch } from '../api';
+import { getSocket } from '../realtime/socket';
+
+interface LobbyTable {
+  tableId: string;
+  name: string;
+  visibility: string;
+  allowSpectators: boolean;
+  maxPlayers: number;
+  maxSpectators: number;
+  state: string;
+  activePlayers: number;
+  activeSpectators: number;
+}
+
+export function LobbyPage() {
+  const { auth } = useAuth();
+  const navigate = useNavigate();
+  const [tables, setTables] = useState<LobbyTable[]>([]);
+  const [joiningId, setJoiningId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!auth) return;
+    apiFetch<{ tables: LobbyTable[] }>('/tables/lobby', { token: auth.accessToken })
+      .then((r) => setTables(r.tables))
+      .catch(() => setError('Tischliste konnte nicht geladen werden.'));
+
+    const socket = getSocket(auth.accessToken);
+    socket.emit('lobby:join');
+    const onTables = (payload: { tables: LobbyTable[] }) => setTables(payload.tables);
+    socket.on('lobby:tables', onTables);
+    return () => {
+      socket.off('lobby:tables', onTables);
+      socket.emit('lobby:leave');
+    };
+  }, [auth]);
+
+  async function handleJoin(tableId: string) {
+    if (!auth) return;
+    setJoiningId(tableId);
+    setError(null);
+    try {
+      await apiFetch(`/tables/${tableId}/join`, { method: 'POST', body: { joinAs: 'player' }, token: auth.accessToken });
+      navigate(`/tisch/${tableId}`);
+    } catch {
+      setError('Beitritt fehlgeschlagen - Tisch evtl. schon voll.');
+    } finally {
+      setJoiningId(null);
+    }
+  }
+
+  if (!auth) {
+    return (
+      <div className="app-shell">
+        <div className="sh-card">
+          <p>
+            Bitte zuerst <Link to="/login">anmelden</Link>.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="app-shell">
+      <div className="sh-card admin-shell" style={{ maxWidth: 720 }}>
+        <Link className="sh-back" to="/">
+          &larr; Zurück
+        </Link>
+        <h2>Lobby</h2>
+
+        {error && <div className="sh-error" style={{ marginBottom: 14 }}>{error}</div>}
+
+        <div style={{ marginBottom: 18 }}>
+          <Link className="sh-action sh-primary" to="/tisch/neu">
+            Neuen Tisch erstellen <span className="sh-action-arrow">→</span>
+          </Link>
+        </div>
+
+        <div className="admin-table-wrap">
+          <table className="admin-table">
+            <thead>
+              <tr>
+                <th>Tisch</th>
+                <th>Spieler</th>
+                <th>Zuschauer</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {tables.map((t) => (
+                <tr key={t.tableId}>
+                  <td>{t.name}</td>
+                  <td>
+                    {t.activePlayers}/{t.maxPlayers}
+                  </td>
+                  <td>{t.allowSpectators ? `${t.activeSpectators}/${t.maxSpectators}` : '—'}</td>
+                  <td>
+                    <button
+                      className="admin-btn-sm"
+                      disabled={joiningId === t.tableId || t.activePlayers >= t.maxPlayers}
+                      onClick={() => handleJoin(t.tableId)}
+                    >
+                      Beitreten
+                    </button>
+                  </td>
+                </tr>
+              ))}
+              {tables.length === 0 && (
+                <tr>
+                  <td colSpan={4} style={{ color: 'var(--sh-text-faint)' }}>
+                    Gerade kein öffentlicher Tisch offen.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}

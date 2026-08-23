@@ -1,6 +1,6 @@
 import request from 'supertest';
 import { pool } from '../../src/db/pool';
-import { authHeader, createUserDirect, uniqueSuffix } from '../helpers/testUtils';
+import { authHeader, createUserDirect, markSeatReadyDirect, uniqueSuffix } from '../helpers/testUtils';
 
 // See rounds.test.ts for why these are set here (before the deferred
 // require) rather than via a normal import. Kept small so every timer
@@ -87,6 +87,9 @@ async function createPlayingRound(): Promise<{
   await pool.query('UPDATE song_ref SET is_valid = FALSE');
   const songYear = 1990;
   await seedSong(songYear);
+
+  await markSeatReadyDirect(tableId, owner.id);
+  await markSeatReadyDirect(tableId, other.id);
 
   const startResponse = await request(app)
     .post(`/api/v1/tables/${tableId}/start`)

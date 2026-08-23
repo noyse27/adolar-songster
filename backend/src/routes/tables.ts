@@ -6,8 +6,9 @@ import { evaluateOwnerHandover } from '../services/tableHandover';
 import { computeYearRange, generateStartBlocks } from '../services/timeline';
 import { applyEarlyLeavePenalty } from '../services/matchOutcome';
 import { AdolarClientError, isPlaylistAvailable } from '../services/adolarClient';
-import { loadAdolarBatch } from '../services/adolarBatch';
-import { RoundEngineError } from '../services/errors';
+import { startTableGame } from '../services/tableStart';
+import { fetchLobbyTables, loadTableDetail } from '../services/tableQueries';
+import { broadcastLobby, broadcastTable } from '../realtime/broadcast';
 
 export const tablesRouter = Router();
 
@@ -119,6 +120,8 @@ tablesRouter.post('/tables', requireAuth, async (req: AuthenticatedRequest, res)
 
     await client.query('COMMIT');
 
+    if (visibility === 'public') await broadcastLobby();
+
     res.status(201).json({
       tableId: table.id,
       name: table.name,
@@ -136,48 +139,8 @@ tablesRouter.post('/tables', requireAuth, async (req: AuthenticatedRequest, res)
 });
 
 tablesRouter.get('/tables/lobby', requireAuth, async (_req, res) => {
-  const result = await pool.query(
-    `SELECT
-        t.id, t.name, t.visibility, t.allow_spectators, t.max_players, t.max_spectators, t.state,
-        COUNT(*) FILTER (WHERE s.seat_type = 'player' AND s.left_at IS NULL) AS active_players,
-        COUNT(*) FILTER (WHERE s.seat_type = 'spectator' AND s.left_at IS NULL) AS active_spectators
-     FROM game_table t
-     LEFT JOIN table_seat s ON s.table_id = t.id
-     WHERE t.visibility = 'public' AND t.state = 'open'
-     GROUP BY t.id
-     ORDER BY t.created_at DESC`,
-  );
-
-  res.status(200).json({
-    tables: result.rows.map((row) => ({
-      tableId: row.id,
-      name: row.name,
-      visibility: row.visibility,
-      allowSpectators: row.allow_spectators,
-      maxPlayers: row.max_players,
-      maxSpectators: row.max_spectators,
-      state: row.state,
-      activePlayers: Number(row.active_players),
-      activeSpectators: Number(row.active_spectators),
-    })),
-  });
+  res.status(200).json({ tables: await fetchLobbyTables() });
 });
-
-async function loadTableDetail(tableId: string) {
-  const result = await pool.query(
-    `SELECT
-        t.id, t.name, t.visibility, t.join_code, t.allow_spectators,
-        t.max_players, t.max_spectators, t.state, t.owner_user_id, t.owner_left_at,
-        COUNT(*) FILTER (WHERE s.seat_type = 'player' AND s.left_at IS NULL) AS active_players,
-        COUNT(*) FILTER (WHERE s.seat_type = 'spectator' AND s.left_at IS NULL) AS active_spectators
-     FROM game_table t
-     LEFT JOIN table_seat s ON s.table_id = t.id
-     WHERE t.id = $1
-     GROUP BY t.id`,
-    [tableId],
-  );
-  return result.rows[0];
-}
 
 tablesRouter.get('/tables/:tableId', requireAuth, async (req, res) => {
   const { tableId } = req.params;
@@ -190,20 +153,7 @@ tablesRouter.get('/tables/:tableId', requireAuth, async (req, res) => {
     return;
   }
 
-  res.status(200).json({
-    tableId: table.id,
-    name: table.name,
-    visibility: table.visibility,
-    joinCode: table.join_code,
-    allowSpectators: table.allow_spectators,
-    maxPlayers: table.max_players,
-    maxSpectators: table.max_spectators,
-    state: table.state,
-    ownerUserId: table.owner_user_id,
-    ownerReconnectDeadlinePending: Boolean(table.owner_left_at),
-    activePlayers: Number(table.active_players),
-    activeSpectators: Number(table.active_spectators),
-  });
+  res.status(200).json(table);
 });
 
 tablesRouter.post('/tables/:tableId/join', requireAuth, async (req: AuthenticatedRequest, res) => {
@@ -313,6 +263,7 @@ tablesRouter.post('/tables/:tableId/join', requireAuth, async (req: Authenticate
     }
 
     await client.query('COMMIT');
+    await Promise.all([broadcastLobby(), broadcastTable(tableId)]);
     res.status(200).json({ tableId, seatType: joinAs, alreadyJoined: false });
   } catch (err) {
     await client.query('ROLLBACK');
@@ -366,6 +317,7 @@ tablesRouter.post('/tables/:tableId/leave', requireAuth, async (req: Authenticat
     const activeGameId = activeGameResult.rows[0]?.id as string | undefined;
 
     await client.query('COMMIT');
+    await Promise.all([broadcastLobby(), broadcastTable(tableId)]);
 
     if (activeGameId) {
       scheduleEarlyLeavePenaltyCheck(activeGameId, tableId, requesterId);
@@ -380,6 +332,10 @@ tablesRouter.post('/tables/:tableId/leave', requireAuth, async (req: Authenticat
   }
 });
 
+// Manual early start: the table admin can start once every currently
+// seated player is ready, even below the table's configured max player
+// count (see startTableGame). Reaching that max count with everyone ready
+// auto-starts without anyone needing to call this - see the /ready route.
 tablesRouter.post('/tables/:tableId/start', requireAuth, async (req: AuthenticatedRequest, res) => {
   const requesterId = req.userId as string;
   const requesterRole = req.userRole;
@@ -387,119 +343,83 @@ tablesRouter.post('/tables/:tableId/start', requireAuth, async (req: Authenticat
 
   await evaluateOwnerHandover(tableId);
 
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
-
-    const tableResult = await client.query(
-      `SELECT id, owner_user_id, state, source_playlist_id FROM game_table WHERE id = $1 FOR UPDATE`,
-      [tableId],
-    );
-    if (tableResult.rowCount === 0) {
-      await client.query('ROLLBACK');
-      res.status(404).json({ error: 'table not found' });
-      return;
-    }
-    const table = tableResult.rows[0];
-
-    if (table.owner_user_id !== requesterId && requesterRole !== 'admin') {
-      await client.query('ROLLBACK');
-      res.status(403).json({ error: 'only the table admin can start the game' });
-      return;
-    }
-    if (table.state !== 'open') {
-      await client.query('ROLLBACK');
-      res.status(409).json({ error: 'table is not open' });
-      return;
-    }
-
-    const activePlayersResult = await client.query(
-      `SELECT user_id FROM table_seat
-       WHERE table_id = $1 AND seat_type = 'player' AND left_at IS NULL`,
-      [tableId],
-    );
-    const activePlayerIds: string[] = activePlayersResult.rows.map((row) => row.user_id);
-    if (activePlayerIds.length < 2) {
-      await client.query('ROLLBACK');
-      res.status(400).json({ error: 'at least 2 active players are required to start' });
-      return;
-    }
-
-    // Section 4.3: the fixed 50-song batch is drawn once, here, at session
-    // start - re-checking availability rather than trusting the check done
-    // at table creation, since the playlist could have been deactivated on
-    // the Adolar side in the meantime.
-    let adolarBatchSongRefIds: string[] | null = null;
-    if (table.source_playlist_id !== null) {
-      try {
-        const available = await isPlaylistAvailable(table.source_playlist_id);
-        if (!available) {
-          await client.query('ROLLBACK');
-          res.status(409).json({
-            error: 'ADOLAR_PLAYLIST_UNAVAILABLE',
-            message: 'the selected Adolar playlist is no longer available',
-          });
-          return;
-        }
-        adolarBatchSongRefIds = await loadAdolarBatch(client, table.source_playlist_id);
-      } catch (err) {
-        await client.query('ROLLBACK');
-        if (err instanceof AdolarClientError) {
-          res.status(502).json({ error: err.code, message: err.message });
-          return;
-        }
-        if (err instanceof RoundEngineError) {
-          res.status(409).json({ error: err.code, message: err.message });
-          return;
-        }
-        throw err;
-      }
-    }
-
-    const sessionResult = await client.query(
-      `INSERT INTO table_session (table_id) VALUES ($1) RETURNING id`,
-      [tableId],
-    );
-    const tableSessionId = sessionResult.rows[0].id;
-
-    if (adolarBatchSongRefIds) {
-      for (const songRefId of adolarBatchSongRefIds) {
-        await client.query(
-          `INSERT INTO table_session_song_pool (table_session_id, song_ref_id)
-           VALUES ($1, $2) ON CONFLICT DO NOTHING`,
-          [tableSessionId, songRefId],
-        );
-      }
-    }
-
-    const range = await computeYearRange(client, tableSessionId);
-    if (!range) {
-      await client.query('ROLLBACK');
-      res.status(400).json({ error: 'SONG_METADATA_INVALID: no valid songs in the playlist yet' });
-      return;
-    }
-
-    const gameResult = await client.query(
-      `INSERT INTO game (table_id, table_session_id, status, started_at)
-       VALUES ($1, $2, 'active', NOW())
-       RETURNING id`,
-      [tableId, tableSessionId],
-    );
-    await generateStartBlocks(client, gameResult.rows[0].id, activePlayerIds, tableSessionId);
-    await client.query(`UPDATE game_table SET state = 'running' WHERE id = $1`, [tableId]);
-
-    await client.query('COMMIT');
-    res.status(200).json({
-      tableId,
-      tableSessionId,
-      gameId: gameResult.rows[0].id,
-    });
-  } catch (err) {
-    await client.query('ROLLBACK');
-    throw err;
-  } finally {
-    client.release();
+  const tableResult = await pool.query(`SELECT owner_user_id FROM game_table WHERE id = $1`, [tableId]);
+  if (tableResult.rowCount === 0) {
+    res.status(404).json({ error: 'table not found' });
+    return;
   }
+  if (tableResult.rows[0].owner_user_id !== requesterId && requesterRole !== 'admin') {
+    res.status(403).json({ error: 'only the table admin can start the game' });
+    return;
+  }
+
+  const outcome = await startTableGame(tableId);
+  if (!outcome.ok) {
+    res.status(outcome.status).json({ error: outcome.code, message: outcome.message });
+    return;
+  }
+
+  await Promise.all([broadcastLobby(), broadcastTable(tableId)]);
+  res.status(200).json({ tableId, tableSessionId: outcome.tableSessionId, gameId: outcome.gameId });
+});
+
+// FR: every seated player must mark themselves ready before the table can
+// start. Auto-starts as soon as the configured player count is reached and
+// everyone is ready; otherwise the admin can force an early start via
+// POST /start once everyone currently seated is ready (see startTableGame).
+tablesRouter.post('/tables/:tableId/ready', requireAuth, async (req: AuthenticatedRequest, res) => {
+  const requesterId = req.userId as string;
+  const { tableId } = req.params;
+  const { ready = true } = req.body ?? {};
+
+  if (typeof ready !== 'boolean') {
+    res.status(400).json({ error: 'ready must be a boolean' });
+    return;
+  }
+
+  const tableResult = await pool.query(`SELECT state, max_players FROM game_table WHERE id = $1`, [tableId]);
+  if (tableResult.rowCount === 0) {
+    res.status(404).json({ error: 'table not found' });
+    return;
+  }
+  const table = tableResult.rows[0];
+  if (table.state !== 'open') {
+    res.status(409).json({ error: 'TABLE_NOT_OPEN', message: 'table is not open' });
+    return;
+  }
+
+  const seatResult = await pool.query(
+    `UPDATE table_seat SET ready = $1
+     WHERE table_id = $2 AND user_id = $3 AND seat_type = 'player' AND left_at IS NULL
+     RETURNING id`,
+    [ready, tableId, requesterId],
+  );
+  if (seatResult.rowCount === 0) {
+    res.status(404).json({ error: 'not seated as a player at this table' });
+    return;
+  }
+
+  const seatsResult = await pool.query(
+    `SELECT ready FROM table_seat WHERE table_id = $1 AND seat_type = 'player' AND left_at IS NULL`,
+    [tableId],
+  );
+  const activeCount = seatsResult.rowCount ?? 0;
+  const allReady = seatsResult.rows.every((row) => row.ready);
+
+  if (ready && allReady && activeCount === table.max_players) {
+    const outcome = await startTableGame(tableId);
+    if (outcome.ok) {
+      await Promise.all([broadcastLobby(), broadcastTable(tableId)]);
+      res.status(200).json({ tableId, started: true, tableSessionId: outcome.tableSessionId, gameId: outcome.gameId });
+      return;
+    }
+    // Someone else's concurrent change (e.g. a leave) invalidated the
+    // condition between the query above and the attempt - not an error the
+    // requester caused, just report the ready-toggle as accepted.
+  }
+
+  await broadcastTable(tableId);
+  res.status(200).json({ tableId, started: false, ready });
 });
 
 // FR-017/AK-009: starts a new game at the same table, with the same
@@ -579,6 +499,7 @@ tablesRouter.post('/tables/:tableId/new-game', requireAuth, async (req: Authenti
     await client.query(`UPDATE game_table SET state = 'running' WHERE id = $1`, [tableId]);
 
     await client.query('COMMIT');
+    await broadcastTable(tableId);
     res.status(200).json({
       tableId,
       tableSessionId,

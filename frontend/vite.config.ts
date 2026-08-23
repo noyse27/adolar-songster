@@ -7,6 +7,19 @@ export default defineConfig({
   server: {
     host: true,
     port: 5173,
+    // Mirrors frontend/nginx.conf's /api -> backend proxy so `npm run dev`
+    // behaves the same as the Docker Compose setup without needing
+    // VITE_API_BASE_URL for local, non-Docker development.
+    proxy: {
+      '/api': {
+        target: 'http://localhost:4000',
+        changeOrigin: true,
+      },
+      '/socket.io': {
+        target: 'http://localhost:4000',
+        ws: true,
+      },
+    },
   },
   test: {
     environment: 'jsdom',

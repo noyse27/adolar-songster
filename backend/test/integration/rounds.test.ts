@@ -1,6 +1,6 @@
 import request from 'supertest';
 import { pool } from '../../src/db/pool';
-import { authHeader, createUserDirect, uniqueSuffix } from '../helpers/testUtils';
+import { authHeader, createUserDirect, markSeatReadyDirect, uniqueSuffix } from '../helpers/testUtils';
 
 // Round timings are read from these env vars once, at module import time,
 // so they must be set before requiring the app (a plain require, not an
@@ -60,6 +60,9 @@ async function createRunningGame(): Promise<{ tableId: string; gameId: string; o
   await pool.query('UPDATE song_ref SET is_valid = FALSE');
   await seedSong(1990);
 
+  await markSeatReadyDirect(tableId, owner.id);
+  await markSeatReadyDirect(tableId, other.id);
+
   const startResponse = await request(app)
     .post(`/api/v1/tables/${tableId}/start`)
     .set(authHeader(owner.id, 'user'));
@@ -90,6 +93,9 @@ describe('table start seeds a starting timeline (FR-023)', () => {
       .post(`/api/v1/tables/${tableResponse.body.tableId}/join`)
       .set(authHeader(other.id, 'user'))
       .send({ joinAs: 'player' });
+
+    await markSeatReadyDirect(tableResponse.body.tableId, owner.id);
+    await markSeatReadyDirect(tableResponse.body.tableId, other.id);
 
     const startResponse = await request(app)
       .post(`/api/v1/tables/${tableResponse.body.tableId}/start`)

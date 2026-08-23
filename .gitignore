@@ -9,3 +9,6 @@ Thumbs.db
 .DS_Store
 coverage/
 *.tsbuildinfo
+
+# Leftover git worktrees created by spawned background-agent tasks
+.claude/worktrees/

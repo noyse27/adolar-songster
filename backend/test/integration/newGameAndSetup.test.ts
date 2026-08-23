@@ -1,6 +1,6 @@
 import request from 'supertest';
 import { pool } from '../../src/db/pool';
-import { authHeader, createUserDirect, uniqueSuffix } from '../helpers/testUtils';
+import { authHeader, createUserDirect, markSeatReadyDirect, uniqueSuffix } from '../helpers/testUtils';
 
 // See rounds.test.ts for why these are set here (before the deferred
 // require) rather than via a normal import.
@@ -134,6 +134,9 @@ describe('POST /tables/{id}/new-game (AK-009/010/011)', () => {
     await pool.query(`UPDATE song_ref SET is_valid = FALSE`);
     const songAId = await seedSong(1980);
     const songBId = await seedSong(2020);
+
+    await markSeatReadyDirect(tableId, owner.id);
+    await markSeatReadyDirect(tableId, other.id);
 
     const startResponse = await request(app)
       .post(`/api/v1/tables/${tableId}/start`)

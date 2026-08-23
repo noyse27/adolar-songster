@@ -5,26 +5,19 @@ import { checkForWinOrTie, finishGame } from './matchOutcome';
 import { selectSongForGame } from './songPool';
 import { fetchTimeline, findSortedInsertIndex, insertCardAndReindex, isPlacementCorrect } from './timeline';
 import { resolveClaimWinner } from './tokenRace';
+import { broadcastGame } from '../realtime/broadcast';
+import { startReadyWindow } from './roundReadyWindow';
+import {
+  BONUS_WINDOW_MS,
+  COUNTDOWN_MS,
+  SONG_DURATION_MS,
+  TOKENS_PER_PLAYER,
+  TOKEN_CLAIM_GRACE_MS,
+  TOKEN_OTHERS_WINDOW_MS,
+  TOKEN_SOLO_WINDOW_MS,
+} from './roundConfig';
 
-// FR-021/022: fixed in production; overridable via env so integration
-// tests can run a full countdown -> song -> resolve cycle in milliseconds
-// instead of real 3s + 25s, keeping the suite fast and deterministic.
-export const COUNTDOWN_MS = Number(process.env.ROUND_COUNTDOWN_MS ?? 3000);
-export const SONG_DURATION_MS = Number(process.env.ROUND_SONG_DURATION_MS ?? 25000);
-
-// FR-030: 2 tokens per player per game. FR-036: near-simultaneous claims
-// are collected for a short grace window before the fastest (or, within
-// 50ms, a random one of the tied) claim is declared the winner. FR-033/034:
-// 10s each for the winner's solo attempt and, on a wrong guess, the
-// opponents' attempt.
-const TOKENS_PER_PLAYER = 2;
-export const TOKEN_CLAIM_GRACE_MS = Number(process.env.TOKEN_CLAIM_GRACE_MS ?? 150);
-export const TOKEN_SOLO_WINDOW_MS = Number(process.env.TOKEN_SOLO_WINDOW_MS ?? 10000);
-export const TOKEN_OTHERS_WINDOW_MS = Number(process.env.TOKEN_OTHERS_WINDOW_MS ?? 10000);
-
-// FR-041: a Stichsong bonus round for players tied at the winning card
-// count; fastest correct exact-year guess wins the match outright.
-export const BONUS_WINDOW_MS = Number(process.env.BONUS_WINDOW_MS ?? 10000);
+export { BONUS_WINDOW_MS, COUNTDOWN_MS, SONG_DURATION_MS, TOKEN_CLAIM_GRACE_MS, TOKEN_OTHERS_WINDOW_MS, TOKEN_SOLO_WINDOW_MS };
 
 const ACTIVE_ROUND_STATUSES = ['countdown', 'playing', 'token_solo', 'token_others'];
 
@@ -45,7 +38,12 @@ export interface RoundGuessResult {
   correct: boolean;
 }
 
-export async function startRound(gameId: string, requesterId: string, requesterRole?: string) {
+interface StartRoundAuth {
+  requesterId: string;
+  requesterRole?: string;
+}
+
+async function runStartRound(gameId: string, sitOutUserIds: string[], auth?: StartRoundAuth) {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -62,12 +60,19 @@ export async function startRound(gameId: string, requesterId: string, requesterR
       throw new RoundEngineError('GAME_NOT_ACTIVE', 'game is not active');
     }
 
-    const tableResult = await client.query(`SELECT owner_user_id FROM game_table WHERE id = $1`, [
-      game.table_id,
-    ]);
-    const table = tableResult.rows[0];
-    if (table.owner_user_id !== requesterId && requesterRole !== 'admin') {
-      throw new RoundEngineError('FORBIDDEN', 'only the table admin can start a round');
+    // Manual/admin trigger (POST /games/:id/rounds) is owner-gated; the
+    // self-service readiness trigger (POST /games/:id/ready, see
+    // roundReady.ts) has no `auth` - it only ever fires once the readiness
+    // condition itself is already satisfied for everyone (or the 30s window
+    // elapsed), so there is no single "requester" to authorize.
+    if (auth) {
+      const tableResult = await client.query(`SELECT owner_user_id FROM game_table WHERE id = $1`, [
+        game.table_id,
+      ]);
+      const table = tableResult.rows[0];
+      if (table.owner_user_id !== auth.requesterId && auth.requesterRole !== 'admin') {
+        throw new RoundEngineError('FORBIDDEN', 'only the table admin can start a round');
+      }
     }
 
     const activeRoundResult = await client.query(
@@ -99,6 +104,17 @@ export async function startRound(gameId: string, requesterId: string, requesterR
     );
     const round = roundResult.rows[0];
 
+    // Per-round readiness (see roundReady.ts): whoever didn't ready up
+    // within the 30s window sits this specific round out - excluded from
+    // guessing/tokens and from the resolve-time participant list, see
+    // submitGuess/claimToken/resolveRound.
+    for (const userId of sitOutUserIds) {
+      await client.query(
+        `INSERT INTO round_sitout (round_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+        [round.id, userId],
+      );
+    }
+
     await client.query(
       `INSERT INTO session_song_history (table_session_id, song_ref_id, first_played_round_id)
        VALUES ($1, $2, $3)
@@ -108,11 +124,12 @@ export async function startRound(gameId: string, requesterId: string, requesterR
     );
 
     await client.query('COMMIT');
+    await broadcastGame(gameId);
 
     if (isBonusRound) {
-      scheduleBonusRoundTransitions(round.id);
+      scheduleBonusRoundTransitions(round.id, gameId);
     } else {
-      scheduleRoundTransitions(round.id);
+      scheduleRoundTransitions(round.id, gameId);
     }
 
     return {
@@ -133,10 +150,24 @@ export async function startRound(gameId: string, requesterId: string, requesterR
   }
 }
 
-function scheduleRoundTransitions(roundId: string): void {
+// Manual/admin override - unchanged from before the per-round readiness
+// gate existed, kept for admin/testing use. The normal player-facing path
+// is the self-service POST /games/:id/ready flow (roundReady.ts).
+export async function startRound(gameId: string, requesterId: string, requesterRole?: string) {
+  return runStartRound(gameId, [], { requesterId, requesterRole });
+}
+
+// System-triggered start once the per-round readiness condition is met
+// (everyone ready, or the 30s window elapsed) - see roundReady.ts.
+export async function startRoundAuto(gameId: string, sitOutUserIds: string[]) {
+  return runStartRound(gameId, sitOutUserIds);
+}
+
+function scheduleRoundTransitions(roundId: string, gameId: string): void {
   setTimeout(() => {
     pool
       .query(`UPDATE round SET status = 'playing' WHERE id = $1 AND status = 'countdown'`, [roundId])
+      .then(() => broadcastGame(gameId))
       .catch((err) => {
         // eslint-disable-next-line no-console
         console.error('failed to transition round to playing', err);
@@ -151,10 +182,11 @@ function scheduleRoundTransitions(roundId: string): void {
   }, COUNTDOWN_MS + SONG_DURATION_MS);
 }
 
-function scheduleBonusRoundTransitions(roundId: string): void {
+function scheduleBonusRoundTransitions(roundId: string, gameId: string): void {
   setTimeout(() => {
     pool
       .query(`UPDATE round SET status = 'playing' WHERE id = $1 AND status = 'countdown'`, [roundId])
+      .then(() => broadcastGame(gameId))
       .catch((err) => {
         // eslint-disable-next-line no-console
         console.error('failed to transition bonus round to playing', err);
@@ -167,6 +199,16 @@ function scheduleBonusRoundTransitions(roundId: string): void {
       console.error('failed to resolve bonus round', err);
     });
   }, COUNTDOWN_MS + BONUS_WINDOW_MS);
+}
+
+async function assertNotSittingOut(roundId: string, userId: string): Promise<void> {
+  const sitoutResult = await pool.query(
+    `SELECT 1 FROM round_sitout WHERE round_id = $1 AND user_id = $2`,
+    [roundId, userId],
+  );
+  if ((sitoutResult.rowCount ?? 0) > 0) {
+    throw new RoundEngineError('SITTING_OUT', 'you did not ready up in time and are sitting this round out');
+  }
 }
 
 export async function submitGuess(
@@ -182,6 +224,8 @@ export async function submitGuess(
   if (round.status !== 'playing') {
     throw new RoundEngineError('ROUND_LOCKED', 'round is not currently accepting guesses');
   }
+
+  await assertNotSittingOut(roundId, userId);
 
   // FR-032: a token claim stops the song, which also ends normal
   // position-guessing for this round even during the brief tie-break
@@ -235,8 +279,10 @@ export async function resolveRound(
     const tableId = gameResult.rows[0].table_id;
 
     const participantsResult = await client.query(
-      `SELECT user_id FROM table_seat WHERE table_id = $1 AND seat_type = 'player' AND left_at IS NULL`,
-      [tableId],
+      `SELECT user_id FROM table_seat
+       WHERE table_id = $1 AND seat_type = 'player' AND left_at IS NULL
+         AND user_id NOT IN (SELECT user_id FROM round_sitout WHERE round_id = $2)`,
+      [tableId, roundId],
     );
 
     const results: RoundGuessResult[] = [];
@@ -278,6 +324,11 @@ export async function resolveRound(
     await checkForGameEnd(client, round.game_id);
 
     await client.query('COMMIT');
+    await broadcastGame(round.game_id);
+    // From round 2 onward, the next ready window opens automatically as
+    // soon as this one resolves (no-ops if the match just ended) - keeps
+    // play moving without everyone re-clicking ready after every reveal.
+    await startReadyWindow(round.game_id);
     return { roundId, songYear, results };
   } catch (err) {
     await client.query('ROLLBACK');
@@ -337,6 +388,7 @@ export async function submitBonusGuess(
     );
 
     await client.query('COMMIT');
+    await broadcastGame(round.game_id);
     return { correct };
   } catch (err) {
     await client.query('ROLLBACK');
@@ -390,6 +442,8 @@ async function resolveBonusRound(roundId: string): Promise<void> {
     }
 
     await client.query('COMMIT');
+    await broadcastGame(round.game_id);
+    await startReadyWindow(round.game_id);
   } catch (err) {
     await client.query('ROLLBACK');
     throw err;
@@ -417,6 +471,8 @@ export async function claimToken(
     if (round.status !== 'playing') {
       throw new RoundEngineError('TOKEN_NOT_AVAILABLE', 'no token claim window is open');
     }
+
+    await assertNotSittingOut(roundId, userId);
 
     const alreadyClaimedResult = await client.query(
       `SELECT id FROM token_usage WHERE round_id = $1 AND user_id = $2`,
@@ -448,6 +504,7 @@ export async function claimToken(
     );
 
     await client.query('COMMIT');
+    await broadcastGame(round.game_id);
 
     if (isFirstClaim) {
       setTimeout(() => {
@@ -472,13 +529,14 @@ async function resolveClaimRace(roundId: string): Promise<void> {
   try {
     await client.query('BEGIN');
 
-    const roundResult = await client.query(`SELECT id, status FROM round WHERE id = $1 FOR UPDATE`, [
+    const roundResult = await client.query(`SELECT id, game_id, status FROM round WHERE id = $1 FOR UPDATE`, [
       roundId,
     ]);
     if (roundResult.rowCount === 0 || roundResult.rows[0].status !== 'playing') {
       await client.query('ROLLBACK');
       return;
     }
+    const round = roundResult.rows[0];
 
     const claimsResult = await client.query(
       `SELECT id, user_id, claimed_at FROM token_usage WHERE round_id = $1 AND resolved_at IS NULL`,
@@ -504,6 +562,7 @@ async function resolveClaimRace(roundId: string): Promise<void> {
     await client.query(`UPDATE round SET status = 'token_solo', mode = 'token' WHERE id = $1`, [roundId]);
 
     await client.query('COMMIT');
+    await broadcastGame(round.game_id);
 
     setTimeout(() => {
       resolveSoloTimeout(roundId).catch((err) => {
@@ -524,7 +583,7 @@ async function resolveSoloTimeout(roundId: string): Promise<void> {
   try {
     await client.query('BEGIN');
 
-    const roundResult = await client.query(`SELECT id, status FROM round WHERE id = $1 FOR UPDATE`, [
+    const roundResult = await client.query(`SELECT id, game_id, status FROM round WHERE id = $1 FOR UPDATE`, [
       roundId,
     ]);
     if (roundResult.rowCount === 0 || roundResult.rows[0].status !== 'token_solo') {
@@ -532,6 +591,7 @@ async function resolveSoloTimeout(roundId: string): Promise<void> {
       await client.query('ROLLBACK');
       return;
     }
+    const round = roundResult.rows[0];
 
     await client.query(
       `UPDATE token_usage SET resolved_at = NOW(), result = 'solo_timeout'
@@ -541,6 +601,8 @@ async function resolveSoloTimeout(roundId: string): Promise<void> {
     await client.query(`UPDATE round SET status = 'resolved', ended_at = NOW() WHERE id = $1`, [roundId]);
 
     await client.query('COMMIT');
+    await broadcastGame(round.game_id);
+    await startReadyWindow(round.game_id);
   } catch (err) {
     await client.query('ROLLBACK');
     throw err;
@@ -614,12 +676,15 @@ export async function submitTokenGuess(
         ]);
         await checkForGameEnd(client, round.game_id);
         await client.query('COMMIT');
+        await broadcastGame(round.game_id);
+        await startReadyWindow(round.game_id);
         return { correct: true };
       }
 
       // FR-034: a wrong solo guess opens a 10s window for opponents.
       await client.query(`UPDATE round SET status = 'token_others' WHERE id = $1`, [roundId]);
       await client.query('COMMIT');
+      await broadcastGame(round.game_id);
 
       setTimeout(() => {
         resolveOthersWindow(roundId).catch((err) => {
@@ -658,6 +723,7 @@ export async function submitTokenGuess(
     );
 
     await client.query('COMMIT');
+    await broadcastGame(round.game_id);
     return { correct };
   } catch (err) {
     await client.query('ROLLBACK');
@@ -719,6 +785,8 @@ async function resolveOthersWindow(roundId: string): Promise<void> {
     await checkForGameEnd(client, round.game_id);
 
     await client.query('COMMIT');
+    await broadcastGame(round.game_id);
+    await startReadyWindow(round.game_id);
   } catch (err) {
     await client.query('ROLLBACK');
     throw err;

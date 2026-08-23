@@ -1,7 +1,7 @@
 import request from 'supertest';
 import { createApp } from '../../src/app';
 import { pool } from '../../src/db/pool';
-import { authHeader, createUserDirect, uniqueSuffix } from '../helpers/testUtils';
+import { authHeader, createUserDirect, markSeatReadyDirect, uniqueSuffix } from '../helpers/testUtils';
 
 const app = createApp();
 
@@ -183,6 +183,9 @@ describe('table start conditions (FR-020)', () => {
       .set(authHeader(otherPlayer.id, 'user'))
       .send({ joinAs: 'player' });
 
+    await markSeatReadyDirect(table.tableId, owner.id);
+    await markSeatReadyDirect(table.tableId, otherPlayer.id);
+
     const startResponse = await request(app)
       .post(`/api/v1/tables/${table.tableId}/start`)
       .set(authHeader(owner.id, 'user'));
@@ -202,5 +205,76 @@ describe('table start conditions (FR-020)', () => {
       .set(authHeader(lateJoiner.id, 'user'))
       .send({ joinAs: 'player' });
     expect(lateJoin.status).toBe(409);
+  });
+});
+
+describe('table start readiness gate', () => {
+  it('refuses to start via POST /start if not every seated player is ready', async () => {
+    const owner = await createUserDirect({});
+    const table = await createTable(owner.id, { maxPlayers: 3 });
+    const otherPlayer = await createUserDirect({});
+    await request(app)
+      .post(`/api/v1/tables/${table.tableId}/join`)
+      .set(authHeader(otherPlayer.id, 'user'))
+      .send({ joinAs: 'player' });
+
+    await markSeatReadyDirect(table.tableId, owner.id);
+    // otherPlayer never marked ready.
+
+    const response = await request(app)
+      .post(`/api/v1/tables/${table.tableId}/start`)
+      .set(authHeader(owner.id, 'user'));
+
+    expect(response.status).toBe(409);
+    expect(response.body.error).toBe('NOT_ALL_PLAYERS_READY');
+  });
+
+  it('lets the admin force an early start once everyone seated is ready, below the configured max', async () => {
+    const owner = await createUserDirect({});
+    const table = await createTable(owner.id, { maxPlayers: 4 });
+    const otherPlayer = await createUserDirect({});
+    await request(app)
+      .post(`/api/v1/tables/${table.tableId}/join`)
+      .set(authHeader(otherPlayer.id, 'user'))
+      .send({ joinAs: 'player' });
+
+    await markSeatReadyDirect(table.tableId, owner.id);
+    await markSeatReadyDirect(table.tableId, otherPlayer.id);
+
+    const response = await request(app)
+      .post(`/api/v1/tables/${table.tableId}/start`)
+      .set(authHeader(owner.id, 'user'));
+
+    expect(response.status).toBe(200);
+  });
+
+  it('auto-starts via POST /ready once the configured player count is reached and everyone is ready', async () => {
+    const owner = await createUserDirect({});
+    const table = await createTable(owner.id, { maxPlayers: 2 });
+    const otherPlayer = await createUserDirect({});
+    await request(app)
+      .post(`/api/v1/tables/${table.tableId}/join`)
+      .set(authHeader(otherPlayer.id, 'user'))
+      .send({ joinAs: 'player' });
+
+    const firstReady = await request(app)
+      .post(`/api/v1/tables/${table.tableId}/ready`)
+      .set(authHeader(owner.id, 'user'))
+      .send({ ready: true });
+    expect(firstReady.status).toBe(200);
+    expect(firstReady.body.started).toBe(false);
+
+    const secondReady = await request(app)
+      .post(`/api/v1/tables/${table.tableId}/ready`)
+      .set(authHeader(otherPlayer.id, 'user'))
+      .send({ ready: true });
+    expect(secondReady.status).toBe(200);
+    expect(secondReady.body.started).toBe(true);
+    expect(secondReady.body).toHaveProperty('gameId');
+
+    const detail = await request(app)
+      .get(`/api/v1/tables/${table.tableId}`)
+      .set(authHeader(owner.id, 'user'));
+    expect(detail.body.state).toBe('running');
   });
 });

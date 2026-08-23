@@ -1,6 +1,6 @@
 import request from 'supertest';
 import { pool } from '../../src/db/pool';
-import { authHeader, createUserDirect, uniqueSuffix } from '../helpers/testUtils';
+import { authHeader, createUserDirect, markSeatReadyDirect, uniqueSuffix } from '../helpers/testUtils';
 
 // See rounds.test.ts for why these are set here (before the deferred
 // require) rather than via a normal import.
@@ -94,6 +94,9 @@ async function createRunningGame(): Promise<{
 
   await invalidateAllSongs(); // song_ref is shared globally across test files
   await seedSong(1950); // just needs to exist for start-block generation; invalidated again by tests that need a deterministic draw
+
+  await markSeatReadyDirect(tableId, owner.id);
+  await markSeatReadyDirect(tableId, other.id);
 
   const startResponse = await request(app)
     .post(`/api/v1/tables/${tableId}/start`)

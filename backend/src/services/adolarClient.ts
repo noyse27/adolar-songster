@@ -2,10 +2,11 @@
 // repo's docs/Adolar_Songster_Adolar_Integration_Konzept_v1_20260821.md
 // section 3.4 and musicapp's docs/PRODUCT_INTEGRATIONS.md section 5).
 //
-// Songster contacts Adolar only at table creation and table-session start
-// (playlist availability check + batch track fetch) - never during an
-// active game, so there is no persistent connection or token refresh to
-// manage here (section 4.1).
+// Songster contacts Adolar at table creation and table-session start
+// (playlist availability check + batch track fetch), plus a daily
+// background full-library sync (see adolarSync.ts/scheduler.ts) - never
+// during an active game, so there is no persistent connection or token
+// refresh to manage here (section 4.1).
 //
 // Auth: a single long-lived Bearer API token (product="songster"), created
 // once by an Adolar admin via the Adolar Web "API-Zugriff" settings and
@@ -13,6 +14,14 @@
 // original session-login plan (POST /api/songster/login) - Adolar's actual
 // Step 2 implementation used the existing API-token mechanism instead
 // (matching Taggster's precedent), which needs no login step at all.
+//
+// Config source: the setup wizard's "Musikdaten" step (see setup.ts
+// /setup/music-source) writes baseUrl/apiToken into the system_setting
+// table via systemSettings.ts. That takes precedence; ADOLAR_BASE_URL /
+// ADOLAR_API_TOKEN env vars remain a fallback for headless/Compose-only
+// deployments that never touch the wizard.
+
+import { getSetting } from './systemSettings';
 
 export class AdolarClientError extends Error {
   constructor(
@@ -47,12 +56,12 @@ interface AdolarTracksPage {
   tracks: AdolarTrack[];
 }
 
-function config(): { baseUrl: string; token: string; clientVersion: string } {
-  const baseUrl = process.env.ADOLAR_BASE_URL;
-  const token = process.env.ADOLAR_API_TOKEN;
+async function config(): Promise<{ baseUrl: string; token: string; clientVersion: string }> {
+  const baseUrl = (await getSetting('adolar.base_url')) ?? process.env.ADOLAR_BASE_URL;
+  const token = (await getSetting('adolar.api_token')) ?? process.env.ADOLAR_API_TOKEN;
   if (!baseUrl || !token) {
     throw new AdolarClientError(
-      'ADOLAR_BASE_URL and ADOLAR_API_TOKEN must be configured to use an Adolar-sourced playlist',
+      'Adolar is not configured yet - run the setup wizard\'s Musikdaten step (or set ADOLAR_BASE_URL/ADOLAR_API_TOKEN)',
       'NOT_CONFIGURED',
     );
   }
@@ -63,11 +72,10 @@ function config(): { baseUrl: string; token: string; clientVersion: string } {
   };
 }
 
-async function adolarFetch(path: string): Promise<Response> {
-  const { baseUrl, token, clientVersion } = config();
+async function rawAdolarFetch(baseUrl: string, token: string, clientVersion: string, path: string): Promise<Response> {
   let response: Response;
   try {
-    response = await fetch(`${baseUrl}${path}`, {
+    response = await fetch(`${baseUrl.replace(/\/+$/, '')}${path}`, {
       headers: {
         Authorization: `Bearer ${token}`,
         'X-Adolar-Client-Version': clientVersion,
@@ -88,10 +96,36 @@ async function adolarFetch(path: string): Promise<Response> {
   return response;
 }
 
-export async function isPlaylistAvailable(playlistId: number): Promise<boolean> {
+async function adolarFetch(path: string): Promise<Response> {
+  const { baseUrl, token, clientVersion } = await config();
+  return rawAdolarFetch(baseUrl, token, clientVersion, path);
+}
+
+/** Setup-wizard connection test: hits Adolar with credentials that haven't
+ * been persisted yet, so a bad token/URL never gets saved. */
+export async function testAdolarConnection(
+  baseUrl: string,
+  apiToken: string,
+): Promise<{ ok: true; playlistCount: number } | { ok: false; error: string }> {
+  try {
+    const response = await rawAdolarFetch(baseUrl, apiToken, process.env.ADOLAR_CLIENT_VERSION ?? 'unknown', '/api/songster/playlists');
+    const data = (await response.json()) as { playlists: AdolarPlaylist[] };
+    return { ok: true, playlistCount: data.playlists.length };
+  } catch (err) {
+    if (err instanceof AdolarClientError) return { ok: false, error: err.message };
+    return { ok: false, error: (err as Error).message };
+  }
+}
+
+export async function listPlaylists(): Promise<AdolarPlaylist[]> {
   const response = await adolarFetch('/api/songster/playlists');
   const data = (await response.json()) as { playlists: AdolarPlaylist[] };
-  return data.playlists.some((playlist) => playlist.id === playlistId);
+  return data.playlists;
+}
+
+export async function isPlaylistAvailable(playlistId: number): Promise<boolean> {
+  const playlists = await listPlaylists();
+  return playlists.some((playlist) => playlist.id === playlistId);
 }
 
 export async function fetchPlaylistTracksPage(
@@ -103,4 +137,41 @@ export async function fetchPlaylistTracksPage(
     `/api/songster/playlists/${playlistId}/tracks?limit=${limit}&offset=${offset}`,
   );
   return (await response.json()) as AdolarTracksPage;
+}
+
+/** Raw proxy fetch for one track's audio bytes, forwarding a Range header
+ * (if present) straight through so scrubbing/seeking still works end to
+ * end. Deliberately does NOT throw on a non-2xx response (unlike
+ * rawAdolarFetch) - routes/songs.ts needs to tell a 404 (unknown track)
+ * apart from a genuine connectivity failure, and just relays the upstream
+ * status either way. */
+export async function fetchTrackStreamResponse(trackId: number, rangeHeader?: string): Promise<Response> {
+  const { baseUrl, token, clientVersion } = await config();
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${token}`,
+    'X-Adolar-Client-Version': clientVersion,
+  };
+  if (rangeHeader) headers.Range = rangeHeader;
+  try {
+    return await fetch(`${baseUrl}/api/songster/tracks/${trackId}/stream`, { headers });
+  } catch (err) {
+    throw new AdolarClientError(`failed to reach Adolar at ${baseUrl}: ${(err as Error).message}`, 'REQUEST_FAILED');
+  }
+}
+
+/** Pages through an entire playlist rather than a capped first slice -
+ * used by both the per-session batch fetch and the daily full-library sync
+ * (see adolarSync.ts). A capped fetch previously meant Songster only ever
+ * saw a playlist's first ~200 tracks (in Adolar's id order), which starves
+ * the decade-spread batch algorithm on any playlist bigger than that. */
+export async function fetchAllPlaylistTracks(playlistId: number, pageSize = 100): Promise<AdolarTrack[]> {
+  const tracks: AdolarTrack[] = [];
+  let offset = 0;
+  for (;;) {
+    const page = await fetchPlaylistTracksPage(playlistId, pageSize, offset);
+    tracks.push(...page.tracks);
+    offset += page.tracks.length;
+    if (page.tracks.length === 0 || offset >= page.total) break;
+  }
+  return tracks;
 }

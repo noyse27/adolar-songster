@@ -1,4 +1,4 @@
-import { isPlacementCorrect, TimelineEntry } from '../../src/services/timeline';
+import { computeYearRange, isPlacementCorrect, TimelineEntry } from '../../src/services/timeline';
 
 describe('isPlacementCorrect (FR-026/FR-027)', () => {
   const timeline: TimelineEntry[] = [
@@ -38,5 +38,33 @@ describe('isPlacementCorrect (FR-026/FR-027)', () => {
 
   it('accepts any index on an empty timeline', () => {
     expect(isPlacementCorrect([], 0, 2000)).toBe(true);
+  });
+});
+
+describe('computeYearRange', () => {
+  function mockClient(minYear: number, maxYear: number) {
+    return { query: jest.fn().mockResolvedValue({ rows: [{ min_year: minYear, max_year: maxYear }] }) } as never;
+  }
+
+  beforeAll(() => {
+    // Fixed "now" so the upper-bound cap is deterministic regardless of
+    // when the test suite actually runs.
+    jest.useFakeTimers().setSystemTime(new Date('2026-06-15T00:00:00Z'));
+  });
+  afterAll(() => {
+    jest.useRealTimers();
+  });
+
+  it('caps the upper bound at the current year even when the newest song + 10 would exceed it', async () => {
+    // Regression: this previously used Math.max, so a playlist whose
+    // newest song was recent (e.g. 2022 + 10 = 2032) could hand out a
+    // starter/drawn year up to 2032 - years that haven't happened yet.
+    const range = await computeYearRange(mockClient(1980, 2022));
+    expect(range).toEqual({ lower: 1970, upper: 2026 });
+  });
+
+  it('does not artificially extend the upper bound up to the current year when the pool is older', async () => {
+    const range = await computeYearRange(mockClient(1970, 2000));
+    expect(range).toEqual({ lower: 1960, upper: 2010 });
   });
 });

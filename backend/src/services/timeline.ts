@@ -90,10 +90,13 @@ export async function computeYearRange(
   if (minYear === null || maxYear === null) {
     return null;
   }
+  // Highest song year + 10, but never later than the present - a starter
+  // card (or any drawn year) has no business claiming a release date in
+  // the future just because the pool's newest song is recent.
   const currentYear = new Date().getUTCFullYear();
   return {
     lower: minYear - 10,
-    upper: Math.max(maxYear + 10, currentYear),
+    upper: Math.min(maxYear + 10, currentYear),
   };
 }
 
@@ -112,11 +115,14 @@ export async function generateStartBlocks(
     throw new Error('cannot generate start blocks without any valid songs in the playlist');
   }
 
-  for (const userId of playerUserIds) {
-    const years = Array.from({ length: START_BLOCKS_PER_PLAYER }, () =>
-      randomYearInRange(range.lower, range.upper),
-    ).sort((a, b) => a - b);
+  // Same start years for every player, drawn once - not one random pair
+  // per player. Otherwise one player's start could be objectively easier
+  // to place around than another's, before either has made a move.
+  const years = Array.from({ length: START_BLOCKS_PER_PLAYER }, () =>
+    randomYearInRange(range.lower, range.upper),
+  ).sort((a, b) => a - b);
 
+  for (const userId of playerUserIds) {
     for (let position = 0; position < years.length; position += 1) {
       await client.query(
         `INSERT INTO timeline_card (game_id, user_id, source_round_id, year_value, special_type, placed_position)

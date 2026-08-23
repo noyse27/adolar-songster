@@ -1,4 +1,5 @@
-import express, { Express } from 'express';
+import 'express-async-errors';
+import express, { Express, NextFunction, Request, Response } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import { healthRouter } from './routes/health';
@@ -9,6 +10,9 @@ import { adminRouter } from './routes/admin';
 import { tablesRouter } from './routes/tables';
 import { roundsRouter } from './routes/rounds';
 import { leaderboardRouter } from './routes/leaderboard';
+import { usersRouter } from './routes/users';
+import { adolarRouter } from './routes/adolar';
+import { songsRouter } from './routes/songs';
 import { apiLimiter, authLimiter } from './middleware/rateLimit';
 
 export function createApp(): Express {
@@ -30,6 +34,23 @@ export function createApp(): Express {
   app.use('/api/v1', tablesRouter);
   app.use('/api/v1', roundsRouter);
   app.use('/api/v1', leaderboardRouter);
+  app.use('/api/v1', usersRouter);
+  app.use('/api/v1', adolarRouter);
+  app.use('/api/v1', songsRouter);
+
+  // Last-resort net: without this, an error thrown/rejected anywhere in a
+  // route handler (now forwarded here automatically by express-async-errors)
+  // would otherwise crash the whole Node process for every connected user -
+  // as happened with a stale JWT referencing a user deleted by a DB reset,
+  // which turned a routine 401 into a Postgres FK-violation crash. Answering
+  // with a generic 500 here is a safety net, not a substitute for handling
+  // specific, expected error cases in the route itself.
+  app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
+    // eslint-disable-next-line no-console
+    console.error('unhandled request error', err);
+    if (res.headersSent) return;
+    res.status(500).json({ error: 'internal server error' });
+  });
 
   return app;
 }
