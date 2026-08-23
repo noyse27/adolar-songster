@@ -45,7 +45,13 @@ export async function upsertSongRefTrack(
 // Section 4.3, steps 2-3: sort by malus (never-played first), bucket by
 // decade, then round-robin the buckets picking the longest-not-played song
 // of a not-yet-used artist from each, until BATCH_SIZE is reached or every
-// bucket is exhausted.
+// bucket is exhausted. Decade-bucketing alone doesn't stop a single exact
+// year from dominating within its decade (a real batch once ended up with
+// four 1979 songs and three 1984 ones) - MAX_PER_YEAR caps that the same
+// way usedArtists caps repeat artists, so no year can crowd out the
+// spread the decade-bucketing is meant to produce in the first place.
+const MAX_PER_YEAR = 2;
+
 export function selectBatch(candidates: BatchCandidate[]): BatchCandidate[] {
   const sorted = [...candidates].sort((a, b) => {
     if (a.lastPlayedAt === null && b.lastPlayedAt === null) return 0;
@@ -68,16 +74,21 @@ export function selectBatch(candidates: BatchCandidate[]): BatchCandidate[] {
 
   const selected: BatchCandidate[] = [];
   const usedArtists = new Set<string>();
+  const yearCounts = new Map<number, number>();
   let remaining = true;
   while (selected.length < BATCH_SIZE && remaining) {
     remaining = false;
     for (const decade of bucketKeys) {
       if (selected.length >= BATCH_SIZE) break;
       const bucket = buckets.get(decade) as BatchCandidate[];
-      const index = bucket.findIndex((candidate) => !usedArtists.has(candidate.artist));
+      const index = bucket.findIndex(
+        (candidate) =>
+          !usedArtists.has(candidate.artist) && (yearCounts.get(candidate.yearValue) ?? 0) < MAX_PER_YEAR,
+      );
       if (index === -1) continue;
       const [candidate] = bucket.splice(index, 1);
       usedArtists.add(candidate.artist);
+      yearCounts.set(candidate.yearValue, (yearCounts.get(candidate.yearValue) ?? 0) + 1);
       selected.push(candidate);
       remaining = true;
     }
