@@ -6,8 +6,14 @@ services:
       POSTGRES_USER: songster
       POSTGRES_PASSWORD: songster
       POSTGRES_DB: adolar_songster
-    ports:
-      - "5432:5432"
+    # No host port mapping: migrate/backend reach this over the compose
+    # network at db:5432, they never need the host-mapped port. Mapping it
+    # anyway is both a security exposure (see the Synology deployment
+    # guide) and a real conflict source - a NAS that already runs another
+    # Postgres (Synology's own package, another project) fails to start
+    # this container with "address already in use" on 5432. If you need to
+    # reach this DB directly from the host for debugging, map a different
+    # port, e.g. "15432:5432".
     volumes:
       - db_data:/var/lib/postgresql/data
     healthcheck:
