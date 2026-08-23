@@ -18,6 +18,17 @@ import { apiLimiter, authLimiter } from './middleware/rateLimit';
 export function createApp(): Express {
   const app = express();
 
+  // The Docker Compose topology always puts exactly one reverse proxy
+  // (frontend/nginx.conf) in front of this process - trust its
+  // X-Forwarded-For so req.ip (and therefore every rate limiter below,
+  // which keys on it) resolves to the real client, not nginx's own
+  // container IP. Without this, every request from every player behind
+  // that one proxy shares a single IP bucket - trivial to exceed apiLimiter
+  // (120 req/min total, not per player) with completely normal multi-
+  // player traffic, which the frontend was then misreporting as "backend
+  // unreachable" instead of "rate limited".
+  app.set('trust proxy', 1);
+
   app.use(helmet());
   app.use(cors());
   app.use(express.json());
