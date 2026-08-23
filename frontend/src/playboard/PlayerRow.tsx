@@ -48,6 +48,27 @@ export function PlayerRow({
     .join(' ');
 
   const boxes: JSX.Element[] = [];
+
+  // Centering N cards in SLOT_COUNT boxes (see timelineSlots.ts's
+  // embedTimeline) splits the leftover empty slots unevenly once fewer
+  // than 2 remain - the single last empty slot always ends up on the
+  // right, so at 9/10 filled there is no ordinary gap box left on the
+  // left to click "insert before everything". Same fix as the interior
+  // insert-handles below, just anchored at the boundary instead of
+  // between two filled slots.
+  if (p.you && p.slots[0] != null) {
+    boxes.push(
+      <div
+        key="edge-start"
+        className="pb-insert-handle pb-insert-handle-edge"
+        title="Karte hier einschieben"
+        onClick={onHandleClick ? () => onHandleClick(0) : undefined}
+      >
+        <span className="pb-gap-plus">+</span>
+      </div>,
+    );
+  }
+
   for (let i = 0; i < SLOT_COUNT; i++) {
     const val = p.slots[i];
     if (p.pendingSlot === i) {

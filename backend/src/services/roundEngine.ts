@@ -233,36 +233,60 @@ export async function submitGuess(
   userId: string,
   index: number,
 ): Promise<{ accepted: true }> {
-  const roundResult = await pool.query(`SELECT id, game_id, status FROM round WHERE id = $1`, [roundId]);
-  if (roundResult.rowCount === 0) {
-    throw new RoundEngineError('ROUND_NOT_FOUND', 'round not found');
+  // FOR UPDATE (matching resolveRound/submitBonusGuess/submitTokenGuess)
+  // is not optional here: without a lock on the round row, a guess
+  // submitted right as the song window ends could read status='playing'
+  // here, then resolveRound's own FOR UPDATE could run to completion and
+  // resolve the round *in between* that read and this function's own
+  // INSERT below - landing a guess (and, if it happened to read as
+  // correct against the timeline at insert time, a card) into an already-
+  // resolved round with nobody re-checking it. Taking the same lock
+  // serializes the two: whichever gets here first now genuinely finishes
+  // first, and a too-late guess correctly gets rejected as ROUND_LOCKED
+  // instead of silently racing resolution.
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const roundResult = await client.query(`SELECT id, game_id, status FROM round WHERE id = $1 FOR UPDATE`, [
+      roundId,
+    ]);
+    if (roundResult.rowCount === 0) {
+      throw new RoundEngineError('ROUND_NOT_FOUND', 'round not found');
+    }
+    const round = roundResult.rows[0];
+    if (round.status !== 'playing') {
+      throw new RoundEngineError('ROUND_LOCKED', 'round is not currently accepting guesses');
+    }
+
+    await assertNotSittingOut(roundId, userId);
+
+    // FR-032: a token claim stops the song, which also ends normal
+    // position-guessing for this round even during the brief tie-break
+    // grace window before the round officially moves to token_solo.
+    const claimResult = await client.query(`SELECT id FROM token_usage WHERE round_id = $1 LIMIT 1`, [roundId]);
+    if ((claimResult.rowCount ?? 0) > 0) {
+      throw new RoundEngineError('ROUND_LOCKED', 'a token was claimed for this round');
+    }
+
+    const timeline = await fetchTimeline(client, round.game_id, userId);
+    if (!Number.isInteger(index) || index < 0 || index > timeline.length) {
+      throw new RoundEngineError('INVALID_GUESS', 'index out of range for the current timeline');
+    }
+
+    await client.query(
+      `INSERT INTO guess (round_id, user_id, guess_type, value_number) VALUES ($1, $2, 'position', $3)`,
+      [roundId, userId, index],
+    );
+
+    await client.query('COMMIT');
+    return { accepted: true };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
   }
-  const round = roundResult.rows[0];
-  if (round.status !== 'playing') {
-    throw new RoundEngineError('ROUND_LOCKED', 'round is not currently accepting guesses');
-  }
-
-  await assertNotSittingOut(roundId, userId);
-
-  // FR-032: a token claim stops the song, which also ends normal
-  // position-guessing for this round even during the brief tie-break
-  // grace window before the round officially moves to token_solo.
-  const claimResult = await pool.query(`SELECT id FROM token_usage WHERE round_id = $1 LIMIT 1`, [roundId]);
-  if ((claimResult.rowCount ?? 0) > 0) {
-    throw new RoundEngineError('ROUND_LOCKED', 'a token was claimed for this round');
-  }
-
-  const timeline = await fetchTimeline(pool, round.game_id, userId);
-  if (!Number.isInteger(index) || index < 0 || index > timeline.length) {
-    throw new RoundEngineError('INVALID_GUESS', 'index out of range for the current timeline');
-  }
-
-  await pool.query(
-    `INSERT INTO guess (round_id, user_id, guess_type, value_number) VALUES ($1, $2, 'position', $3)`,
-    [roundId, userId, index],
-  );
-
-  return { accepted: true };
 }
 
 export async function resolveRound(
@@ -403,6 +427,21 @@ export async function submitBonusGuess(
        VALUES ($1, $2, 'exact_year', $3, NOW(), $4)`,
       [roundId, userId, year, correct],
     );
+
+    if (correct) {
+      // First correct exact-year guess wins the Stichsong (and the whole
+      // match) outright - no reason to keep the song playing and make
+      // everyone wait out the rest of the window once someone's proven
+      // they know the year. Nobody's tied-at-10 timeline needs another
+      // card, so this goes straight to finishGame rather than through
+      // insertCardAndReindex.
+      await client.query(`UPDATE round SET status = 'resolved', ended_at = NOW() WHERE id = $1`, [roundId]);
+      await finishGame(client, round.game_id, userId);
+      await client.query('COMMIT');
+      await broadcastGame(round.game_id);
+      await afterRoundResolved(round.game_id);
+      return { correct: true };
+    }
 
     await client.query('COMMIT');
     await broadcastGame(round.game_id);

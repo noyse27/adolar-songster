@@ -60,6 +60,7 @@ export function LiveGameBoard() {
   const [audioUnavailable, setAudioUnavailable] = useState(false);
   const [revealExpired, setRevealExpired] = useState(false);
   const [restarting, setRestarting] = useState(false);
+  const [tieModalDismissed, setTieModalDismissed] = useState(false);
 
   const tokenPhaseStartRef = useRef<{ status: string; at: number } | null>(null);
   const timelineRefs = useRef<Map<string, HTMLDivElement>>(new Map());
@@ -115,6 +116,7 @@ export function LiveGameBoard() {
     setPendingLocal(null);
     setGuessInput('');
     setRevealExpired(false);
+    setTieModalDismissed(false);
   }, [state?.currentRound?.roundId]);
 
   // Holds the ring flipped to the reveal face for a few seconds once a
@@ -325,6 +327,11 @@ export function LiveGameBoard() {
     }
   }
 
+  function handleTieBreakAcknowledge() {
+    setTieModalDismissed(true);
+    handleSetReady(true);
+  }
+
   async function handlePlaceClick(desiredIndex: number) {
     if (!canPlaceGuess || !you || !auth || !gameId || !state?.currentRound) return;
     const base = embedTimeline(you.timeline);
@@ -462,6 +469,15 @@ export function LiveGameBoard() {
 
   const round = state.currentRound;
   const readyPhase = state.roundReadyPhase;
+
+  // A Stichsong (bonus round) is entirely derivable from data the client
+  // already has - matchOutcome.ts's checkForWinOrTie logic mirrored here -
+  // so there's no need for the backend to flag it separately. Only
+  // meaningful between rounds; once the bonus round itself starts, `round`
+  // is non-null and this naturally stops mattering.
+  const maxCards = Math.max(0, ...state.players.map((p) => p.timeline.length));
+  const tiedLeaders = state.players.filter((p) => p.timeline.length === maxCards);
+  const isTieBreakPending = Boolean(readyPhase) && maxCards >= SLOT_COUNT && tiedLeaders.length > 1;
 
   // ---------- center ring content ----------
   let ringMark = '?';
@@ -742,6 +758,26 @@ export function LiveGameBoard() {
 
       <ExitModal open={exitOpen} karmaPenalty={karmaLeavePenalty(state.players.length)} onCancel={() => setExitOpen(false)} onConfirm={confirmExit} />
       <HelpModal open={helpOpen} onClose={() => setHelpOpen(false)} />
+
+      <div
+        className={`pb-modal-overlay${isTieBreakPending && !tieModalDismissed ? ' pb-open' : ''}`}
+        onClick={(e) => e.target === e.currentTarget && handleTieBreakAcknowledge()}
+      >
+        <div className="pb-modal">
+          <h3>🎯 Punktgleichheit! Jetzt Stichrunde</h3>
+          <p>
+            <b>{tiedLeaders.map((p) => p.username).join(', ')}</b> haben gleichzeitig {SLOT_COUNT} Karten erreicht.
+            Es gibt jetzt eine Stichrunde: alle Angetretenen hören denselben Song und tippen direkt das exakte
+            Erscheinungsjahr statt eine Position zu platzieren. Wer als Erste:r richtig liegt, gewinnt sofort die
+            ganze Partie — liegt niemand richtig, gibt es die nächste Stichrunde mit einem neuen Song.
+          </p>
+          <div className="pb-modal-actions">
+            <button className="pb-modal-btn pb-primary" onClick={handleTieBreakAcknowledge}>
+              Verstanden
+            </button>
+          </div>
+        </div>
+      </div>
 
       {state.status === 'finished' &&
         (() => {
