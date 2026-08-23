@@ -6,8 +6,12 @@ export function uniqueSuffix(): string {
   return `${Date.now()}_${Math.random().toString(36).slice(2)}`;
 }
 
+// sessionVersion: 1 matches app_user.session_version's DEFAULT (see the
+// session-version migration) - fine as long as tests mint tokens directly
+// rather than going through the real /auth/login flow (which bumps it) for
+// the same user, which is true of every current test using this helper.
 export function signToken(userId: string, role: string): string {
-  return jwt.sign({ sub: userId, role }, JWT_SECRET, { expiresIn: 3600 });
+  return jwt.sign({ sub: userId, role, sessionVersion: 1 }, JWT_SECRET, { expiresIn: 3600 });
 }
 
 export function authHeader(userId: string, role: string): { Authorization: string } {

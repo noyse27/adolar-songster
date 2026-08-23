@@ -303,6 +303,91 @@
   transition: transform .55s cubic-bezier(.2,.7,.2,1.05), opacity .3s ease .35s;
 }
 
+/* winner screen (LiveGameBoard only - shown once GameState.status === 'finished') */
+.pb-winner-overlay {
+  position: fixed; inset: 0; z-index: 120;
+  display: flex; align-items: center; justify-content: center; padding: 24px;
+  background: radial-gradient(1100px 650px at 50% 15%, rgba(110,68,255,.35), transparent 60%), rgba(9,7,28,.86);
+  backdrop-filter: blur(4px);
+  overflow: hidden;
+  animation: pb-winner-fade-in .4s ease;
+}
+@keyframes pb-winner-fade-in { from { opacity: 0; } to { opacity: 1; } }
+
+.pb-confetti { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+.pb-confetto {
+  position: absolute; top: -40px; width: 9px; height: 15px; border-radius: 2px;
+  animation-name: pb-confetti-fall; animation-timing-function: linear; animation-iteration-count: infinite;
+  opacity: .9;
+}
+@keyframes pb-confetti-fall {
+  0% { transform: translateY(-10vh) rotate(0deg); opacity: .95; }
+  100% { transform: translateY(110vh) rotate(540deg); opacity: .7; }
+}
+
+.pb-winner-card {
+  position: relative; z-index: 1;
+  width: 100%; max-width: 460px;
+  background: linear-gradient(165deg, var(--pb-panel-you), var(--pb-bg-raised));
+  border: 1px solid var(--pb-panel-border-you); border-radius: 24px;
+  padding: 36px 32px 28px;
+  box-shadow: 0 30px 80px -20px rgba(0,0,0,.65), 0 0 0 1px rgba(255,255,255,.04) inset;
+  text-align: center;
+  animation: pb-winner-pop .5s cubic-bezier(.2,.8,.2,1.1);
+}
+@keyframes pb-winner-pop { 0% { transform: scale(.85) translateY(10px); opacity: 0; } 100% { transform: scale(1) translateY(0); opacity: 1; } }
+
+.pb-winner-crown {
+  font-size: 56px; line-height: 1; display: inline-block;
+  filter: drop-shadow(0 0 18px rgba(255,211,90,.65));
+  animation: pb-winner-crown-bob 2.4s ease-in-out infinite;
+}
+@keyframes pb-winner-crown-bob { 0%, 100% { transform: translateY(0) rotate(-4deg); } 50% { transform: translateY(-6px) rotate(4deg); } }
+
+.pb-winner-eyebrow {
+  margin-top: 6px; font-size: 12px; letter-spacing: .16em; text-transform: uppercase;
+  color: var(--adolar-cyan); font-weight: 700;
+}
+.pb-winner-name {
+  font-family: var(--pb-font-display); font-weight: 800; font-size: 30px; margin: 6px 0 2px;
+  color: var(--adolar-white); text-wrap: balance;
+  text-shadow: 0 0 26px rgba(169,139,255,.55);
+}
+.pb-winner-sub { font-size: 13.5px; color: var(--pb-text-dim); margin-bottom: 22px; }
+
+.pb-winner-standings { list-style: none; margin: 0 0 22px; padding: 0; display: flex; flex-direction: column; gap: 7px; text-align: left; }
+.pb-winner-row {
+  display: flex; align-items: center; gap: 10px;
+  background: rgba(255,255,255,.03); border: 1px solid var(--pb-panel-border);
+  border-radius: 12px; padding: 8px 12px;
+}
+.pb-winner-row.pb-winner-you { border-color: var(--adolar-cyan); background: rgba(49,213,255,.06); }
+.pb-winner-rank {
+  font-family: var(--pb-font-display); font-size: 12px; color: var(--pb-text-faint);
+  width: 20px; flex: none; text-align: center;
+}
+.pb-winner-row-name { flex: 1; font-size: 13.5px; font-weight: 600; color: var(--adolar-white); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pb-winner-row-cards { font-family: var(--pb-font-display); font-size: 12.5px; color: var(--pb-text-dim); flex: none; }
+
+.pb-winner-actions { display: flex; flex-direction: column; gap: 10px; align-items: center; }
+.pb-winner-restart {
+  width: 100%; border: none; border-radius: 12px; padding: 13px 18px;
+  font-family: var(--pb-font-body); font-weight: 700; font-size: 14.5px; cursor: pointer;
+  background: linear-gradient(135deg, var(--adolar-cyan), var(--adolar-violet)); color: var(--adolar-navy);
+  box-shadow: 0 10px 24px -10px rgba(110,68,255,.7);
+  transition: transform .12s ease, filter .12s ease;
+}
+.pb-winner-restart:hover:not(:disabled) { transform: translateY(-1px); filter: brightness(1.06); }
+.pb-winner-restart:disabled { opacity: .55; cursor: not-allowed; }
+.pb-winner-countdown { font-size: 12px; color: var(--pb-text-faint); }
+.pb-winner-countdown b { color: var(--pb-text-dim); font-variant-numeric: tabular-nums; }
+.pb-winner-exit { background: none; border: none; color: var(--pb-text-faint); font-size: 12.5px; cursor: pointer; text-decoration: underline; padding: 2px; }
+.pb-winner-exit:hover { color: var(--pb-text-dim); }
+
+@media (prefers-reduced-motion: reduce) {
+  .pb-winner-overlay, .pb-winner-card, .pb-winner-crown, .pb-confetto { animation: none !important; }
+}
+
 /* modals */
 .pb-modal-overlay {
   display: none; position: fixed; inset: 0; z-index: 100;

@@ -24,10 +24,6 @@ async function createInvite(): Promise<{ code: string }> {
 }
 
 describe('POST /api/v1/auth/register', () => {
-  afterAll(async () => {
-    await pool.end();
-  });
-
   it('rejects registration with an unknown invite code', async () => {
     const response = await request(app).post('/api/v1/auth/register').send({
       username: 'someone',
@@ -74,5 +70,64 @@ describe('POST /api/v1/auth/register', () => {
     });
 
     expect(secondResponse.status).toBe(400);
+  });
+});
+
+describe('POST /api/v1/auth/login (single-active-session)', () => {
+  afterAll(async () => {
+    await pool.end();
+  });
+
+  async function registerAndReturnCredentials(): Promise<{ username: string; password: string }> {
+    const { code } = await createInvite();
+    const username = `sess_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    const password = 'correct horse battery staple';
+    await request(app).post('/api/v1/auth/register').send({
+      username,
+      email: `${username}@example.test`,
+      password,
+      inviteCode: code,
+    });
+    return { username, password };
+  }
+
+  it('invalidates the previous device\'s token as soon as a second login happens', async () => {
+    const { username, password } = await registerAndReturnCredentials();
+
+    const firstLogin = await request(app).post('/api/v1/auth/login').send({ usernameOrEmail: username, password });
+    const firstToken = firstLogin.body.accessToken;
+
+    // The first token works until a second login happens.
+    const beforeSecondLogin = await request(app).get('/api/v1/users/me').set('Authorization', `Bearer ${firstToken}`);
+    expect(beforeSecondLogin.status).toBe(200);
+
+    const secondLogin = await request(app).post('/api/v1/auth/login').send({ usernameOrEmail: username, password });
+    const secondToken = secondLogin.body.accessToken;
+    expect(secondToken).not.toBe(firstToken);
+
+    // FR: only one active session per player - the first device's token is
+    // now treated the same as an expired one.
+    const afterSecondLogin = await request(app).get('/api/v1/users/me').set('Authorization', `Bearer ${firstToken}`);
+    expect(afterSecondLogin.status).toBe(401);
+
+    // The new device's token works normally.
+    const withSecondToken = await request(app).get('/api/v1/users/me').set('Authorization', `Bearer ${secondToken}`);
+    expect(withSecondToken.status).toBe(200);
+  });
+
+  it('still allows logging in again even though a previous session was never cleanly logged out (rejoin after a dead device)', async () => {
+    const { username, password } = await registerAndReturnCredentials();
+
+    await request(app).post('/api/v1/auth/login').send({ usernameOrEmail: username, password });
+    // Simulates the original device going dark (crashed/lost) rather than
+    // logging out - a second, then third login must still succeed and work,
+    // so nobody is permanently locked out of their own account.
+    const thirdLogin = await request(app).post('/api/v1/auth/login').send({ usernameOrEmail: username, password });
+    expect(thirdLogin.status).toBe(200);
+
+    const meResponse = await request(app)
+      .get('/api/v1/users/me')
+      .set('Authorization', `Bearer ${thirdLogin.body.accessToken}`);
+    expect(meResponse.status).toBe(200);
   });
 });

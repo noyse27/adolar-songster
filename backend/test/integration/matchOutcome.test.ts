@@ -8,6 +8,7 @@ process.env.ROUND_COUNTDOWN_MS = '100';
 process.env.ROUND_SONG_DURATION_MS = '300';
 process.env.BONUS_WINDOW_MS = '300';
 process.env.REJOIN_GRACE_MS = '300';
+process.env.MATCH_AUTO_CLOSE_MS = '300';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { createApp } = require('../../src/app');
@@ -103,6 +104,25 @@ async function createRunningGame(): Promise<{
     .set(authHeader(owner.id, 'user'));
 
   return { tableId, gameId: startResponse.body.gameId, owner, other };
+}
+
+// Drives `winner` to a match win via a single guessed round - shared setup
+// for the restart/auto-close tests below, which only care about table
+// state once the match is over, not how it got there (already covered by
+// the "winning the match" tests).
+async function winMatch(gameId: string, winnerId: string): Promise<void> {
+  await setTimeline(gameId, winnerId, [1900, 1901, 1902, 1903, 1904, 1905, 1906, 1907, 1908]);
+  await invalidateAllSongs();
+  await seedSong(2000);
+
+  const startRound = await request(app).post(`/api/v1/games/${gameId}/rounds`).set(authHeader(winnerId, 'user'));
+  const roundId = startRound.body.roundId;
+  await waitForRoundStatus(winnerId, gameId, roundId, ['playing']);
+  await request(app)
+    .post(`/api/v1/games/${gameId}/rounds/${roundId}/guess`)
+    .set(authHeader(winnerId, 'user'))
+    .send({ type: 'position', value: 9 });
+  await waitForRoundStatus(winnerId, gameId, roundId, ['resolved']);
 }
 
 afterAll(async () => {
@@ -338,6 +358,69 @@ describe('early-leave karma penalty (FR-044/045)', () => {
       [tableId, owner.id],
     );
     expect(ownerStillThere.rows).toHaveLength(1);
+  });
+});
+
+describe('rematch and auto-close after a finished match', () => {
+  it('lets a seated player restart the table, resetting it to open with readiness cleared', async () => {
+    const { tableId, gameId, owner, other } = await createRunningGame();
+    await winMatch(gameId, owner.id);
+
+    const restart = await request(app).post(`/api/v1/tables/${tableId}/restart`).set(authHeader(other.id, 'user'));
+    expect(restart.status).toBe(200);
+
+    const tableRow = await pool.query('SELECT state, match_ended_at FROM game_table WHERE id = $1', [tableId]);
+    expect(tableRow.rows[0].state).toBe('open');
+    expect(tableRow.rows[0].match_ended_at).toBeNull();
+
+    const seatRows = await pool.query(
+      `SELECT ready FROM table_seat WHERE table_id = $1 AND left_at IS NULL`,
+      [tableId],
+    );
+    expect(seatRows.rows.every((r) => r.ready === false)).toBe(true);
+
+    // Restarting doesn't just silently vanish the seats a moment later -
+    // the auto-close window that would otherwise fire is cancelled.
+    await wait(500); // past MATCH_AUTO_CLOSE_MS=300
+    const stillSeated = await pool.query(
+      `SELECT id FROM table_seat WHERE table_id = $1 AND user_id = $2 AND left_at IS NULL`,
+      [tableId, owner.id],
+    );
+    expect(stillSeated.rows).toHaveLength(1);
+  });
+
+  it('rejects a restart from someone not seated at the table', async () => {
+    const { tableId, gameId, owner } = await createRunningGame();
+    await winMatch(gameId, owner.id);
+
+    const outsider = await createUserDirect({});
+    const restart = await request(app)
+      .post(`/api/v1/tables/${tableId}/restart`)
+      .set(authHeader(outsider.id, 'user'));
+    expect(restart.status).toBe(403);
+  });
+
+  it('rejects a restart on a table that is not finished', async () => {
+    const { tableId, owner } = await createRunningGame();
+
+    const restart = await request(app).post(`/api/v1/tables/${tableId}/restart`).set(authHeader(owner.id, 'user'));
+    expect(restart.status).toBe(409);
+  });
+
+  it('auto-closes the table (evicts every seat) if nobody restarts within the window', async () => {
+    const { tableId, gameId, owner } = await createRunningGame();
+    await winMatch(gameId, owner.id);
+
+    await wait(500); // past MATCH_AUTO_CLOSE_MS=300
+
+    const seatRows = await pool.query(
+      `SELECT user_id FROM table_seat WHERE table_id = $1 AND left_at IS NULL`,
+      [tableId],
+    );
+    expect(seatRows.rows).toHaveLength(0);
+
+    const tableRow = await pool.query('SELECT state FROM game_table WHERE id = $1', [tableId]);
+    expect(tableRow.rows[0].state).toBe('finished'); // stays finished, just vacated - not a restart
   });
 });
 

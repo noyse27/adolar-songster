@@ -7,6 +7,7 @@ import { fetchTimeline, findSortedInsertIndex, insertCardAndReindex, isPlacement
 import { resolveClaimWinner } from './tokenRace';
 import { broadcastGame } from '../realtime/broadcast';
 import { startReadyWindow } from './roundReadyWindow';
+import { scheduleAutoClose } from './tableRestart';
 import {
   BONUS_WINDOW_MS,
   COUNTDOWN_MS,
@@ -29,6 +30,22 @@ async function checkForGameEnd(client: PoolClient, gameId: string): Promise<void
   const outcome = await checkForWinOrTie(client, gameId);
   if ('winnerUserId' in outcome) {
     await finishGame(client, gameId, outcome.winnerUserId);
+  }
+}
+
+// Called once, right after a round's resolution has committed. Either the
+// game is still active - in which case the next round-ready window arms
+// itself automatically (see roundReadyWindow.ts) - or this round's
+// checkForGameEnd() just finished the match, in which case the table
+// starts its 60s auto-close countdown (see tableRestart.ts) instead.
+async function afterRoundResolved(gameId: string): Promise<void> {
+  const result = await pool.query(`SELECT status, table_id FROM game WHERE id = $1`, [gameId]);
+  if (result.rowCount === 0) return;
+  const { status, table_id: tableId } = result.rows[0];
+  if (status === 'finished') {
+    scheduleAutoClose(tableId);
+  } else {
+    await startReadyWindow(gameId);
   }
 }
 
@@ -328,7 +345,7 @@ export async function resolveRound(
     // From round 2 onward, the next ready window opens automatically as
     // soon as this one resolves (no-ops if the match just ended) - keeps
     // play moving without everyone re-clicking ready after every reveal.
-    await startReadyWindow(round.game_id);
+    await afterRoundResolved(round.game_id);
     return { roundId, songYear, results };
   } catch (err) {
     await client.query('ROLLBACK');
@@ -443,7 +460,7 @@ async function resolveBonusRound(roundId: string): Promise<void> {
 
     await client.query('COMMIT');
     await broadcastGame(round.game_id);
-    await startReadyWindow(round.game_id);
+    await afterRoundResolved(round.game_id);
   } catch (err) {
     await client.query('ROLLBACK');
     throw err;
@@ -602,7 +619,7 @@ async function resolveSoloTimeout(roundId: string): Promise<void> {
 
     await client.query('COMMIT');
     await broadcastGame(round.game_id);
-    await startReadyWindow(round.game_id);
+    await afterRoundResolved(round.game_id);
   } catch (err) {
     await client.query('ROLLBACK');
     throw err;
@@ -677,7 +694,7 @@ export async function submitTokenGuess(
         await checkForGameEnd(client, round.game_id);
         await client.query('COMMIT');
         await broadcastGame(round.game_id);
-        await startReadyWindow(round.game_id);
+        await afterRoundResolved(round.game_id);
         return { correct: true };
       }
 
@@ -786,7 +803,7 @@ async function resolveOthersWindow(roundId: string): Promise<void> {
 
     await client.query('COMMIT');
     await broadcastGame(round.game_id);
-    await startReadyWindow(round.game_id);
+    await afterRoundResolved(round.game_id);
   } catch (err) {
     await client.query('ROLLBACK');
     throw err;

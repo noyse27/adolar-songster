@@ -2,6 +2,7 @@ import { Server as HttpServer } from 'http';
 import { Server, Socket } from 'socket.io';
 import jwt from 'jsonwebtoken';
 import { JWT_SECRET } from '../middleware/auth';
+import { pool } from '../db/pool';
 import { setIO, tableRoom, lobbyRoom, gameRoom } from './io';
 
 interface AuthedSocketData {
@@ -20,14 +21,31 @@ export function createSocketServer(httpServer: HttpServer): Server {
       next(new Error('missing auth token'));
       return;
     }
+    let payload: { sub: string; role: string; sessionVersion: number };
     try {
-      const payload = jwt.verify(token, JWT_SECRET) as { sub: string; role: string };
-      (socket.data as AuthedSocketData).userId = payload.sub;
-      (socket.data as AuthedSocketData).userRole = payload.role;
-      next();
+      payload = jwt.verify(token, JWT_SECRET) as { sub: string; role: string; sessionVersion: number };
     } catch {
       next(new Error('invalid or expired token'));
+      return;
     }
+
+    // Mirrors middleware/auth.ts's requireAuth: a token superseded by a
+    // newer login elsewhere (single-active-session) should fail a fresh
+    // handshake the same way an expired token would - this only stops a
+    // *new* connection/reconnect from a stale token though, it doesn't
+    // reach into an already-open socket from the old session.
+    pool
+      .query(`SELECT session_version FROM app_user WHERE id = $1`, [payload.sub])
+      .then((result) => {
+        if (result.rowCount === 0 || result.rows[0].session_version !== payload.sessionVersion) {
+          next(new Error('invalid or expired token'));
+          return;
+        }
+        (socket.data as AuthedSocketData).userId = payload.sub;
+        (socket.data as AuthedSocketData).userRole = payload.role;
+        next();
+      })
+      .catch(() => next(new Error('invalid or expired token')));
   });
 
   io.on('connection', (socket: Socket) => {

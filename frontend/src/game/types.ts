@@ -42,6 +42,8 @@ export interface GameState {
   tableId: string;
   status: string;
   winnerUserId: string | null;
+  matchEndedAt: string | null;
+  matchCloseWindowMs: number;
   players: GamePlayerState[];
   currentRound: CurrentRoundState | null;
   roundReadyPhase: RoundReadyPhase | null;

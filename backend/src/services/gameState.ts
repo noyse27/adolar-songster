@@ -1,6 +1,7 @@
 import { pool } from '../db/pool';
 import { fetchTimeline } from './timeline';
 import { ROUND_READY_WINDOW_MS, TOKENS_PER_PLAYER } from './roundConfig';
+import { AUTO_CLOSE_MS } from './tableRestart';
 
 export interface GamePlayerState {
   userId: string;
@@ -49,6 +50,11 @@ export interface GameState {
   tableId: string;
   status: string;
   winnerUserId: string | null;
+  // Set once the match finishes (matchOutcome.ts's finishGame) - drives
+  // the client's synced "closes in Xs" countdown on the winner screen; see
+  // tableRestart.ts for the matching server-side auto-close.
+  matchEndedAt: string | null;
+  matchCloseWindowMs: number;
   players: GamePlayerState[];
   currentRound: CurrentRoundState | null;
   roundReadyPhase: RoundReadyPhase | null;
@@ -61,7 +67,10 @@ export async function loadGameState(
   bonusWindowMs: number,
 ): Promise<GameState | null> {
   const gameResult = await pool.query(
-    `SELECT id, table_id, status, winner_user_id FROM game WHERE id = $1`,
+    `SELECT g.id, g.table_id, g.status, g.winner_user_id, t.match_ended_at
+     FROM game g
+     JOIN game_table t ON t.id = g.table_id
+     WHERE g.id = $1`,
     [gameId],
   );
   if (gameResult.rowCount === 0) return null;
@@ -203,6 +212,8 @@ export async function loadGameState(
     tableId: game.table_id,
     status: game.status,
     winnerUserId: game.winner_user_id,
+    matchEndedAt: game.match_ended_at,
+    matchCloseWindowMs: AUTO_CLOSE_MS,
     players,
     currentRound,
     roundReadyPhase,

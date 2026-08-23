@@ -82,7 +82,7 @@ export async function finishGame(
     `UPDATE game SET status = 'finished', winner_user_id = $1, ended_at = NOW() WHERE id = $2`,
     [winnerUserId, gameId],
   );
-  await client.query(`UPDATE game_table SET state = 'finished' WHERE id = $1`, [tableId]);
+  await client.query(`UPDATE game_table SET state = 'finished', match_ended_at = NOW() WHERE id = $1`, [tableId]);
 }
 
 // FR-044: leaving mid-match costs -5, plus -1 per other player still

@@ -6,6 +6,7 @@ import { RegisterPage } from './pages/RegisterPage';
 import { InstructionsPage } from './pages/InstructionsPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { AdminPage } from './pages/AdminPage';
+import { InvitesPage } from './pages/InvitesPage';
 import { LobbyPage } from './pages/LobbyPage';
 import { CreateTablePage } from './pages/CreateTablePage';
 import { TableRoomPage } from './pages/TableRoomPage';
@@ -26,6 +27,7 @@ export function App() {
       <Route path="/anleitung" element={<InstructionsPage />} />
       <Route path="/profil" element={<ProfilePage />} />
       <Route path="/admin" element={<AdminPage />} />
+      <Route path="/einladungen" element={<InvitesPage />} />
       <Route path="/lobby" element={<LobbyPage />} />
       <Route path="/tisch/neu" element={<CreateTablePage />} />
       <Route path="/tisch/:tableId" element={<TableRoomPage />} />

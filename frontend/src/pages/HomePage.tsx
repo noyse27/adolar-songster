@@ -33,6 +33,11 @@ export function HomePage() {
               <Link className="sh-action" to="/profil">
                 Profil <span className="sh-action-arrow">→</span>
               </Link>
+              {auth.user.role !== 'admin' && auth.user.canCreateInvites && (
+                <Link className="sh-action" to="/einladungen">
+                  Einladungen <span className="sh-action-arrow">→</span>
+                </Link>
+              )}
               {auth.user.role === 'admin' && (
                 <Link className="sh-action" to="/admin">
                   Admin-Bereich <span className="sh-action-arrow">→</span>

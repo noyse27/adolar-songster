@@ -7,6 +7,7 @@ import { computeYearRange, generateStartBlocks } from '../services/timeline';
 import { applyEarlyLeavePenalty } from '../services/matchOutcome';
 import { AdolarClientError, isPlaylistAvailable } from '../services/adolarClient';
 import { startTableGame } from '../services/tableStart';
+import { restartTable } from '../services/tableRestart';
 import { fetchLobbyTables, loadTableDetail } from '../services/tableQueries';
 import { broadcastLobby, broadcastTable } from '../realtime/broadcast';
 
@@ -361,6 +362,22 @@ tablesRouter.post('/tables/:tableId/start', requireAuth, async (req: Authenticat
 
   await Promise.all([broadcastLobby(), broadcastTable(tableId)]);
   res.status(200).json({ tableId, tableSessionId: outcome.tableSessionId, gameId: outcome.gameId });
+});
+
+// Rematch: any still-seated player can send a finished table back to
+// 'open' within the 60s auto-close window (see tableRestart.ts), instead
+// of everyone having to leave and re-join from the lobby for another game.
+tablesRouter.post('/tables/:tableId/restart', requireAuth, async (req: AuthenticatedRequest, res) => {
+  const requesterId = req.userId as string;
+  const { tableId } = req.params;
+
+  const outcome = await restartTable(tableId, requesterId);
+  if (!outcome.ok) {
+    res.status(outcome.status).json({ error: outcome.code, message: outcome.message });
+    return;
+  }
+
+  res.status(200).json({ tableId });
 });
 
 // FR: every seated player must mark themselves ready before the table can

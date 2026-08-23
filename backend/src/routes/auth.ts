@@ -86,7 +86,7 @@ authRouter.post('/auth/login', async (req, res) => {
   }
 
   const result = await pool.query(
-    `SELECT id, username, password_hash, role, status
+    `SELECT id, username, password_hash, role, status, can_create_invites
      FROM app_user
      WHERE username = $1 OR email = $1`,
     [usernameOrEmail],
@@ -110,8 +110,20 @@ authRouter.post('/auth/login', async (req, res) => {
     return;
   }
 
+  // Single-active-session: bump the version now so any token from a prior
+  // login (a different device/browser) stops matching on its next request
+  // - see requireAuth/the socket handshake check, both of which compare
+  // against this column. A fresh login always succeeds regardless of what
+  // else is logged in, so a dead/unreachable old device never locks the
+  // account out - it just gets superseded.
+  const sessionResult = await pool.query(
+    `UPDATE app_user SET session_version = session_version + 1 WHERE id = $1 RETURNING session_version`,
+    [user.id],
+  );
+  const sessionVersion = sessionResult.rows[0].session_version as number;
+
   const accessToken = jwt.sign(
-    { sub: user.id, role: user.role },
+    { sub: user.id, role: user.role, sessionVersion },
     JWT_SECRET,
     { expiresIn: JWT_EXPIRES_IN_SECONDS },
   );
@@ -119,7 +131,7 @@ authRouter.post('/auth/login', async (req, res) => {
   res.status(200).json({
     accessToken,
     expiresIn: JWT_EXPIRES_IN_SECONDS,
-    user: { id: user.id, username: user.username, role: user.role },
+    user: { id: user.id, username: user.username, role: user.role, canCreateInvites: user.can_create_invites },
   });
 });
 

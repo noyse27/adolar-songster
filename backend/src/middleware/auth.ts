@@ -16,9 +16,13 @@ export async function requireAuth(req: AuthenticatedRequest, res: Response, next
     return;
   }
 
-  let payload: { sub: string; role: string };
+  let payload: { sub: string; role: string; sessionVersion: number };
   try {
-    payload = jwt.verify(header.slice('Bearer '.length), JWT_SECRET) as { sub: string; role: string };
+    payload = jwt.verify(header.slice('Bearer '.length), JWT_SECRET) as {
+      sub: string;
+      role: string;
+      sessionVersion: number;
+    };
   } catch {
     res.status(401).json({ error: 'invalid or expired token' });
     return;
@@ -29,8 +33,16 @@ export async function requireAuth(req: AuthenticatedRequest, res: Response, next
   // token was issued. Without this check, a stale-but-unexpired token sails
   // through here and then blows up downstream as a raw FK-violation on
   // whichever table references the user (see game_table.owner_user_id).
-  const result = await pool.query(`SELECT status FROM app_user WHERE id = $1`, [payload.sub]);
-  if (result.rowCount === 0 || result.rows[0].status !== 'active') {
+  //
+  // session_version also enforces single-active-session: every login bumps
+  // it (see routes/auth.ts), so a token from an earlier login on another
+  // device stops matching here on its very next request.
+  const result = await pool.query(`SELECT status, session_version FROM app_user WHERE id = $1`, [payload.sub]);
+  if (
+    result.rowCount === 0 ||
+    result.rows[0].status !== 'active' ||
+    result.rows[0].session_version !== payload.sessionVersion
+  ) {
     res.status(401).json({ error: 'invalid or expired token' });
     return;
   }

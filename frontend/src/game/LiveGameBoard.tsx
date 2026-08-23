@@ -4,7 +4,7 @@ import '../playboard/Playboard.css';
 import { useAuth } from '../auth/AuthContext';
 import { apiFetch, ApiError, API_BASE_URL } from '../api';
 import { getSocket } from '../realtime/socket';
-import { fetchGameState, setRoundReady, submitPositionGuess, submitBonusGuess, claimToken, submitTokenGuess } from './gameApi';
+import { fetchGameState, setRoundReady, submitPositionGuess, submitBonusGuess, claimToken, submitTokenGuess, restartTable } from './gameApi';
 import { GameState } from './types';
 import { embedTimeline, boxIndexToPackedIndex, packedIndexToBoxIndex, SLOT_COUNT } from './timelineSlots';
 import { PlayerRow } from '../playboard/PlayerRow';
@@ -59,6 +59,7 @@ export function LiveGameBoard() {
   const [audioMuted, setAudioMuted] = useState(() => window.localStorage.getItem(AUDIO_MUTED_STORAGE_KEY) !== 'false');
   const [audioUnavailable, setAudioUnavailable] = useState(false);
   const [revealExpired, setRevealExpired] = useState(false);
+  const [restarting, setRestarting] = useState(false);
 
   const tokenPhaseStartRef = useRef<{ status: string; at: number } | null>(null);
   const timelineRefs = useRef<Map<string, HTMLDivElement>>(new Map());
@@ -84,6 +85,26 @@ export function LiveGameBoard() {
       socket.emit('game:leave-room', gameId);
     };
   }, [auth, gameId]);
+
+  // Once a rematch resets the table back to 'open' (see the winner
+  // screen's "Nochmal spielen"), this GameState object itself never
+  // changes again - the new game doesn't exist until someone starts it -
+  // so everyone here needs the table's own broadcast to know to head back
+  // to the ready-up flow instead of staring at a stale finished screen.
+  const tableId = state?.tableId;
+  useEffect(() => {
+    if (!auth || !tableId) return;
+    const socket = getSocket(auth.accessToken);
+    socket.emit('table:join-room', tableId);
+    const onTableUpdate = (payload: { state: string }) => {
+      if (payload.state === 'open') navigate(`/tisch/${tableId}`);
+    };
+    socket.on('table:update', onTableUpdate);
+    return () => {
+      socket.off('table:update', onTableUpdate);
+      socket.emit('table:leave-room', tableId);
+    };
+  }, [auth, tableId, navigate]);
 
   // A new round means any local pending placement/guess from the previous
   // one is stale - reset it. Deliberately NOT keyed on the whole `state`
@@ -114,11 +135,26 @@ export function LiveGameBoard() {
   // smoothly between the (infrequent) real state updates from the server.
   const roundStatus = state?.currentRound?.status;
   useEffect(() => {
-    const active = state?.roundReadyPhase?.startedAt || (roundStatus && ['countdown', 'playing'].includes(roundStatus));
+    const active =
+      state?.roundReadyPhase?.startedAt ||
+      (roundStatus && ['countdown', 'playing'].includes(roundStatus)) ||
+      state?.status === 'finished';
     if (!active) return;
     const id = window.setInterval(() => setNow(Date.now()), 200);
     return () => window.clearInterval(id);
-  }, [state?.roundReadyPhase?.startedAt, roundStatus]);
+  }, [state?.roundReadyPhase?.startedAt, roundStatus, state?.status]);
+
+  // The winner screen's own auto-close countdown - navigates everyone back
+  // to the lobby if nobody rematches within the server's window (mirrors
+  // tableRestart.ts's server-side eviction, which fires around the same
+  // real time off the same matchEndedAt timestamp).
+  useEffect(() => {
+    if (state?.status !== 'finished' || !state.matchEndedAt) return;
+    const deadline = new Date(state.matchEndedAt).getTime() + state.matchCloseWindowMs;
+    if (Date.now() >= deadline) {
+      navigate('/lobby');
+    }
+  }, [state?.status, state?.matchEndedAt, state?.matchCloseWindowMs, now, navigate]);
 
   // Audio: preload as soon as a round - and therefore its stream path -
   // is known, i.e. already during 'countdown' (see gameState.ts's
@@ -258,6 +294,21 @@ export function LiveGameBoard() {
     }, delay + 700);
   }
 
+  // Randomized once, not on every 200ms tick - only the fall animation
+  // itself needs to keep moving, the pieces' own colors/positions don't.
+  const confettiPieces = useMemo(
+    () =>
+      Array.from({ length: 26 }, (_, i) => ({
+        left: Math.round(Math.random() * 100),
+        delay: (Math.random() * 2.4).toFixed(2),
+        duration: (2.6 + Math.random() * 1.8).toFixed(2),
+        color: ['var(--adolar-cyan)', 'var(--adolar-violet)', 'var(--adolar-lavender)', 'var(--adolar-yellow)', 'var(--adolar-orange)'][
+          i % 5
+        ],
+      })),
+    [],
+  );
+
   const you = state?.players.find((p) => p.userId === auth?.user.id) ?? null;
   const maxScore = useMemo(() => Math.max(0, ...(state?.players.map((p) => p.timeline.length) ?? [0])), [state]);
   const rankMap = useMemo(
@@ -340,6 +391,20 @@ export function LiveGameBoard() {
       setGuessInput('');
     } catch {
       setError('Jahr konnte nicht übermittelt werden.');
+    }
+  }
+
+  async function handleRestart() {
+    if (!auth || !state || restarting) return;
+    setRestarting(true);
+    try {
+      await restartTable(state.tableId, auth.accessToken);
+      // No local navigation here - the table:update broadcast (see the
+      // table-room subscription effect above) sends everyone to
+      // /tisch/:tableId once the server confirms the reset to 'open'.
+    } catch {
+      setError('Tisch konnte nicht neu gestartet werden.');
+      setRestarting(false);
     }
   }
 
@@ -528,13 +593,6 @@ export function LiveGameBoard() {
           </div>
         )}
 
-        {state.status === 'finished' && (
-          <div className="sh-info">
-            Spiel beendet.{' '}
-            {state.winnerUserId && `Gewonnen von ${state.players.find((p) => p.userId === state.winnerUserId)?.username ?? '?'}.`}
-          </div>
-        )}
-
         <div className="pb-board">
           {state.players.map((p) => {
             const isSelf = p.userId === you?.userId;
@@ -684,6 +742,68 @@ export function LiveGameBoard() {
 
       <ExitModal open={exitOpen} karmaPenalty={karmaLeavePenalty(state.players.length)} onCancel={() => setExitOpen(false)} onConfirm={confirmExit} />
       <HelpModal open={helpOpen} onClose={() => setHelpOpen(false)} />
+
+      {state.status === 'finished' &&
+        (() => {
+          const winner = state.players.find((p) => p.userId === state.winnerUserId);
+          const standings = [...state.players].sort((a, b) => b.timeline.length - a.timeline.length);
+          const deadline = state.matchEndedAt ? new Date(state.matchEndedAt).getTime() + state.matchCloseWindowMs : null;
+          const remainingS = deadline ? Math.max(0, Math.ceil((deadline - now) / 1000)) : null;
+
+          return (
+            <div className="pb-winner-overlay">
+              <div className="pb-confetti" aria-hidden="true">
+                {confettiPieces.map((p, i) => (
+                  <span
+                    key={i}
+                    className="pb-confetto"
+                    style={{
+                      left: `${p.left}%`,
+                      background: p.color,
+                      animationDuration: `${p.duration}s`,
+                      animationDelay: `${p.delay}s`,
+                    }}
+                  />
+                ))}
+              </div>
+              <div className="pb-winner-card">
+                <span className="pb-winner-crown" role="img" aria-label="Krone">
+                  &#128081;
+                </span>
+                <div className="pb-winner-eyebrow">Partie beendet</div>
+                <div className="pb-winner-name">{winner?.username ?? 'Unentschieden'} gewinnt!</div>
+                <div className="pb-winner-sub">Erste:r mit 10 richtig platzierten Karten.</div>
+
+                <ol className="pb-winner-standings">
+                  {standings.map((p, i) => (
+                    <li key={p.userId} className={`pb-winner-row${p.userId === you?.userId ? ' pb-winner-you' : ''}`}>
+                      <span className="pb-winner-rank">#{i + 1}</span>
+                      <span className="pb-winner-row-name">
+                        {p.username}
+                        {p.userId === state.winnerUserId ? ' 👑' : ''}
+                      </span>
+                      <span className="pb-winner-row-cards">{p.timeline.length}/10</span>
+                    </li>
+                  ))}
+                </ol>
+
+                <div className="pb-winner-actions">
+                  <button className="pb-winner-restart" onClick={handleRestart} disabled={restarting}>
+                    {restarting ? 'Startet neu…' : '🔁 Nochmal spielen'}
+                  </button>
+                  {remainingS !== null && (
+                    <div className="pb-winner-countdown">
+                      Tisch schließt in <b>{remainingS}s</b>, falls niemand neu startet
+                    </div>
+                  )}
+                  <button className="pb-winner-exit" onClick={() => navigate('/lobby')}>
+                    Jetzt zur Lobby
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
     </div>
   );
 }

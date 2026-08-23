@@ -29,6 +29,10 @@ export function claimToken(gameId: string, roundId: string, token: string): Prom
   return apiFetch(`/games/${gameId}/rounds/${roundId}/token-claim`, { method: 'POST', token });
 }
 
+export function restartTable(tableId: string, token: string): Promise<{ tableId: string }> {
+  return apiFetch(`/tables/${tableId}/restart`, { method: 'POST', token });
+}
+
 export function submitTokenGuess(gameId: string, roundId: string, token: string, year: number): Promise<{ correct: boolean }> {
   return apiFetch(`/games/${gameId}/rounds/${roundId}/token-submit`, { method: 'POST', body: { year }, token });
 }
