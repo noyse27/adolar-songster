@@ -1,7 +1,17 @@
 # Adolar Songster
 
-Privates Musik-Ratespiel fuer kleine Gruppen. Projektdokumentation siehe
+**Status: Beta** - privates Musik-Ratespiel fuer kleine Gruppen. Projektdokumentation siehe
 [docs/Adolar_Songster_Masterindex_v1_20260821.md](docs/Adolar_Songster_Masterindex_v1_20260821.md).
+
+## Neu in dieser Beta (seit der Alpha)
+
+- Rangliste (Top 10 + eigener Rang), globale Rang-Formel aus Songster-/Karmapunkten und Spielanzahl
+- Tisch-Beitrittsvoraussetzungen (Mindest-Karma/-Punkte/-Spiele), sonst nur Zuschauer-Beitritt moeglich
+- Automatisches Aufraeumen inaktiver Tische (60 Min. ohne Interaktion) mit Vorwarnung, plus Admin-Uebersicht aller Tische
+- PDF-Export der Endspielstands-Zusammenfassung auf dem Siegerbildschirm
+- Song-Pool-Suche und manuelle Jahres-Korrektur im Admin-Bereich (inkl. Schutz vor Ueberschreiben durch den Adolar-Sync)
+- Adolar-Sync laeuft jetzt asynchron im Hintergrund (kein Blockieren/Timeout mehr bei grossen Playlists)
+- Diverse Stabilitaets-/Sicherheitsfixes (Session-Race-Conditions, Einladungslimits, "Backend nicht erreichbar")
 
 ## Quickstart (Docker)
 
