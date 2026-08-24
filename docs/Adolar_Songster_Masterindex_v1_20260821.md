@@ -81,6 +81,15 @@ Sie verweist auf alle relevanten Dokumente, die fuer Umsetzung, Uebergabe und Ab
   Phase 2 abgeschlossen sein, da Songster im Adolar-Modus erst vollstaendig
   funktionieren soll.
 
+## 3.12 Benutzerhandbuch (Beta)
+- Datei: Adolar_Songster_Benutzerhandbuch_v1_20260824.md
+- Inhalt: Aus dem aktuellen Code abgeleitete, vollständige Beschreibung
+  aller Bildschirme/Funktionen aus Nutzersicht (Registrierung, Lobby,
+  Tisch erstellen, Spielablauf, Punkte/Karma, Rangliste, Admin-Bereich,
+  Inaktivitäts-Aufräumung, PDF-Export, Fußzeile).
+- Verwendung: Ausgangsdokument für eine generierte Anleitung/Hilfeseite
+  (z. B. per adolar-whatsnew-Skill), nicht selbst die Endnutzer-Hilfeseite.
+
 ## 4. Bildmaterial
 - songster_home.png
 - songster_playboard.png
@@ -111,3 +120,6 @@ Danach pruefen:
 - 2026-08-21: Adolar-Integration Schritt 4 umgesetzt (Songster-seitiger
   Adolar-Client, Batch-Algorithmus, `sourcePlaylistId`-Integration in
   Tischerstellung/-start) - siehe Abschnitt 6 im Integrationskonzept-Dokument.
+- 2026-08-24: Benutzerhandbuch (Abschnitt 3.12) ergaenzt - erste
+  vollstaendige Nutzersicht-Dokumentation, generiert nach Release
+  v0.2.0-beta.
