@@ -21,7 +21,6 @@ export function scheduleTimeout(gameId: string): void {
   const timer = setTimeout(() => {
     pendingTimeouts.delete(gameId);
     onExpire?.(gameId).catch((err) => {
-      // eslint-disable-next-line no-console
       console.error('failed to resolve round-ready timeout', err);
     });
   }, ROUND_READY_WINDOW_MS);

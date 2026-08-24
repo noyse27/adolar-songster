@@ -19,7 +19,6 @@ export function scheduleAutoClose(tableId: string): void {
   const timer = setTimeout(() => {
     pendingTimeouts.delete(tableId);
     autoCloseIfStillFinished(tableId).catch((err) => {
-      // eslint-disable-next-line no-console
       console.error('failed to auto-close finished table', err);
     });
   }, AUTO_CLOSE_MS);

@@ -186,14 +186,12 @@ function scheduleRoundTransitions(roundId: string, gameId: string): void {
       .query(`UPDATE round SET status = 'playing' WHERE id = $1 AND status = 'countdown'`, [roundId])
       .then(() => broadcastGame(gameId))
       .catch((err) => {
-        // eslint-disable-next-line no-console
         console.error('failed to transition round to playing', err);
       });
   }, COUNTDOWN_MS);
 
   setTimeout(() => {
     resolveRound(roundId).catch((err) => {
-      // eslint-disable-next-line no-console
       console.error('failed to resolve round', err);
     });
   }, COUNTDOWN_MS + SONG_DURATION_MS);
@@ -205,14 +203,12 @@ function scheduleBonusRoundTransitions(roundId: string, gameId: string): void {
       .query(`UPDATE round SET status = 'playing' WHERE id = $1 AND status = 'countdown'`, [roundId])
       .then(() => broadcastGame(gameId))
       .catch((err) => {
-        // eslint-disable-next-line no-console
         console.error('failed to transition bonus round to playing', err);
       });
   }, COUNTDOWN_MS);
 
   setTimeout(() => {
     resolveBonusRound(roundId).catch((err) => {
-      // eslint-disable-next-line no-console
       console.error('failed to resolve bonus round', err);
     });
   }, COUNTDOWN_MS + BONUS_WINDOW_MS);
@@ -565,7 +561,6 @@ export async function claimToken(
     if (isFirstClaim) {
       setTimeout(() => {
         resolveClaimRace(roundId).catch((err) => {
-          // eslint-disable-next-line no-console
           console.error('failed to resolve token claim race', err);
         });
       }, TOKEN_CLAIM_GRACE_MS);
@@ -622,7 +617,6 @@ async function resolveClaimRace(roundId: string): Promise<void> {
 
     setTimeout(() => {
       resolveSoloTimeout(roundId).catch((err) => {
-        // eslint-disable-next-line no-console
         console.error('failed to resolve token solo timeout', err);
       });
     }, TOKEN_SOLO_WINDOW_MS);
@@ -744,7 +738,6 @@ export async function submitTokenGuess(
 
       setTimeout(() => {
         resolveOthersWindow(roundId).catch((err) => {
-          // eslint-disable-next-line no-console
           console.error('failed to resolve token others window', err);
         });
       }, TOKEN_OTHERS_WINDOW_MS);

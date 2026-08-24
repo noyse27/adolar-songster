@@ -6,6 +6,11 @@
     "backend",
     "frontend"
   ],
+  "overrides": {
+    "eslint-plugin-react-hooks": {
+      "eslint": "^10.9.0"
+    }
+  },
   "scripts": {
     "lint": "npm run lint --workspaces --if-present",
     "test:unit": "npm run test:unit --workspaces --if-present",

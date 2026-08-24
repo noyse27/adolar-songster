@@ -36,7 +36,6 @@ function scheduleEarlyLeavePenaltyCheck(gameId: string, tableId: string, userId:
 
       await applyEarlyLeavePenalty(pool, gameId, tableId, userId);
     })().catch((err) => {
-      // eslint-disable-next-line no-console
       console.error('failed to evaluate early-leave penalty', err);
     });
   }, REJOIN_GRACE_MS);

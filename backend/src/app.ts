@@ -57,7 +57,6 @@ export function createApp(): Express {
   // with a generic 500 here is a safety net, not a substitute for handling
   // specific, expected error cases in the route itself.
   app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
-    // eslint-disable-next-line no-console
     console.error('unhandled request error', err);
     if (res.headersSent) return;
     res.status(500).json({ error: 'internal server error' });

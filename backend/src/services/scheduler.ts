@@ -12,11 +12,9 @@ const DAILY_SCHEDULE = '0 3 * * *';
 function runSync(reason: string): void {
   syncAllAdolarPlaylists()
     .then((result) => {
-      // eslint-disable-next-line no-console
       console.log(`[adolar-sync] ${reason}: synced ${result.trackCount} tracks across ${result.playlistCount} playlists`);
     })
     .catch((err) => {
-      // eslint-disable-next-line no-console
       console.error(`[adolar-sync] ${reason} failed`, err);
     });
 }
@@ -33,7 +31,6 @@ export function startAdolarSyncSchedule(): void {
 export function startTableCleanupSchedule(): void {
   cron.schedule('* * * * *', () => {
     deleteInactiveTables().catch((err) => {
-      // eslint-disable-next-line no-console
       console.error('[table-cleanup] failed', err);
     });
   });
