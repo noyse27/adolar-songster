@@ -12,10 +12,17 @@ export interface Invite {
   createdByUsername: string;
 }
 
+// Delegated (non-admin) users get a fixed, server-enforced max-uses-per-
+// invite (see MAX_USES_FOR_DELEGATED_USERS in backend/src/routes/invites.ts)
+// - shown here for display only, not editable, so this field can't be used
+// to work around the monthly invite-code quota by setting one code's uses
+// arbitrarily high. Only admins get the editable input.
+const MAX_USES_FOR_DELEGATED_USERS = 1;
+
 // Shared by AdminPage (admins see everyone's invites) and InvitesPage
 // (delegated non-admin users see only their own) - GET/POST /invites is
 // already scoped that way server-side, see backend/src/routes/invites.ts.
-export function InvitesSection({ token }: { token: string }) {
+export function InvitesSection({ token, isAdmin }: { token: string; isAdmin: boolean }) {
   const [invites, setInvites] = useState<Invite[]>([]);
   const [maxUses, setMaxUses] = useState(5);
   const [expiresInDays, setExpiresInDays] = useState(14);
@@ -48,14 +55,20 @@ export function InvitesSection({ token }: { token: string }) {
     <section className="admin-section">
       <h3>Einladungen</h3>
       <form className="admin-inline-form" onSubmit={handleCreate}>
-        <input
-          type="number"
-          min={1}
-          value={maxUses}
-          onChange={(e) => setMaxUses(Number(e.target.value))}
-          style={{ width: 90 }}
-          title="Max. Nutzungen"
-        />
+        {isAdmin ? (
+          <input
+            type="number"
+            min={1}
+            value={maxUses}
+            onChange={(e) => setMaxUses(Number(e.target.value))}
+            style={{ width: 90 }}
+            title="Max. Nutzungen"
+          />
+        ) : (
+          <span title="Nur Admins können das anpassen" style={{ color: 'var(--sh-text-dim)', fontSize: 13 }}>
+            Max. Nutzungen: {MAX_USES_FOR_DELEGATED_USERS}
+          </span>
+        )}
         <input
           type="number"
           min={1}

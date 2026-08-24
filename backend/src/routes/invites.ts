@@ -7,10 +7,27 @@ export const invitesRouter = Router();
 
 const MONTHLY_QUOTA_FOR_DELEGATED_USERS = 3;
 const DEFAULT_EXPIRES_IN_DAYS = 14;
+// Delegated (non-admin) users get a fixed max-uses-per-invite, not a value
+// they can pick - otherwise the monthly quota above (how many invite codes
+// they can create) is meaningless, since one code with maxUses set high
+// lets in as many registrations as they like. Only admins may choose a
+// higher maxUses (e.g. for a one-off group invite).
+const MAX_USES_FOR_DELEGATED_USERS = 1;
 
 function startOfCurrentMonthUtc(): Date {
   const now = new Date();
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+}
+
+// Exported for unit testing without a DB - see test/unit/invites.test.ts.
+// Only admins get to pick maxUses at all; a delegated user's request body
+// is ignored entirely (not just clamped), so there's no client-controlled
+// path to a higher value.
+export function resolveMaxUses(isAdmin: boolean, requestedMaxUses: unknown): number {
+  if (!isAdmin) return MAX_USES_FOR_DELEGATED_USERS;
+  return Number.isInteger(requestedMaxUses) && (requestedMaxUses as number) > 0
+    ? (requestedMaxUses as number)
+    : 1;
 }
 
 invitesRouter.post('/invites', requireAuth, async (req: AuthenticatedRequest, res) => {
@@ -53,7 +70,7 @@ invitesRouter.post('/invites', requireAuth, async (req: AuthenticatedRequest, re
     }
   }
 
-  const resolvedMaxUses = Number.isInteger(maxUses) && maxUses > 0 ? maxUses : 1;
+  const resolvedMaxUses = resolveMaxUses(isAdmin, maxUses);
   const resolvedExpiresInDays =
     Number.isInteger(expiresInDays) && expiresInDays > 0 ? expiresInDays : DEFAULT_EXPIRES_IN_DAYS;
 

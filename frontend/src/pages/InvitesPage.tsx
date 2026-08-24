@@ -40,7 +40,7 @@ export function InvitesPage() {
           &larr; Zurück
         </Link>
         <h2>Einladungen</h2>
-        <InvitesSection token={auth.accessToken} />
+        <InvitesSection token={auth.accessToken} isAdmin={auth.user.role === 'admin'} />
       </div>
     </div>
   );
