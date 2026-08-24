@@ -51,6 +51,9 @@ export interface TableDetail {
   ownerReconnectDeadlinePending: boolean;
   activePlayers: number;
   activeSpectators: number;
+  minKarmaPoints: number;
+  minScorePoints: number;
+  minGamesPlayed: number;
   seats: { userId: string; username: string; seatType: string; ready: boolean }[];
   latestGameId: string | null;
 }
@@ -60,6 +63,7 @@ export async function loadTableDetail(tableId: string): Promise<TableDetail | nu
     `SELECT
         t.id, t.name, t.visibility, t.join_code, t.allow_spectators,
         t.max_players, t.max_spectators, t.state, t.owner_user_id, t.owner_left_at,
+        t.min_karma_points, t.min_score_points, t.min_games_played,
         COUNT(*) FILTER (WHERE s.seat_type = 'player' AND s.left_at IS NULL) AS active_players,
         COUNT(*) FILTER (WHERE s.seat_type = 'spectator' AND s.left_at IS NULL) AS active_spectators
      FROM game_table t
@@ -98,6 +102,9 @@ export async function loadTableDetail(tableId: string): Promise<TableDetail | nu
     ownerReconnectDeadlinePending: Boolean(table.owner_left_at),
     activePlayers: Number(table.active_players),
     activeSpectators: Number(table.active_spectators),
+    minKarmaPoints: table.min_karma_points,
+    minScorePoints: table.min_score_points,
+    minGamesPlayed: table.min_games_played,
     seats: seatsResult.rows.map((row) => ({
       userId: row.user_id,
       username: row.username,

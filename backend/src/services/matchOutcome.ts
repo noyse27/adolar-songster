@@ -76,6 +76,24 @@ export async function finishGame(
     await client.query(`UPDATE app_user SET karma_points = karma_points + 5 WHERE id = $1`, [
       standing.userId,
     ]);
+
+    // games_played counts "sat at the table and played at least one round"
+    // - a guess row is the actual signal for having played a round, not
+    // just having been seated. Only credited here, alongside the +5 karma,
+    // to the players still active at match end - same set early-leavers
+    // (applyEarlyLeavePenalty below) are excluded from, for consistency.
+    const playedResult = await client.query(
+      `SELECT EXISTS(
+         SELECT 1 FROM guess g JOIN round r ON r.id = g.round_id
+         WHERE r.game_id = $1 AND g.user_id = $2
+       ) AS played`,
+      [gameId, standing.userId],
+    );
+    if (playedResult.rows[0].played) {
+      await client.query(`UPDATE app_user SET games_played = games_played + 1 WHERE id = $1`, [
+        standing.userId,
+      ]);
+    }
   }
 
   await client.query(

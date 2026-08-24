@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import './pages.css';
 import { useAuth } from '../auth/AuthContext';
-import { apiFetch } from '../api';
+import { apiFetch, ApiError } from '../api';
 import { getSocket } from '../realtime/socket';
 
 interface LobbyTable {
@@ -47,7 +47,21 @@ export function LobbyPage() {
     try {
       await apiFetch(`/tables/${tableId}/join`, { method: 'POST', body: { joinAs: 'player' }, token: auth.accessToken });
       navigate(`/tisch/${tableId}`);
-    } catch {
+    } catch (err) {
+      const code = err instanceof ApiError ? (err.body as { error?: string } | null)?.error : undefined;
+      if (code === 'PLAYER_REQUIREMENTS_NOT_MET') {
+        // This table has a minimum karma/score/games-played bar the
+        // requester doesn't clear - spectating is never gated by that, so
+        // fall back to it instead of just failing the join outright.
+        try {
+          await apiFetch(`/tables/${tableId}/join`, { method: 'POST', body: { joinAs: 'spectator' }, token: auth.accessToken });
+          navigate(`/tisch/${tableId}`);
+          return;
+        } catch {
+          setError('Die Mindestanforderungen für Spieler erfüllst du nicht, und der Beitritt als Zuschauer ist ebenfalls fehlgeschlagen.');
+          return;
+        }
+      }
       setError('Beitritt fehlgeschlagen - Tisch evtl. schon voll.');
     } finally {
       setJoiningId(null);

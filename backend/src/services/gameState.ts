@@ -2,6 +2,7 @@ import { pool } from '../db/pool';
 import { fetchTimeline } from './timeline';
 import { ROUND_READY_WINDOW_MS, TOKENS_PER_PLAYER } from './roundConfig';
 import { AUTO_CLOSE_MS } from './tableRestart';
+import { RANK_SCORE_SQL } from './rankScore';
 
 export interface GamePlayerState {
   userId: string;
@@ -10,6 +11,11 @@ export interface GamePlayerState {
   tokensRemaining: number;
   scorePoints: number;
   karmaPoints: number;
+  // Global skill rank across every app_user (see rankScore.ts), not a
+  // per-table/per-match placement - the Playboard tooltip shows this as
+  // "Rang" so it reflects overall standing, same number as the profile
+  // page and leaderboard.
+  globalRank: number;
 }
 
 export interface CurrentRoundState {
@@ -85,6 +91,17 @@ export async function loadGameState(
     [game.table_id],
   );
 
+  const globalRankResult = await pool.query(
+    `WITH ranked AS (
+       SELECT id, RANK() OVER (ORDER BY ${RANK_SCORE_SQL} DESC) AS global_rank FROM app_user
+     )
+     SELECT id, global_rank FROM ranked WHERE id = ANY($1::uuid[])`,
+    [seatsResult.rows.map((row) => row.user_id)],
+  );
+  const globalRankByUserId = new Map<string, number>(
+    globalRankResult.rows.map((row) => [row.id, Number(row.global_rank)]),
+  );
+
   const players: GamePlayerState[] = [];
   for (const seat of seatsResult.rows) {
     const timeline = await fetchTimeline(pool, gameId, seat.user_id);
@@ -101,6 +118,7 @@ export async function loadGameState(
       tokensRemaining: Math.max(0, TOKENS_PER_PLAYER - usedResult.rows[0].used),
       scorePoints: seat.score_points,
       karmaPoints: seat.karma_points,
+      globalRank: globalRankByUserId.get(seat.user_id) ?? 0,
     });
   }
 

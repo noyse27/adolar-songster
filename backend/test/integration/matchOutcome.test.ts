@@ -190,6 +190,14 @@ describe('winning the match (FR-040/042/043)', () => {
       gameDetail.body.tableId,
     ]);
     expect(tableRow.rows[0].state).toBe('finished');
+
+    // games_played only counts someone who actually submitted a guess in
+    // this game - "other" was seated the whole match but never played a
+    // round (only "owner" guessed the single round that ended it).
+    const ownerGamesPlayed = await pool.query('SELECT games_played FROM app_user WHERE id = $1', [owner.id]);
+    const otherGamesPlayed = await pool.query('SELECT games_played FROM app_user WHERE id = $1', [other.id]);
+    expect(ownerGamesPlayed.rows[0].games_played).toBe(1);
+    expect(otherGamesPlayed.rows[0].games_played).toBe(0);
   });
 });
 

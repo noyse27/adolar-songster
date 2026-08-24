@@ -54,6 +54,9 @@ tablesRouter.post('/tables', requireAuth, async (req: AuthenticatedRequest, res)
     maxPlayers = 5,
     maxSpectators = 10,
     sourcePlaylistId = null,
+    minKarmaPoints = 0,
+    minScorePoints = 0,
+    minGamesPlayed = 0,
   } = req.body ?? {};
 
   if (!name || !['public', 'private'].includes(visibility)) {
@@ -70,6 +73,21 @@ tablesRouter.post('/tables', requireAuth, async (req: AuthenticatedRequest, res)
   }
   if (sourcePlaylistId !== null && !Number.isInteger(sourcePlaylistId)) {
     res.status(400).json({ error: 'sourcePlaylistId must be an integer Adolar playlist id' });
+    return;
+  }
+  // Player-join requirements (see POST /tables/:tableId/join below) - no
+  // negative values, a table can only raise the bar, never let someone in
+  // with fewer than zero points/games.
+  if (!Number.isInteger(minKarmaPoints) || minKarmaPoints < 0) {
+    res.status(400).json({ error: 'minKarmaPoints must be a non-negative integer' });
+    return;
+  }
+  if (!Number.isInteger(minScorePoints) || minScorePoints < 0) {
+    res.status(400).json({ error: 'minScorePoints must be a non-negative integer' });
+    return;
+  }
+  if (!Number.isInteger(minGamesPlayed) || minGamesPlayed < 0) {
+    res.status(400).json({ error: 'minGamesPlayed must be a non-negative integer' });
     return;
   }
 
@@ -104,12 +122,12 @@ tablesRouter.post('/tables', requireAuth, async (req: AuthenticatedRequest, res)
     const tableResult = await client.query(
       `INSERT INTO game_table
          (owner_user_id, name, visibility, join_code, allow_spectators, max_players, max_spectators,
-          source_playlist_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+          source_playlist_id, min_karma_points, min_score_points, min_games_played)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
        RETURNING id, name, visibility, join_code, state, source_playlist_id`,
       [
         requesterId, name, visibility, joinCode, Boolean(allowSpectators), maxPlayers, maxSpectators,
-        sourcePlaylistId,
+        sourcePlaylistId, minKarmaPoints, minScorePoints, minGamesPlayed,
       ],
     );
     const table = tableResult.rows[0];
@@ -175,7 +193,7 @@ tablesRouter.post('/tables/:tableId/join', requireAuth, async (req: Authenticate
 
     const tableResult = await client.query(
       `SELECT id, owner_user_id, visibility, join_code, allow_spectators, max_players,
-              max_spectators, state
+              max_spectators, state, min_karma_points, min_score_points, min_games_played
        FROM game_table WHERE id = $1 FOR UPDATE`,
       [tableId],
     );
@@ -231,6 +249,29 @@ tablesRouter.post('/tables/:tableId/join', requireAuth, async (req: Authenticate
         alreadyJoined: true,
       });
       return;
+    }
+
+    // Player-only minimum requirements the table owner set at creation
+    // (see POST /tables). Only gates a brand-new *player* seat - a
+    // reconnecting player already handled above, and spectating is never
+    // gated by these thresholds (checked separately above via
+    // allow_spectators), so someone who doesn't qualify to play can still
+    // watch.
+    if (joinAs === 'player') {
+      const requesterStatsResult = await client.query(
+        `SELECT karma_points, score_points, games_played FROM app_user WHERE id = $1`,
+        [requesterId],
+      );
+      const stats = requesterStatsResult.rows[0];
+      if (
+        stats.karma_points < table.min_karma_points ||
+        stats.score_points < table.min_score_points ||
+        stats.games_played < table.min_games_played
+      ) {
+        await client.query('ROLLBACK');
+        res.status(403).json({ error: 'PLAYER_REQUIREMENTS_NOT_MET' });
+        return;
+      }
     }
 
     const countResult = await client.query(

@@ -66,6 +66,10 @@
 .sh-welcome b { color: var(--adolar-white); }
 
 .sh-form { display: flex; flex-direction: column; gap: 14px; }
+.sh-form-section-label {
+  font-family: var(--sh-font-display); font-size: 13px; letter-spacing: .04em; text-transform: uppercase;
+  color: var(--adolar-lavender-light); margin: 8px 0 -4px;
+}
 .sh-field { display: flex; flex-direction: column; gap: 6px; }
 .sh-field label { font-size: 11.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--sh-text-faint); }
 .sh-field input, .sh-field select {

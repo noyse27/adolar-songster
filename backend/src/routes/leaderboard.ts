@@ -1,14 +1,15 @@
 import { Router } from 'express';
 import { pool } from '../db/pool';
 import { requireAuth } from '../middleware/auth';
+import { RANK_SCORE_SQL } from '../services/rankScore';
 
 export const leaderboardRouter = Router();
 
 leaderboardRouter.get('/leaderboard', requireAuth, async (_req, res) => {
   const result = await pool.query(
-    `SELECT id, username, score_points, karma_points
+    `SELECT id, username, score_points, karma_points, games_played, ${RANK_SCORE_SQL} AS rank_score
      FROM app_user
-     ORDER BY score_points DESC, karma_points DESC, username ASC
+     ORDER BY rank_score DESC, username ASC
      LIMIT 100`,
   );
 
@@ -18,6 +19,8 @@ leaderboardRouter.get('/leaderboard', requireAuth, async (_req, res) => {
       username: row.username,
       scorePoints: row.score_points,
       karmaPoints: row.karma_points,
+      gamesPlayed: row.games_played,
+      rankScore: Number(row.rank_score),
     })),
   });
 });

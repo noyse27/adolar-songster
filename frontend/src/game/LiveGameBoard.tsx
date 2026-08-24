@@ -11,7 +11,7 @@ import { PlayerRow } from '../playboard/PlayerRow';
 import { CenterControl } from '../playboard/CenterControl';
 import { ExitModal, HelpModal } from '../playboard/Modals';
 import { PendingResult, PlayerState, TokenState } from '../playboard/types';
-import { karmaLeavePenalty, placeAt, ranksByPoints } from '../playboard/gameLogic';
+import { karmaLeavePenalty, placeAt } from '../playboard/gameLogic';
 
 /*
  * Real-data counterpart of playboard/Playboard.tsx - reuses that prototype's
@@ -313,10 +313,14 @@ export function LiveGameBoard() {
 
   const you = state?.players.find((p) => p.userId === auth?.user.id) ?? null;
   const maxScore = useMemo(() => Math.max(0, ...(state?.players.map((p) => p.timeline.length) ?? [0])), [state]);
-  const rankMap = useMemo(
-    () => ranksByPoints(state?.players.map((p) => ({ id: p.userId, songsterPoints: p.scorePoints })) ?? []),
-    [state],
-  );
+  // Global skill rank (see backend/src/services/rankScore.ts), not a
+  // per-table placement in this one match - same number as the profile
+  // page and leaderboard, so "Rang" means the same thing everywhere.
+  const rankMap = useMemo(() => {
+    const map: Record<string, number> = {};
+    for (const p of state?.players ?? []) map[p.userId] = p.globalRank;
+    return map;
+  }, [state]);
 
   async function handleSetReady(ready: boolean) {
     if (!auth || !gameId) return;

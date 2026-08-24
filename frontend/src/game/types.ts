@@ -7,6 +7,7 @@ export interface GamePlayerState {
   tokensRemaining: number;
   scorePoints: number;
   karmaPoints: number;
+  globalRank: number;
 }
 
 export type RoundStatus = 'countdown' | 'playing' | 'token_solo' | 'token_others' | 'resolved';

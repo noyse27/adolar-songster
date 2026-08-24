@@ -24,6 +24,9 @@ interface TableDetail {
   ownerUserId: string;
   activePlayers: number;
   activeSpectators: number;
+  minKarmaPoints: number;
+  minScorePoints: number;
+  minGamesPlayed: number;
   seats: Seat[];
   latestGameId: string | null;
 }
@@ -194,6 +197,12 @@ export function TableRoomPage() {
         {!mySeat && (
           <section className="admin-section">
             <h3>Beitreten</h3>
+            {(table.minKarmaPoints > 0 || table.minScorePoints > 0 || table.minGamesPlayed > 0) && (
+              <p style={{ fontSize: 12, color: 'var(--sh-text-faint)', marginBottom: 10 }}>
+                Anforderungen für Spieler: Karma ≥ {table.minKarmaPoints}, Punkte ≥ {table.minScorePoints}, Spiele ≥{' '}
+                {table.minGamesPlayed}
+              </p>
+            )}
             {table.visibility === 'private' && (
               <div className="sh-field" style={{ marginBottom: 10, maxWidth: 220 }}>
                 <label htmlFor="joinCode">Tischcode</label>
@@ -318,6 +327,9 @@ function describeJoinError(err: unknown): string {
     if (body?.error === 'TABLE_JOIN_CODE_INVALID') return 'Tischcode ist falsch.';
     if (body?.error === 'TABLE_FULL') return 'Tisch ist voll.';
     if (body?.error === 'TABLE_NOT_JOINABLE') return 'Diesem Tisch kann gerade nicht beigetreten werden.';
+    if (body?.error === 'PLAYER_REQUIREMENTS_NOT_MET') {
+      return 'Du erfüllst die Mindestanforderungen für Spieler nicht - Beitritt als Zuschauer ist möglich.';
+    }
     return body?.error ?? 'Beitritt fehlgeschlagen.';
   }
   return 'Backend nicht erreichbar.';

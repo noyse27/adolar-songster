@@ -12,6 +12,7 @@ interface Profile {
   canCreateInvites: boolean;
   karmaPoints: number;
   scorePoints: number;
+  gamesPlayed: number;
   createdAt: string;
 }
 
@@ -117,6 +118,10 @@ export function ProfilePage() {
             <div className="admin-stat">
               <span>Karma-Punkte</span>
               <b>{profile.karmaPoints}</b>
+            </div>
+            <div className="admin-stat">
+              <span>Gespielte Spiele</span>
+              <b>{profile.gamesPlayed}</b>
             </div>
             <div className="admin-stat">
               <span>Rang</span>

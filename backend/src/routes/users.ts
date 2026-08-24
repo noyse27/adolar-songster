@@ -2,13 +2,15 @@ import { Router } from 'express';
 import argon2 from 'argon2';
 import { pool } from '../db/pool';
 import { AuthenticatedRequest, requireAuth } from '../middleware/auth';
+import { RANK_SCORE_SQL } from '../services/rankScore';
 
 export const usersRouter = Router();
 
 // GET /users/me - own profile incl. score and karma (per API spec section 2).
 usersRouter.get('/users/me', requireAuth, async (req: AuthenticatedRequest, res) => {
   const result = await pool.query(
-    `SELECT id, username, email, role, can_create_invites, karma_points, score_points, created_at
+    `SELECT id, username, email, role, can_create_invites, karma_points, score_points, games_played,
+            ${RANK_SCORE_SQL} AS rank_score, created_at
      FROM app_user WHERE id = $1`,
     [req.userId],
   );
@@ -25,6 +27,8 @@ usersRouter.get('/users/me', requireAuth, async (req: AuthenticatedRequest, res)
     canCreateInvites: user.can_create_invites,
     karmaPoints: user.karma_points,
     scorePoints: user.score_points,
+    gamesPlayed: user.games_played,
+    rankScore: Number(user.rank_score),
     createdAt: user.created_at,
   });
 });

@@ -19,6 +19,9 @@ export function CreateTablePage() {
   const [allowSpectators, setAllowSpectators] = useState(true);
   const [maxPlayers, setMaxPlayers] = useState(5);
   const [maxSpectators, setMaxSpectators] = useState(10);
+  const [minKarmaPoints, setMinKarmaPoints] = useState(0);
+  const [minScorePoints, setMinScorePoints] = useState(0);
+  const [minGamesPlayed, setMinGamesPlayed] = useState(0);
   const [sourcePlaylistId, setSourcePlaylistId] = useState<string>('');
   const [playlists, setPlaylists] = useState<AdolarPlaylist[]>([]);
   const [playlistsConfigured, setPlaylistsConfigured] = useState(true);
@@ -55,6 +58,9 @@ export function CreateTablePage() {
           allowSpectators,
           maxPlayers,
           maxSpectators,
+          minKarmaPoints,
+          minScorePoints,
+          minGamesPlayed,
           sourcePlaylistId: sourcePlaylistId ? Number(sourcePlaylistId) : null,
         },
         token: auth.accessToken,
@@ -139,6 +145,44 @@ export function CreateTablePage() {
               />
             </div>
           )}
+
+          <div className="sh-form-section-label">Zusätzliche Optionen</div>
+          <p style={{ fontSize: '0.85em', opacity: 0.8, margin: '-8px 0 0' }}>
+            Wer diese Mindestwerte nicht erfüllt, kann dem Tisch nur als Zuschauer beitreten.
+          </p>
+
+          <div className="sh-field">
+            <label htmlFor="minKarmaPoints">Karmapunkte min.</label>
+            <input
+              id="minKarmaPoints"
+              type="number"
+              min={0}
+              value={minKarmaPoints}
+              onChange={(e) => setMinKarmaPoints(Math.max(0, Number(e.target.value)))}
+            />
+          </div>
+
+          <div className="sh-field">
+            <label htmlFor="minScorePoints">Spielpunkte min.</label>
+            <input
+              id="minScorePoints"
+              type="number"
+              min={0}
+              value={minScorePoints}
+              onChange={(e) => setMinScorePoints(Math.max(0, Number(e.target.value)))}
+            />
+          </div>
+
+          <div className="sh-field">
+            <label htmlFor="minGamesPlayed">Anzahl Spiele min.</label>
+            <input
+              id="minGamesPlayed"
+              type="number"
+              min={0}
+              value={minGamesPlayed}
+              onChange={(e) => setMinGamesPlayed(Math.max(0, Number(e.target.value)))}
+            />
+          </div>
 
           <div className="sh-field">
             <label htmlFor="playlist">Songquelle (Adolar-Playlist, optional)</label>
