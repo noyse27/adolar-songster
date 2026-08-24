@@ -75,6 +75,13 @@ interface MusicSourceStatus {
   lastSyncedAt: string | null;
 }
 
+// Mirrors backend/src/services/adolarSync.ts's AdolarSyncState.
+type SyncState =
+  | { status: 'idle' }
+  | { status: 'running'; startedAt: string }
+  | { status: 'completed'; finishedAt: string; result: { playlistCount: number; trackCount: number } }
+  | { status: 'failed'; finishedAt: string; error: string };
+
 function MusicSourceSection({ token }: { token: string }) {
   const [status, setStatus] = useState<MusicSourceStatus | null>(null);
   const [baseUrl, setBaseUrl] = useState('');
@@ -94,24 +101,48 @@ function MusicSourceSection({ token }: { token: string }) {
 
   useEffect(load, [token]);
 
+  // Fire-and-forget on the backend (see routes/admin.ts) - a full sync of a
+  // real playlist takes well over a minute, too long to hold this request
+  // open (that used to hit nginx's 60s proxy timeout and show "Sync
+  // fehlgeschlagen" even when the sync itself succeeded a bit later). So
+  // this just starts it, then polls /admin/adolar-sync/status until it's
+  // no longer "running".
   async function handleSync() {
     setMessage(null);
     setSyncing(true);
     try {
-      const result = await apiFetch<{ playlistCount: number; trackCount: number }>('/admin/adolar-sync', {
-        method: 'POST',
-        token,
-      });
-      setMessage({
-        kind: 'ok',
-        text: `Sync fertig: ${result.trackCount} Songs aus ${result.playlistCount} Playlist(en).`,
-      });
-      load();
+      await apiFetch<{ started: boolean }>('/admin/adolar-sync', { method: 'POST', token });
     } catch {
-      setMessage({ kind: 'error', text: 'Sync fehlgeschlagen.' });
-    } finally {
+      setMessage({ kind: 'error', text: 'Sync konnte nicht gestartet werden.' });
       setSyncing(false);
+      return;
     }
+
+    const poll = async () => {
+      let state: SyncState;
+      try {
+        state = await apiFetch<SyncState>('/admin/adolar-sync/status', { token });
+      } catch {
+        setMessage({ kind: 'error', text: 'Sync-Status konnte nicht abgefragt werden.' });
+        setSyncing(false);
+        return;
+      }
+      if (state.status === 'running' || state.status === 'idle') {
+        setTimeout(poll, 2000);
+        return;
+      }
+      if (state.status === 'completed') {
+        setMessage({
+          kind: 'ok',
+          text: `Sync fertig: ${state.result.trackCount} Songs aus ${state.result.playlistCount} Playlist(en).`,
+        });
+        load();
+      } else {
+        setMessage({ kind: 'error', text: `Sync fehlgeschlagen: ${state.error}` });
+      }
+      setSyncing(false);
+    };
+    poll();
   }
 
   async function handleSubmit(event: FormEvent) {

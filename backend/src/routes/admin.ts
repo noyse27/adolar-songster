@@ -3,7 +3,7 @@ import crypto from 'crypto';
 import { pool } from '../db/pool';
 import { requireAdmin, requireAuth } from '../middleware/auth';
 import { getSetting } from '../services/systemSettings';
-import { syncAllAdolarPlaylists } from '../services/adolarSync';
+import { getSyncState, triggerBackgroundSync } from '../services/adolarSync';
 
 export const adminRouter = Router();
 
@@ -24,11 +24,19 @@ adminRouter.get('/music-source', async (_req, res) => {
 // Manual trigger for the same full-library sync the daily schedule runs
 // (see scheduler.ts) - lets an admin make a freshly-created/just-enabled
 // Adolar playlist usable right away instead of waiting for the next
-// scheduled run. Synchronous: a real playlist can take well over a minute
-// to page through, and the admin page shows a "running" state while it waits.
+// scheduled run. Fire-and-forget: a real playlist can take well over a
+// minute to page through, which used to make this handler itself take
+// that long too - long enough that nginx's proxy_read_timeout gave the
+// admin a 504 ("Sync fehlgeschlagen") while the sync kept running and
+// completing fine server-side regardless. The admin page now polls
+// GET /adolar-sync/status instead of waiting on this request.
 adminRouter.post('/adolar-sync', async (_req, res) => {
-  const result = await syncAllAdolarPlaylists();
-  res.status(200).json(result);
+  const result = triggerBackgroundSync();
+  res.status(202).json(result);
+});
+
+adminRouter.get('/adolar-sync/status', async (_req, res) => {
+  res.status(200).json(getSyncState());
 });
 
 // Backs the admin user-management screen: the mutation endpoints below
