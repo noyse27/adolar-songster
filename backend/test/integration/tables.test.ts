@@ -5,11 +5,11 @@ import { authHeader, createUserDirect, uniqueSuffix } from '../helpers/testUtils
 
 const app = createApp();
 
-describe('table creation and lobby listing', () => {
-  afterAll(async () => {
-    await pool.end();
-  });
+afterAll(async () => {
+  await pool.end();
+});
 
+describe('table creation and lobby listing', () => {
   it('creates a public table and seats the creator as a player', async () => {
     const owner = await createUserDirect({});
 
@@ -103,10 +103,6 @@ describe('table creation and lobby listing', () => {
 });
 
 describe('player-join requirements (min karma/score/games)', () => {
-  afterAll(async () => {
-    await pool.end();
-  });
-
   it('rejects a player join below the table minimums but still allows spectating', async () => {
     const owner = await createUserDirect({});
     const applicant = await createUserDirect({});
