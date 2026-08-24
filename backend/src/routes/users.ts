@@ -7,11 +7,19 @@ import { RANK_SCORE_SQL } from '../services/rankScore';
 export const usersRouter = Router();
 
 // GET /users/me - own profile incl. score and karma (per API spec section 2).
+// rank_position is this user's exact global standing (1 = best) - unlike
+// GET /leaderboard's top-100 slice, this is always available even for
+// someone far outside it, which the Rangliste page needs to show their
+// own row when they're not in the top 10.
 usersRouter.get('/users/me', requireAuth, async (req: AuthenticatedRequest, res) => {
   const result = await pool.query(
-    `SELECT id, username, email, role, can_create_invites, karma_points, score_points, games_played,
-            ${RANK_SCORE_SQL} AS rank_score, created_at
-     FROM app_user WHERE id = $1`,
+    `WITH ranked AS (
+       SELECT id, RANK() OVER (ORDER BY ${RANK_SCORE_SQL} DESC) AS rank_position FROM app_user
+     )
+     SELECT u.id, u.username, u.email, u.role, u.can_create_invites, u.karma_points, u.score_points,
+            u.games_played, ${RANK_SCORE_SQL} AS rank_score, r.rank_position, u.created_at
+     FROM app_user u JOIN ranked r ON r.id = u.id
+     WHERE u.id = $1`,
     [req.userId],
   );
   if (result.rowCount === 0) {
@@ -29,6 +37,7 @@ usersRouter.get('/users/me', requireAuth, async (req: AuthenticatedRequest, res)
     scorePoints: user.score_points,
     gamesPlayed: user.games_played,
     rankScore: Number(user.rank_score),
+    rankPosition: Number(user.rank_position),
     createdAt: user.created_at,
   });
 });

@@ -15,6 +15,14 @@ interface LobbyTable {
   state: string;
   activePlayers: number;
   activeSpectators: number;
+  createdAt: string;
+}
+
+function tableAge(createdAt: string, now: number): string {
+  const totalMinutes = Math.max(0, Math.floor((now - new Date(createdAt).getTime()) / 60000));
+  const hh = Math.floor(totalMinutes / 60);
+  const mm = totalMinutes % 60;
+  return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
 }
 
 export function LobbyPage() {
@@ -23,6 +31,12 @@ export function LobbyPage() {
   const [tables, setTables] = useState<LobbyTable[]>([]);
   const [joiningId, setJoiningId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [now, setNow] = useState(Date.now());
+
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(Date.now()), 30000);
+    return () => window.clearInterval(id);
+  }, []);
 
   useEffect(() => {
     if (!auth) return;
@@ -121,7 +135,10 @@ export function LobbyPage() {
                       onClick={() => handleJoin(t.tableId)}
                     >
                       Beitreten
-                    </button>
+                    </button>{' '}
+                    <span style={{ fontSize: 11, color: 'var(--sh-text-faint)' }} title="Wie lange es diesen Tisch schon gibt">
+                      {tableAge(t.createdAt, now)}
+                    </span>
                   </td>
                 </tr>
               ))}

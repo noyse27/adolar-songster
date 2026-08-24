@@ -4,6 +4,7 @@ import { RootGate } from './pages/RootGate';
 import { LoginPage } from './pages/LoginPage';
 import { RegisterPage } from './pages/RegisterPage';
 import { InstructionsPage } from './pages/InstructionsPage';
+import { LeaderboardPage } from './pages/LeaderboardPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { AdminPage } from './pages/AdminPage';
 import { InvitesPage } from './pages/InvitesPage';
@@ -23,6 +24,7 @@ export function App() {
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
       <Route path="/anleitung" element={<InstructionsPage />} />
+      <Route path="/rangliste" element={<LeaderboardPage />} />
       <Route path="/profil" element={<ProfilePage />} />
       <Route path="/admin" element={<AdminPage />} />
       <Route path="/einladungen" element={<InvitesPage />} />

@@ -27,6 +27,9 @@ export function HomePage() {
               <Link className="sh-action" to="/anleitung">
                 Anleitung <span className="sh-action-arrow">→</span>
               </Link>
+              <Link className="sh-action" to="/rangliste">
+                Rangliste <span className="sh-action-arrow">→</span>
+              </Link>
               <Link className="sh-action" to="/profil">
                 Profil <span className="sh-action-arrow">→</span>
               </Link>
