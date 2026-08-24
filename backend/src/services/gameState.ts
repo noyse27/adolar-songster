@@ -11,6 +11,7 @@ export interface GamePlayerState {
   tokensRemaining: number;
   scorePoints: number;
   karmaPoints: number;
+  gamesPlayed: number;
   // Global skill rank across every app_user (see rankScore.ts), not a
   // per-table/per-match placement - the Playboard tooltip shows this as
   // "Rang" so it reflects overall standing, same number as the profile
@@ -83,7 +84,7 @@ export async function loadGameState(
   const game = gameResult.rows[0];
 
   const seatsResult = await pool.query(
-    `SELECT u.id AS user_id, u.username, u.score_points, u.karma_points
+    `SELECT u.id AS user_id, u.username, u.score_points, u.karma_points, u.games_played
      FROM table_seat s
      JOIN app_user u ON u.id = s.user_id
      WHERE s.table_id = $1 AND s.seat_type = 'player' AND s.left_at IS NULL
@@ -118,6 +119,7 @@ export async function loadGameState(
       tokensRemaining: Math.max(0, TOKENS_PER_PLAYER - usedResult.rows[0].used),
       scorePoints: seat.score_points,
       karmaPoints: seat.karma_points,
+      gamesPlayed: seat.games_played,
       globalRank: globalRankByUserId.get(seat.user_id) ?? 0,
     });
   }

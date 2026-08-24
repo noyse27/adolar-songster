@@ -65,6 +65,7 @@ export function AdminPage() {
         <MusicSourceSection token={token as string} />
         <InvitesSection token={token as string} isAdmin />
         <SongsSection token={token as string} />
+        <TablesSection token={token as string} />
         <UsersSection token={token as string} />
       </div>
     </div>
@@ -347,6 +348,81 @@ function SongsSection({ token }: { token: string }) {
           Zeigt die ersten 50 Treffer - Suche eingrenzen, um mehr zu sehen.
         </p>
       )}
+    </section>
+  );
+}
+
+interface AdminTable {
+  tableId: string;
+  name: string;
+  visibility: string;
+  state: string;
+  ownerUsername: string;
+  activePlayers: number;
+  activeSpectators: number;
+  createdAt: string;
+  lastActivityAt: string;
+  inactive: boolean;
+}
+
+function TablesSection({ token }: { token: string }) {
+  const [tables, setTables] = useState<AdminTable[]>([]);
+
+  function load() {
+    apiFetch<{ tables: AdminTable[] }>('/admin/tables', { token })
+      .then((r) => setTables(r.tables))
+      .catch(() => {});
+  }
+  useEffect(load, [token]);
+
+  return (
+    <section className="admin-section">
+      <h3>Tische ({tables.length})</h3>
+      <p style={{ fontSize: 12, color: 'var(--sh-text-faint)', marginBottom: 12 }}>
+        "Inaktiv" = seit 30 Minuten keine Interaktion. Ohne jede Interaktion für 60 Minuten wird ein Tisch automatisch
+        gelöscht.
+      </p>
+      <div className="admin-table-wrap">
+        <table className="admin-table">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Besitzer</th>
+              <th>Sichtbarkeit</th>
+              <th>Status</th>
+              <th>Spieler</th>
+              <th>Zuschauer</th>
+              <th>Aktivität</th>
+            </tr>
+          </thead>
+          <tbody>
+            {tables.map((t) => (
+              <tr key={t.tableId}>
+                <td>{t.name}</td>
+                <td>{t.ownerUsername}</td>
+                <td>{t.visibility === 'public' ? 'Öffentlich' : 'Privat'}</td>
+                <td>{t.state}</td>
+                <td>{t.activePlayers}</td>
+                <td>{t.activeSpectators}</td>
+                <td>
+                  {t.inactive ? (
+                    <span className="admin-pill warn">inaktiv</span>
+                  ) : (
+                    <span className="admin-pill">aktiv</span>
+                  )}
+                </td>
+              </tr>
+            ))}
+            {tables.length === 0 && (
+              <tr>
+                <td colSpan={7} style={{ color: 'var(--sh-text-faint)' }}>
+                  Keine Tische vorhanden.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
     </section>
   );
 }

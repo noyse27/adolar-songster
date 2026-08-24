@@ -6,6 +6,7 @@ import { apiFetch, ApiError, API_BASE_URL } from '../api';
 import { getSocket } from '../realtime/socket';
 import { fetchGameState, setRoundReady, submitPositionGuess, submitBonusGuess, claimToken, submitTokenGuess, restartTable } from './gameApi';
 import { GameState } from './types';
+import { buildGameSummaryPdf } from './gameSummaryPdf';
 import { embedTimeline, boxIndexToPackedIndex, packedIndexToBoxIndex, SLOT_COUNT } from './timelineSlots';
 import { PlayerRow } from '../playboard/PlayerRow';
 import { CenterControl } from '../playboard/CenterControl';
@@ -403,6 +404,11 @@ export function LiveGameBoard() {
     } catch {
       setError('Jahr konnte nicht übermittelt werden.');
     }
+  }
+
+  function handleExportPdf() {
+    if (!state) return;
+    buildGameSummaryPdf(state).catch(() => setError('PDF konnte nicht erstellt werden.'));
   }
 
   async function handleRestart() {
@@ -830,6 +836,9 @@ export function LiveGameBoard() {
                 <div className="pb-winner-actions">
                   <button className="pb-winner-restart" onClick={handleRestart} disabled={restarting}>
                     {restarting ? 'Startet neu…' : '🔁 Nochmal spielen'}
+                  </button>
+                  <button className="pb-winner-exit" onClick={handleExportPdf}>
+                    📄 Als PDF speichern
                   </button>
                   {remainingS !== null && (
                     <div className="pb-winner-countdown">

@@ -7,6 +7,7 @@ export interface GamePlayerState {
   tokensRemaining: number;
   scorePoints: number;
   karmaPoints: number;
+  gamesPlayed: number;
   globalRank: number;
 }
 

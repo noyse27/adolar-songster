@@ -4,6 +4,7 @@ import { pool } from '../db/pool';
 import { requireAdmin, requireAuth } from '../middleware/auth';
 import { getSetting } from '../services/systemSettings';
 import { getSyncState, triggerBackgroundSync } from '../services/adolarSync';
+import { ADMIN_INACTIVE_MS } from '../services/tableActivity';
 
 export const adminRouter = Router();
 
@@ -306,5 +307,42 @@ adminRouter.put('/songs/:songId/year', async (req, res) => {
     artist: result.rows[0].artist,
     year: result.rows[0].year_value,
     yearOverride: result.rows[0].year_override,
+  });
+});
+
+// Every table, admin-visible regardless of visibility/state - flags
+// anything untouched for ADMIN_INACTIVE_MS as "inactive" well before the
+// much longer INACTIVITY_DELETE_MS auto-delete threshold actually kicks in
+// (see tableCleanup.ts), purely so an admin can see what's about to be
+// swept without waiting for it to actually happen.
+adminRouter.get('/tables', async (_req, res) => {
+  const result = await pool.query(
+    `SELECT
+        t.id, t.name, t.visibility, t.state, t.created_at, t.last_activity_at,
+        u.username AS owner_username,
+        COUNT(*) FILTER (WHERE s.seat_type = 'player' AND s.left_at IS NULL) AS active_players,
+        COUNT(*) FILTER (WHERE s.seat_type = 'spectator' AND s.left_at IS NULL) AS active_spectators,
+        (t.last_activity_at <= NOW() - ($1 || ' milliseconds')::interval) AS inactive
+     FROM game_table t
+     JOIN app_user u ON u.id = t.owner_user_id
+     LEFT JOIN table_seat s ON s.table_id = t.id
+     GROUP BY t.id, u.username
+     ORDER BY t.created_at DESC`,
+    [ADMIN_INACTIVE_MS],
+  );
+
+  res.status(200).json({
+    tables: result.rows.map((row) => ({
+      tableId: row.id,
+      name: row.name,
+      visibility: row.visibility,
+      state: row.state,
+      ownerUsername: row.owner_username,
+      activePlayers: Number(row.active_players),
+      activeSpectators: Number(row.active_spectators),
+      createdAt: row.created_at,
+      lastActivityAt: row.last_activity_at,
+      inactive: row.inactive,
+    })),
   });
 });

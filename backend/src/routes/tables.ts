@@ -10,6 +10,7 @@ import { startTableGame } from '../services/tableStart';
 import { restartTable } from '../services/tableRestart';
 import { fetchLobbyTables, loadTableDetail } from '../services/tableQueries';
 import { broadcastLobby, broadcastTable } from '../realtime/broadcast';
+import { touchTableActivity } from '../services/tableActivity';
 
 export const tablesRouter = Router();
 
@@ -305,6 +306,7 @@ tablesRouter.post('/tables/:tableId/join', requireAuth, async (req: Authenticate
     }
 
     await client.query('COMMIT');
+    await touchTableActivity(tableId);
     await Promise.all([broadcastLobby(), broadcastTable(tableId)]);
     res.status(200).json({ tableId, seatType: joinAs, alreadyJoined: false });
   } catch (err) {
@@ -359,6 +361,7 @@ tablesRouter.post('/tables/:tableId/leave', requireAuth, async (req: Authenticat
     const activeGameId = activeGameResult.rows[0]?.id as string | undefined;
 
     await client.query('COMMIT');
+    await touchTableActivity(tableId);
     await Promise.all([broadcastLobby(), broadcastTable(tableId)]);
 
     if (activeGameId) {
@@ -372,6 +375,29 @@ tablesRouter.post('/tables/:tableId/leave', requireAuth, async (req: Authenticat
   } finally {
     client.release();
   }
+});
+
+// Backs the "Ich bin noch da" button the table room shows once the table
+// is within a minute of the inactivity auto-delete (see tableCleanup.ts) -
+// just resets the clock. Anyone currently seated may call it, not just
+// the owner - whoever is watching this table is enough to prove it's
+// still in use.
+tablesRouter.post('/tables/:tableId/keep-alive', requireAuth, async (req: AuthenticatedRequest, res) => {
+  const requesterId = req.userId as string;
+  const { tableId } = req.params;
+
+  const seatResult = await pool.query(
+    `SELECT id FROM table_seat WHERE table_id = $1 AND user_id = $2 AND left_at IS NULL`,
+    [tableId, requesterId],
+  );
+  if (seatResult.rowCount === 0) {
+    res.status(403).json({ error: 'not seated at this table' });
+    return;
+  }
+
+  await touchTableActivity(tableId);
+  await broadcastTable(tableId);
+  res.status(200).json({ tableId });
 });
 
 // Manual early start: the table admin can start once every currently
@@ -401,6 +427,7 @@ tablesRouter.post('/tables/:tableId/start', requireAuth, async (req: Authenticat
     return;
   }
 
+  await touchTableActivity(tableId);
   await Promise.all([broadcastLobby(), broadcastTable(tableId)]);
   res.status(200).json({ tableId, tableSessionId: outcome.tableSessionId, gameId: outcome.gameId });
 });
@@ -418,6 +445,7 @@ tablesRouter.post('/tables/:tableId/restart', requireAuth, async (req: Authentic
     return;
   }
 
+  await touchTableActivity(tableId);
   res.status(200).json({ tableId });
 });
 
@@ -467,6 +495,7 @@ tablesRouter.post('/tables/:tableId/ready', requireAuth, async (req: Authenticat
   if (ready && allReady && activeCount === table.max_players) {
     const outcome = await startTableGame(tableId);
     if (outcome.ok) {
+      await touchTableActivity(tableId);
       await Promise.all([broadcastLobby(), broadcastTable(tableId)]);
       res.status(200).json({ tableId, started: true, tableSessionId: outcome.tableSessionId, gameId: outcome.gameId });
       return;
@@ -476,6 +505,7 @@ tablesRouter.post('/tables/:tableId/ready', requireAuth, async (req: Authenticat
     // requester caused, just report the ready-toggle as accepted.
   }
 
+  await touchTableActivity(tableId);
   await broadcastTable(tableId);
   res.status(200).json({ tableId, started: false, ready });
 });
@@ -557,6 +587,7 @@ tablesRouter.post('/tables/:tableId/new-game', requireAuth, async (req: Authenti
     await client.query(`UPDATE game_table SET state = 'running' WHERE id = $1`, [tableId]);
 
     await client.query('COMMIT');
+    await touchTableActivity(tableId);
     await broadcastTable(tableId);
     res.status(200).json({
       tableId,

@@ -10,12 +10,14 @@ export interface LobbyTableRow {
   state: string;
   activePlayers: number;
   activeSpectators: number;
+  createdAt: string;
 }
 
 export async function fetchLobbyTables(): Promise<LobbyTableRow[]> {
   const result = await pool.query(
     `SELECT
         t.id, t.name, t.visibility, t.allow_spectators, t.max_players, t.max_spectators, t.state,
+        t.created_at,
         COUNT(*) FILTER (WHERE s.seat_type = 'player' AND s.left_at IS NULL) AS active_players,
         COUNT(*) FILTER (WHERE s.seat_type = 'spectator' AND s.left_at IS NULL) AS active_spectators
      FROM game_table t
@@ -35,6 +37,7 @@ export async function fetchLobbyTables(): Promise<LobbyTableRow[]> {
     state: row.state,
     activePlayers: Number(row.active_players),
     activeSpectators: Number(row.active_spectators),
+    createdAt: row.created_at,
   }));
 }
 
@@ -54,6 +57,7 @@ export interface TableDetail {
   minKarmaPoints: number;
   minScorePoints: number;
   minGamesPlayed: number;
+  lastActivityAt: string;
   seats: { userId: string; username: string; seatType: string; ready: boolean }[];
   latestGameId: string | null;
 }
@@ -63,7 +67,7 @@ export async function loadTableDetail(tableId: string): Promise<TableDetail | nu
     `SELECT
         t.id, t.name, t.visibility, t.join_code, t.allow_spectators,
         t.max_players, t.max_spectators, t.state, t.owner_user_id, t.owner_left_at,
-        t.min_karma_points, t.min_score_points, t.min_games_played,
+        t.min_karma_points, t.min_score_points, t.min_games_played, t.last_activity_at,
         COUNT(*) FILTER (WHERE s.seat_type = 'player' AND s.left_at IS NULL) AS active_players,
         COUNT(*) FILTER (WHERE s.seat_type = 'spectator' AND s.left_at IS NULL) AS active_spectators
      FROM game_table t
@@ -105,6 +109,7 @@ export async function loadTableDetail(tableId: string): Promise<TableDetail | nu
     minKarmaPoints: table.min_karma_points,
     minScorePoints: table.min_score_points,
     minGamesPlayed: table.min_games_played,
+    lastActivityAt: table.last_activity_at,
     seats: seatsResult.rows.map((row) => ({
       userId: row.user_id,
       username: row.username,

@@ -27,9 +27,15 @@ interface TableDetail {
   minKarmaPoints: number;
   minScorePoints: number;
   minGamesPlayed: number;
+  lastActivityAt: string;
   seats: Seat[];
   latestGameId: string | null;
 }
+
+// Mirrors services/tableActivity.ts's INACTIVITY_DELETE_MS/WARNING_MS -
+// keep in sync.
+const INACTIVITY_DELETE_MS = 60 * 60 * 1000;
+const INACTIVITY_WARNING_MS = 59 * 60 * 1000;
 
 export function TableRoomPage() {
   const { auth } = useAuth();
@@ -46,6 +52,13 @@ export function TableRoomPage() {
   const [leaving, setLeaving] = useState(false);
   const [togglingReady, setTogglingReady] = useState(false);
   const [codeInput, setCodeInput] = useState(joinCodeFromLink);
+  const [now, setNow] = useState(Date.now());
+  const [keepingAlive, setKeepingAlive] = useState(false);
+
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(Date.now()), 5000);
+    return () => window.clearInterval(id);
+  }, []);
 
   useEffect(() => {
     if (!auth || !tableId) return;
@@ -70,6 +83,27 @@ export function TableRoomPage() {
   const isOwner = table?.ownerUserId === auth?.user.id;
   const players = table?.seats.filter((s) => s.seatType === 'player') ?? [];
   const spectators = table?.seats.filter((s) => s.seatType === 'spectator') ?? [];
+
+  // System-inactive-table cleanup (services/tableCleanup.ts): a table
+  // nobody interacts with for an hour gets hard-deleted for performance
+  // reasons. This shows a dismissible warning in the last minute of that
+  // window - clicking it just re-touches activity, same as any other
+  // interaction would, resetting the whole hour.
+  const msSinceActivity = table ? now - new Date(table.lastActivityAt).getTime() : 0;
+  const showInactivityWarning = Boolean(mySeat) && msSinceActivity >= INACTIVITY_WARNING_MS;
+  const secondsUntilDeletion = Math.max(0, Math.ceil((INACTIVITY_DELETE_MS - msSinceActivity) / 1000));
+
+  async function handleKeepAlive() {
+    if (!auth || !tableId) return;
+    setKeepingAlive(true);
+    try {
+      await apiFetch(`/tables/${tableId}/keep-alive`, { method: 'POST', token: auth.accessToken });
+    } catch {
+      setError('Konnte die Inaktivitäts-Uhr nicht zurücksetzen.');
+    } finally {
+      setKeepingAlive(false);
+    }
+  }
 
   // The table auto-starts the moment everyone's ready (or the admin force-
   // starts early) - nobody has to click anything else once that happens,
@@ -187,6 +221,18 @@ export function TableRoomPage() {
         <h2>{table.name}</h2>
 
         {error && <div className="sh-error" style={{ marginBottom: 14 }}>{error}</div>}
+
+        {showInactivityWarning && (
+          <div className="sh-error" style={{ marginBottom: 14, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <span>
+              Dieser Tisch war lange inaktiv und wird in {Math.floor(secondsUntilDeletion / 60)}:
+              {String(secondsUntilDeletion % 60).padStart(2, '0')} min automatisch geschlossen.
+            </span>
+            <button className="admin-btn-sm" disabled={keepingAlive} onClick={handleKeepAlive}>
+              Ich bin noch da
+            </button>
+          </div>
+        )}
 
         {shareLink && isOwner && (
           <div className="sh-info" style={{ marginBottom: 16, wordBreak: 'break-all' }}>

@@ -5,6 +5,7 @@ import { RoundEngineError } from '../services/errors';
 import { claimToken, startRound, submitBonusGuess, submitGuess, submitTokenGuess } from '../services/roundEngine';
 import { setRoundReady } from '../services/roundReady';
 import { loadGameState } from '../services/gameState';
+import { touchTableActivityForGame } from '../services/tableActivity';
 import { BONUS_WINDOW_MS, COUNTDOWN_MS, SONG_DURATION_MS } from '../services/roundConfig';
 
 export const roundsRouter = Router();
@@ -98,6 +99,7 @@ roundsRouter.post('/games/:gameId/ready', requireAuth, async (req: Authenticated
   }
   try {
     await setRoundReady(req.params.gameId, req.userId as string, ready);
+    await touchTableActivityForGame(req.params.gameId);
     res.status(200).json({ accepted: true });
   } catch (err) {
     if (!handleEngineError(err, res)) throw err;
@@ -109,6 +111,7 @@ roundsRouter.post('/games/:gameId/ready', requireAuth, async (req: Authenticated
 roundsRouter.post('/games/:gameId/rounds', requireAuth, async (req: AuthenticatedRequest, res) => {
   try {
     const round = await startRound(req.params.gameId, req.userId as string, req.userRole);
+    await touchTableActivityForGame(req.params.gameId);
     res.status(201).json(round);
   } catch (err) {
     if (!handleEngineError(err, res)) throw err;
@@ -189,6 +192,7 @@ roundsRouter.post(
     try {
       if (type === 'position') {
         const result = await submitGuess(req.params.roundId, req.userId as string, Number(value));
+        await touchTableActivityForGame(req.params.gameId);
         res.status(200).json(result);
         return;
       }
@@ -196,6 +200,7 @@ roundsRouter.post(
         // Bonus-round (Stichsong) exact-year guess (FR-041); the token
         // mechanic's exact-year guess has its own dedicated endpoint.
         const result = await submitBonusGuess(req.params.roundId, req.userId as string, Number(value));
+        await touchTableActivityForGame(req.params.gameId);
         res.status(200).json(result);
         return;
       }
@@ -212,6 +217,7 @@ roundsRouter.post(
   async (req: AuthenticatedRequest, res) => {
     try {
       const result = await claimToken(req.params.roundId, req.userId as string);
+      await touchTableActivityForGame(req.params.gameId);
       res.status(202).json(result);
     } catch (err) {
       if (!handleEngineError(err, res)) throw err;
@@ -227,6 +233,7 @@ roundsRouter.post(
 
     try {
       const result = await submitTokenGuess(req.params.roundId, req.userId as string, Number(year));
+      await touchTableActivityForGame(req.params.gameId);
       res.status(200).json(result);
     } catch (err) {
       if (!handleEngineError(err, res)) throw err;

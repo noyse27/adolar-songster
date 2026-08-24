@@ -1,5 +1,6 @@
 import cron from 'node-cron';
 import { syncAllAdolarPlaylists } from './adolarSync';
+import { deleteInactiveTables } from './tableCleanup';
 
 // Once daily at 03:00 server time (low-traffic hour for a private-group
 // game) plus once immediately on boot, so a fresh deploy doesn't wait up
@@ -23,4 +24,17 @@ function runSync(reason: string): void {
 export function startAdolarSyncSchedule(): void {
   runSync('startup sync');
   cron.schedule(DAILY_SCHEDULE, () => runSync('daily sync'));
+}
+
+// Every minute: cheap enough at this scale (a private-group game, not
+// thousands of concurrent tables) and keeps a table from lingering for up
+// to a day if it goes stale - see tableCleanup.ts for why this is a hard
+// delete rather than the normal leave-table path.
+export function startTableCleanupSchedule(): void {
+  cron.schedule('* * * * *', () => {
+    deleteInactiveTables().catch((err) => {
+      // eslint-disable-next-line no-console
+      console.error('[table-cleanup] failed', err);
+    });
+  });
 }
