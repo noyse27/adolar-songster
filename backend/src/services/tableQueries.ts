@@ -54,9 +54,9 @@ export interface TableDetail {
   ownerReconnectDeadlinePending: boolean;
   activePlayers: number;
   activeSpectators: number;
-  minKarmaPoints: number;
-  minScorePoints: number;
-  minGamesPlayed: number;
+  minKarmaPoints: number | null;
+  minScorePoints: number | null;
+  minGamesPlayed: number | null;
   lastActivityAt: string;
   seats: { userId: string; username: string; seatType: string; ready: boolean }[];
   latestGameId: string | null;

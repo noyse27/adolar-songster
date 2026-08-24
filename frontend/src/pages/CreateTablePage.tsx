@@ -19,8 +19,16 @@ export function CreateTablePage() {
   const [allowSpectators, setAllowSpectators] = useState(true);
   const [maxPlayers, setMaxPlayers] = useState(5);
   const [maxSpectators, setMaxSpectators] = useState(10);
+  // Each requirement is off (null, no restriction at all) unless its
+  // checkbox is on - a bare numeric input defaulting to 0 can never
+  // represent "not required", since 0 is itself a real, meaningful
+  // requirement (excludes negative karma) that a brand-new player with
+  // exactly 0 karma/score/games would otherwise be silently subject to.
+  const [minKarmaEnabled, setMinKarmaEnabled] = useState(false);
   const [minKarmaPoints, setMinKarmaPoints] = useState(0);
+  const [minScoreEnabled, setMinScoreEnabled] = useState(false);
   const [minScorePoints, setMinScorePoints] = useState(0);
+  const [minGamesEnabled, setMinGamesEnabled] = useState(false);
   const [minGamesPlayed, setMinGamesPlayed] = useState(0);
   const [sourcePlaylistId, setSourcePlaylistId] = useState<string>('');
   const [playlists, setPlaylists] = useState<AdolarPlaylist[]>([]);
@@ -58,9 +66,9 @@ export function CreateTablePage() {
           allowSpectators,
           maxPlayers,
           maxSpectators,
-          minKarmaPoints,
-          minScorePoints,
-          minGamesPlayed,
+          minKarmaPoints: minKarmaEnabled ? minKarmaPoints : null,
+          minScorePoints: minScoreEnabled ? minScorePoints : null,
+          minGamesPlayed: minGamesEnabled ? minGamesPlayed : null,
           sourcePlaylistId: sourcePlaylistId ? Number(sourcePlaylistId) : null,
         },
         token: auth.accessToken,
@@ -152,36 +160,51 @@ export function CreateTablePage() {
           </p>
 
           <div className="sh-field">
-            <label htmlFor="minKarmaPoints">Karmapunkte min.</label>
-            <input
-              id="minKarmaPoints"
-              type="number"
-              min={0}
-              value={minKarmaPoints}
-              onChange={(e) => setMinKarmaPoints(Math.max(0, Number(e.target.value)))}
-            />
+            <label style={{ flexDirection: 'row', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <input type="checkbox" checked={minKarmaEnabled} onChange={(e) => setMinKarmaEnabled(e.target.checked)} />
+              Karmapunkte min.
+            </label>
+            {minKarmaEnabled && (
+              <input
+                id="minKarmaPoints"
+                type="number"
+                min={0}
+                value={minKarmaPoints}
+                onChange={(e) => setMinKarmaPoints(Math.max(0, Number(e.target.value)))}
+              />
+            )}
           </div>
 
           <div className="sh-field">
-            <label htmlFor="minScorePoints">Spielpunkte min.</label>
-            <input
-              id="minScorePoints"
-              type="number"
-              min={0}
-              value={minScorePoints}
-              onChange={(e) => setMinScorePoints(Math.max(0, Number(e.target.value)))}
-            />
+            <label style={{ flexDirection: 'row', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <input type="checkbox" checked={minScoreEnabled} onChange={(e) => setMinScoreEnabled(e.target.checked)} />
+              Spielpunkte min.
+            </label>
+            {minScoreEnabled && (
+              <input
+                id="minScorePoints"
+                type="number"
+                min={0}
+                value={minScorePoints}
+                onChange={(e) => setMinScorePoints(Math.max(0, Number(e.target.value)))}
+              />
+            )}
           </div>
 
           <div className="sh-field">
-            <label htmlFor="minGamesPlayed">Anzahl Spiele min.</label>
-            <input
-              id="minGamesPlayed"
-              type="number"
-              min={0}
-              value={minGamesPlayed}
-              onChange={(e) => setMinGamesPlayed(Math.max(0, Number(e.target.value)))}
-            />
+            <label style={{ flexDirection: 'row', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <input type="checkbox" checked={minGamesEnabled} onChange={(e) => setMinGamesEnabled(e.target.checked)} />
+              Anzahl Spiele min.
+            </label>
+            {minGamesEnabled && (
+              <input
+                id="minGamesPlayed"
+                type="number"
+                min={0}
+                value={minGamesPlayed}
+                onChange={(e) => setMinGamesPlayed(Math.max(0, Number(e.target.value)))}
+              />
+            )}
           </div>
 
           <div className="sh-field">

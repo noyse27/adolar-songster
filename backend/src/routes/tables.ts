@@ -54,9 +54,9 @@ tablesRouter.post('/tables', requireAuth, async (req: AuthenticatedRequest, res)
     maxPlayers = 5,
     maxSpectators = 10,
     sourcePlaylistId = null,
-    minKarmaPoints = 0,
-    minScorePoints = 0,
-    minGamesPlayed = 0,
+    minKarmaPoints = null,
+    minScorePoints = null,
+    minGamesPlayed = null,
   } = req.body ?? {};
 
   if (!name || !['public', 'private'].includes(visibility)) {
@@ -75,19 +75,24 @@ tablesRouter.post('/tables', requireAuth, async (req: AuthenticatedRequest, res)
     res.status(400).json({ error: 'sourcePlaylistId must be an integer Adolar playlist id' });
     return;
   }
-  // Player-join requirements (see POST /tables/:tableId/join below) - no
-  // negative values, a table can only raise the bar, never let someone in
-  // with fewer than zero points/games.
-  if (!Number.isInteger(minKarmaPoints) || minKarmaPoints < 0) {
-    res.status(400).json({ error: 'minKarmaPoints must be a non-negative integer' });
+  // Player-join requirements (see POST /tables/:tableId/join below) - each
+  // is optional (null = not required at all). This distinction matters:
+  // without it, a table could only ever express "at least 0", which is
+  // silently still a real requirement (it already excludes anyone with
+  // negative karma) rather than genuinely no requirement, and a brand-new
+  // player has exactly 0 of everything - one accidental sign/threshold slip
+  // and newcomers can't join any table at all. A non-negative integer is
+  // still required whenever a value is actually provided.
+  if (minKarmaPoints !== null && (!Number.isInteger(minKarmaPoints) || minKarmaPoints < 0)) {
+    res.status(400).json({ error: 'minKarmaPoints must be null or a non-negative integer' });
     return;
   }
-  if (!Number.isInteger(minScorePoints) || minScorePoints < 0) {
-    res.status(400).json({ error: 'minScorePoints must be a non-negative integer' });
+  if (minScorePoints !== null && (!Number.isInteger(minScorePoints) || minScorePoints < 0)) {
+    res.status(400).json({ error: 'minScorePoints must be null or a non-negative integer' });
     return;
   }
-  if (!Number.isInteger(minGamesPlayed) || minGamesPlayed < 0) {
-    res.status(400).json({ error: 'minGamesPlayed must be a non-negative integer' });
+  if (minGamesPlayed !== null && (!Number.isInteger(minGamesPlayed) || minGamesPlayed < 0)) {
+    res.status(400).json({ error: 'minGamesPlayed must be null or a non-negative integer' });
     return;
   }
 
@@ -264,9 +269,9 @@ tablesRouter.post('/tables/:tableId/join', requireAuth, async (req: Authenticate
       );
       const stats = requesterStatsResult.rows[0];
       if (
-        stats.karma_points < table.min_karma_points ||
-        stats.score_points < table.min_score_points ||
-        stats.games_played < table.min_games_played
+        (table.min_karma_points !== null && stats.karma_points < table.min_karma_points) ||
+        (table.min_score_points !== null && stats.score_points < table.min_score_points) ||
+        (table.min_games_played !== null && stats.games_played < table.min_games_played)
       ) {
         await client.query('ROLLBACK');
         res.status(403).json({ error: 'PLAYER_REQUIREMENTS_NOT_MET' });

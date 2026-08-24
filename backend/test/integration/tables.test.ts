@@ -103,6 +103,30 @@ describe('table creation and lobby listing', () => {
 });
 
 describe('player-join requirements (min karma/score/games)', () => {
+  it('defaults to no requirement (null), not zero - a brand-new player can join any table', async () => {
+    const owner = await createUserDirect({});
+    const newcomer = await createUserDirect({}); // karma_points/score_points/games_played all default to 0
+
+    const table = await request(app)
+      .post('/api/v1/tables')
+      .set(authHeader(owner.id, 'user'))
+      .send({ name: `Table_${uniqueSuffix()}`, visibility: 'public' });
+    const tableId = table.body.tableId;
+
+    const row = await pool.query(
+      'SELECT min_karma_points, min_score_points, min_games_played FROM game_table WHERE id = $1',
+      [tableId],
+    );
+    expect(row.rows[0]).toEqual({ min_karma_points: null, min_score_points: null, min_games_played: null });
+
+    const playerJoin = await request(app)
+      .post(`/api/v1/tables/${tableId}/join`)
+      .set(authHeader(newcomer.id, 'user'))
+      .send({ joinAs: 'player' });
+    expect(playerJoin.status).toBe(200);
+    expect(playerJoin.body.seatType).toBe('player');
+  });
+
   it('rejects a player join below the table minimums but still allows spectating', async () => {
     const owner = await createUserDirect({});
     const applicant = await createUserDirect({});
