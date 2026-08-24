@@ -68,12 +68,18 @@
 .sh-form { display: flex; flex-direction: column; gap: 14px; }
 .sh-field { display: flex; flex-direction: column; gap: 6px; }
 .sh-field label { font-size: 11.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--sh-text-faint); }
-.sh-field input {
+.sh-field input, .sh-field select {
   padding: 11px 13px; border-radius: 10px; border: 1.5px solid var(--sh-panel-border);
   background: rgba(255,255,255,.03); color: var(--adolar-white); font-size: 14px; font-family: var(--sh-font-body);
   transition: border-color .15s ease, background .15s ease;
 }
-.sh-field input:focus { outline: none; border-color: var(--adolar-cyan); background: rgba(49,213,255,.06); }
+.sh-field input:focus, .sh-field select:focus { outline: none; border-color: var(--adolar-cyan); background: rgba(49,213,255,.06); }
+.sh-field select {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='%2394a3c4' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 13px center; padding-right: 34px; cursor: pointer;
+}
+.sh-field select option { background: var(--sh-panel); color: var(--adolar-white); }
 
 .sh-submit {
   margin-top: 6px; padding: 12px; border: none; border-radius: 12px; cursor: pointer;
@@ -144,3 +150,11 @@
   padding: 8px 10px; border-radius: 9px; border: 1.5px solid var(--sh-panel-border);
   background: rgba(255,255,255,.03); color: var(--adolar-white); font-size: 13px;
 }
+
+.admin-search-input {
+  display: block; width: 100%; box-sizing: border-box; padding: 9px 12px; margin-bottom: 14px;
+  border-radius: 9px; border: 1.5px solid var(--sh-panel-border);
+  background: rgba(255,255,255,.03); color: var(--adolar-white); font-size: 13px;
+}
+.admin-search-input::placeholder { color: var(--sh-text-faint); }
+.admin-search-input:focus { outline: none; border-color: var(--adolar-cyan); }

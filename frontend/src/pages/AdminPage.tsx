@@ -280,9 +280,6 @@ function YearCell({ song, token, onSaved }: { song: Song; token: string; onSaved
 function SongsSection({ token }: { token: string }) {
   const [songs, setSongs] = useState<Song[]>([]);
   const [query, setQuery] = useState('');
-  const [title, setTitle] = useState('');
-  const [year, setYear] = useState('');
-  const [adding, setAdding] = useState(false);
 
   function load(q: string) {
     apiFetch<{ songs: Song[] }>(`/admin/songs${q ? `?q=${encodeURIComponent(q)}` : ''}`, { token })
@@ -299,21 +296,6 @@ function SongsSection({ token }: { token: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query, token]);
 
-  async function handleAdd(event: FormEvent) {
-    event.preventDefault();
-    const yearNum = parseInt(year, 10);
-    if (!title || !yearNum) return;
-    setAdding(true);
-    try {
-      await apiFetch('/admin/songs', { method: 'POST', body: { title, year: yearNum, source: 'local' }, token });
-      setTitle('');
-      setYear('');
-      load(query);
-    } finally {
-      setAdding(false);
-    }
-  }
-
   function updateSong(updated: Song) {
     setSongs((prev) => prev.map((s) => (s.songId === updated.songId ? updated : s)));
   }
@@ -322,18 +304,11 @@ function SongsSection({ token }: { token: string }) {
     <section className="admin-section">
       <h3>Song-Pool</h3>
       <input
+        className="admin-search-input"
         placeholder="Song oder Interpret suchen…"
         value={query}
         onChange={(e) => setQuery(e.target.value)}
-        style={{ width: '100%', marginBottom: 8 }}
       />
-      <form className="admin-inline-form" onSubmit={handleAdd}>
-        <input placeholder="Titel" value={title} onChange={(e) => setTitle(e.target.value)} style={{ flex: 1, minWidth: 160 }} />
-        <input placeholder="Jahr" type="number" value={year} onChange={(e) => setYear(e.target.value)} style={{ width: 90 }} />
-        <button className="admin-btn-sm" type="submit" disabled={adding}>
-          Song hinzufügen
-        </button>
-      </form>
       <div className="admin-table-wrap">
         <table className="admin-table">
           <thead>
