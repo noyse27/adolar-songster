@@ -9,9 +9,11 @@ interface Song {
   songId: string;
   source: string;
   title: string;
+  artist: string | null;
   year: number;
   durationSec: number | null;
   isValid: boolean;
+  yearOverride: boolean;
 }
 
 interface AdminUser {
@@ -61,7 +63,7 @@ export function AdminPage() {
         <h2>Admin-Bereich</h2>
 
         <MusicSourceSection token={token as string} />
-        <InvitesSection token={token as string} />
+        <InvitesSection token={token as string} isAdmin />
         <SongsSection token={token as string} />
         <UsersSection token={token as string} />
       </div>
@@ -206,18 +208,96 @@ function MusicSourceSection({ token }: { token: string }) {
   );
 }
 
+function YearCell({ song, token, onSaved }: { song: Song; token: string; onSaved: (s: Song) => void }) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(String(song.year));
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function save() {
+    const yearNum = parseInt(value, 10);
+    if (!Number.isInteger(yearNum) || yearNum < 1900 || yearNum > 2100) {
+      setError('1900-2100');
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      const updated = await apiFetch<Song>(`/admin/songs/${song.songId}/year`, {
+        method: 'PUT',
+        body: { year: yearNum },
+        token,
+      });
+      onSaved({ ...song, ...updated });
+      setEditing(false);
+    } catch {
+      setError('Fehlgeschlagen');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (!editing) {
+    return (
+      <span
+        onClick={() => {
+          setValue(String(song.year));
+          setEditing(true);
+        }}
+        title={song.yearOverride ? 'Manuell korrigiert - Sync überschreibt das nicht mehr' : 'Klicken zum Korrigieren'}
+        style={{ cursor: 'pointer', textDecoration: 'underline dotted' }}
+      >
+        {song.year}
+        {song.yearOverride && ' ✓'}
+      </span>
+    );
+  }
+
+  return (
+    <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
+      <input
+        type="number"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        style={{ width: 70 }}
+        autoFocus
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') save();
+          if (e.key === 'Escape') setEditing(false);
+        }}
+      />
+      <button className="admin-btn-sm" type="button" disabled={saving} onClick={save}>
+        OK
+      </button>
+      <button className="admin-btn-sm" type="button" onClick={() => setEditing(false)}>
+        Abbrechen
+      </button>
+      {error && <span style={{ color: 'var(--sh-error, #e58b8b)', fontSize: 11 }}>{error}</span>}
+    </span>
+  );
+}
+
 function SongsSection({ token }: { token: string }) {
   const [songs, setSongs] = useState<Song[]>([]);
+  const [query, setQuery] = useState('');
   const [title, setTitle] = useState('');
   const [year, setYear] = useState('');
   const [adding, setAdding] = useState(false);
 
-  function load() {
-    apiFetch<{ songs: Song[] }>('/admin/songs', { token })
+  function load(q: string) {
+    apiFetch<{ songs: Song[] }>(`/admin/songs${q ? `?q=${encodeURIComponent(q)}` : ''}`, { token })
       .then((r) => setSongs(r.songs))
       .catch(() => {});
   }
-  useEffect(load, [token]);
+
+  // Debounced so the search dialog doesn't fire a request per keystroke -
+  // this scopes to the backend's LIMIT 50 instead of fetching the whole
+  // ~8000-track pool just to slice it client-side, see routes/admin.ts.
+  useEffect(() => {
+    const id = setTimeout(() => load(query), 300);
+    return () => clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query, token]);
 
   async function handleAdd(event: FormEvent) {
     event.preventDefault();
@@ -228,15 +308,25 @@ function SongsSection({ token }: { token: string }) {
       await apiFetch('/admin/songs', { method: 'POST', body: { title, year: yearNum, source: 'local' }, token });
       setTitle('');
       setYear('');
-      load();
+      load(query);
     } finally {
       setAdding(false);
     }
   }
 
+  function updateSong(updated: Song) {
+    setSongs((prev) => prev.map((s) => (s.songId === updated.songId ? updated : s)));
+  }
+
   return (
     <section className="admin-section">
-      <h3>Song-Pool ({songs.length})</h3>
+      <h3>Song-Pool</h3>
+      <input
+        placeholder="Song oder Interpret suchen…"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        style={{ width: '100%', marginBottom: 8 }}
+      />
       <form className="admin-inline-form" onSubmit={handleAdd}>
         <input placeholder="Titel" value={title} onChange={(e) => setTitle(e.target.value)} style={{ flex: 1, minWidth: 160 }} />
         <input placeholder="Jahr" type="number" value={year} onChange={(e) => setYear(e.target.value)} style={{ width: 90 }} />
@@ -249,33 +339,37 @@ function SongsSection({ token }: { token: string }) {
           <thead>
             <tr>
               <th>Titel</th>
+              <th>Interpret</th>
               <th>Jahr</th>
               <th>Quelle</th>
               <th>Status</th>
             </tr>
           </thead>
           <tbody>
-            {songs.slice(0, 50).map((s) => (
+            {songs.map((s) => (
               <tr key={s.songId}>
                 <td>{s.title}</td>
-                <td>{s.year}</td>
+                <td>{s.artist ?? '–'}</td>
+                <td>
+                  <YearCell song={s} token={token} onSaved={updateSong} />
+                </td>
                 <td>{s.source}</td>
                 <td>{s.isValid ? <span className="admin-pill">gültig</span> : <span className="admin-pill warn">ungültig</span>}</td>
               </tr>
             ))}
             {songs.length === 0 && (
               <tr>
-                <td colSpan={4} style={{ color: 'var(--sh-text-faint)' }}>
-                  Noch keine Songs im Pool.
+                <td colSpan={5} style={{ color: 'var(--sh-text-faint)' }}>
+                  {query ? 'Keine Treffer.' : 'Noch keine Songs im Pool.'}
                 </td>
               </tr>
             )}
           </tbody>
         </table>
       </div>
-      {songs.length > 50 && (
+      {songs.length === 50 && (
         <p style={{ fontSize: 12, color: 'var(--sh-text-faint)', marginTop: 8 }}>
-          Zeigt die ersten 50 von {songs.length}.
+          Zeigt die ersten 50 Treffer - Suche eingrenzen, um mehr zu sehen.
         </p>
       )}
     </section>

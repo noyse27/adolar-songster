@@ -247,20 +247,64 @@ adminRouter.post('/songs', async (req, res) => {
   });
 });
 
-adminRouter.get('/songs', async (_req, res) => {
-  const result = await pool.query(
-    `SELECT id, source, title, year_value, duration_sec, is_valid, created_at
-     FROM song_ref ORDER BY created_at DESC`,
-  );
+// ?q= scopes the search to the backend instead of the admin page fetching
+// every song_ref row (a real library is ~8000 tracks) just to filter/slice
+// it client-side - see AdminPage.tsx's SongsSection.
+adminRouter.get('/songs', async (req, res) => {
+  const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+  const limit = 50;
+  const result = q
+    ? await pool.query(
+        `SELECT id, source, title, artist, year_value, duration_sec, is_valid, year_override
+         FROM song_ref WHERE title ILIKE $1 OR artist ILIKE $1
+         ORDER BY title LIMIT $2`,
+        [`%${q}%`, limit],
+      )
+    : await pool.query(
+        `SELECT id, source, title, artist, year_value, duration_sec, is_valid, year_override
+         FROM song_ref ORDER BY created_at DESC LIMIT $1`,
+        [limit],
+      );
 
   res.status(200).json({
     songs: result.rows.map((row) => ({
       songId: row.id,
       source: row.source,
       title: row.title,
+      artist: row.artist,
       year: row.year_value,
       durationSec: row.duration_sec,
       isValid: row.is_valid,
+      yearOverride: row.year_override,
     })),
+  });
+});
+
+// Manual year correction (see the Song-Pool search dialog in AdminPage.tsx)
+// for a song whose year is still wrong despite the Adolar original_year
+// fix - sets year_override so the next Adolar sync leaves it alone
+// (upsertSongRefTrack in adolarBatch.ts respects this flag).
+adminRouter.put('/songs/:songId/year', async (req, res) => {
+  const { songId } = req.params;
+  const { year } = req.body ?? {};
+  if (!Number.isInteger(year) || year < 1900 || year > 2100) {
+    res.status(400).json({ error: 'year must be an integer between 1900 and 2100' });
+    return;
+  }
+  const result = await pool.query(
+    `UPDATE song_ref SET year_value = $1, year_override = TRUE WHERE id = $2
+     RETURNING id, title, artist, year_value, year_override`,
+    [year, songId],
+  );
+  if (result.rowCount === 0) {
+    res.status(404).json({ error: 'song not found' });
+    return;
+  }
+  res.status(200).json({
+    songId: result.rows[0].id,
+    title: result.rows[0].title,
+    artist: result.rows[0].artist,
+    year: result.rows[0].year_value,
+    yearOverride: result.rows[0].year_override,
   });
 });

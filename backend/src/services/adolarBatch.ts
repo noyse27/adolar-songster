@@ -24,7 +24,10 @@ export interface BatchCandidate {
 // real ~7000-track playlist. It now reads whatever the sync already
 // upserted here instead. last_played_at is deliberately left untouched by
 // the upsert so a track already known from a previous session keeps its
-// malus history.
+// malus history. year_value is likewise left untouched once an admin has
+// manually corrected it (year_override, set via PUT /admin/songs/:id/year)
+// - otherwise every sync would silently re-clobber a hand-fixed year with
+// whatever Adolar still reports.
 export async function upsertSongRefTrack(
   client: Queryable,
   track: AdolarTrack,
@@ -34,7 +37,8 @@ export async function upsertSongRefTrack(
      VALUES ('adolar', $1, $2, $3, $4, $5, TRUE)
      ON CONFLICT (source, source_song_id)
      DO UPDATE SET title = EXCLUDED.title, artist = EXCLUDED.artist,
-                    year_value = EXCLUDED.year_value, duration_sec = EXCLUDED.duration_sec,
+                    year_value = CASE WHEN song_ref.year_override THEN song_ref.year_value ELSE EXCLUDED.year_value END,
+                    duration_sec = EXCLUDED.duration_sec,
                     is_valid = TRUE
      RETURNING id, last_played_at`,
     [String(track.id), track.title, track.artist, track.year, track.duration],
