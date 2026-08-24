@@ -10,13 +10,11 @@ import { InvitesPage } from './pages/InvitesPage';
 import { LobbyPage } from './pages/LobbyPage';
 import { CreateTablePage } from './pages/CreateTablePage';
 import { TableRoomPage } from './pages/TableRoomPage';
-import { Playboard } from './playboard/Playboard';
 import { LiveGameBoard } from './game/LiveGameBoard';
 
 // TODO(popup): "/spiel/:gameId" still opens in the same tab/window as the
 // rest of the app. Launching it as its own popup window on round-start is
-// still open (see Playboard UI spec section 8). "/playboard" stays as the
-// original disconnected local-state prototype/design reference.
+// still open (see Playboard UI spec section 8).
 export function App() {
   return (
     <Routes>
@@ -32,7 +30,6 @@ export function App() {
       <Route path="/tisch/neu" element={<CreateTablePage />} />
       <Route path="/tisch/:tableId" element={<TableRoomPage />} />
       <Route path="/spiel/:gameId" element={<LiveGameBoard />} />
-      <Route path="/playboard" element={<Playboard />} />
     </Routes>
   );
 }

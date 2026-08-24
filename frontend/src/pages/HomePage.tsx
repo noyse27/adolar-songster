@@ -24,9 +24,6 @@ export function HomePage() {
               <Link className="sh-action sh-primary" to="/lobby">
                 Zur Lobby <span className="sh-action-arrow">→</span>
               </Link>
-              <Link className="sh-action" to="/playboard">
-                Playboard ansehen (Prototyp) <span className="sh-action-arrow">→</span>
-              </Link>
               <Link className="sh-action" to="/anleitung">
                 Anleitung <span className="sh-action-arrow">→</span>
               </Link>

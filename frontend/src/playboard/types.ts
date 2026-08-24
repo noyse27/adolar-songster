@@ -1,5 +1,3 @@
-export type Phase = 'dealing' | 'idle' | 'waiting' | 'countdown' | 'playing' | 'reveal';
-
 export type PendingResult = 'good' | 'bad' | null;
 export type TokenState = 'idle' | 'entering' | 'wrong';
 

@@ -1,56 +1,8 @@
-import { PlayerState, SLOT_COUNT, STARTER_SLOTS, STARTER_YEARS } from './types';
-
-export function freshSlots(): (number | null)[] {
-  const slots = new Array<number | null>(SLOT_COUNT).fill(null);
-  STARTER_SLOTS.forEach((slotIdx, i) => {
-    slots[slotIdx] = STARTER_YEARS[i];
-  });
-  return slots;
-}
-
-/** Nearest filled neighbour to the left/right of `idx`, searching outward. */
-export function neighbors(slots: (number | null)[], idx: number): [number | undefined, number | undefined] {
-  let left: number | undefined;
-  for (let i = idx - 1; i >= 0; i--) {
-    if (slots[i] != null) {
-      left = slots[i] as number;
-      break;
-    }
-  }
-  let right: number | undefined;
-  for (let i = idx + 1; i < slots.length; i++) {
-    if (slots[i] != null) {
-      right = slots[i] as number;
-      break;
-    }
-  }
-  return [left, right];
-}
-
-/** FR-026/FR-027: correct iff year sits between the nearest filled neighbours. */
-export function isCorrectPlacement(slots: (number | null)[], idx: number, year: number): boolean {
-  const [left, right] = neighbors(slots, idx);
-  if (left !== undefined && year < left) return false;
-  if (right !== undefined && year > right) return false;
-  return true;
-}
-
-export function filledCount(p: Pick<PlayerState, 'slots'>): number {
-  return p.slots.filter((v) => v != null).length;
-}
+import { SLOT_COUNT } from './types';
 
 /** FR-044: leaving mid-game costs -5, and -1 per additional player at the table. */
 export function karmaLeavePenalty(playerCount: number): number {
   return -(5 + (playerCount - 1));
-}
-
-export function ranksByPoints(players: Pick<PlayerState, 'id' | 'songsterPoints'>[]): Record<string, number> {
-  const order = [...players].sort((a, b) => b.songsterPoints - a.songsterPoints);
-  const map: Record<string, number> = {};
-  order.forEach((p, i) => {
-    map[p.id] = i + 1;
-  });
-  return map;
 }
 
 export interface PlacementResult {
@@ -100,12 +52,4 @@ export function placeAt(baseSlots: (number | null)[], desiredIndex: number): Pla
   for (let k = leftEmpty as number; k < desiredIndex - 1; k++) slots[k] = slots[k + 1];
   slots[desiredIndex - 1] = null;
   return { slots, landingIndex: desiredIndex - 1 };
-}
-
-/** First slot (if any) where `year` would be a correct placement. */
-export function findCorrectSlot(slots: (number | null)[], year: number): number | null {
-  for (let i = 0; i < SLOT_COUNT; i++) {
-    if (slots[i] == null && isCorrectPlacement(slots, i, year)) return i;
-  }
-  return null;
 }
