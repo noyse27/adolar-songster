@@ -439,6 +439,12 @@ describe('leaderboard and karma-ledger endpoints', () => {
     await invalidateAllSongs();
     await seedSong(2000);
 
+    const beforeStats = await request(app)
+      .get('/api/v1/stats/games-played')
+      .set(authHeader(owner.id, 'user'));
+    expect(beforeStats.status).toBe(200);
+    const gamesPlayedBefore = beforeStats.body.gamesPlayed;
+
     const round = await request(app)
       .post(`/api/v1/games/${gameId}/rounds`)
       .set(authHeader(owner.id, 'user'));
@@ -462,5 +468,12 @@ describe('leaderboard and karma-ledger endpoints', () => {
       .set(authHeader(owner.id, 'user'));
     expect(ledger.status).toBe(200);
     expect(ledger.body.entries.some((e: { reason: string }) => e.reason === 'match_completed')).toBe(true);
+
+    // Server-wide finished-match count (home screen stat) ticks up by
+    // exactly one for this one completed match - not once per player.
+    const afterStats = await request(app)
+      .get('/api/v1/stats/games-played')
+      .set(authHeader(owner.id, 'user'));
+    expect(afterStats.body.gamesPlayed).toBe(gamesPlayedBefore + 1);
   });
 });

@@ -25,6 +25,15 @@ leaderboardRouter.get('/leaderboard', requireAuth, async (_req, res) => {
   });
 });
 
+// Backs the "bisher insgesamt gespielte Spiele auf dem Server" line on the
+// post-login home screen - a count of actually-finished matches, not a sum
+// of every player's games_played (which would multi-count one match once
+// per participant).
+leaderboardRouter.get('/stats/games-played', requireAuth, async (_req, res) => {
+  const result = await pool.query(`SELECT COUNT(*)::int AS count FROM game WHERE status = 'finished'`);
+  res.status(200).json({ gamesPlayed: result.rows[0].count });
+});
+
 leaderboardRouter.get('/users/:userId/karma-ledger', requireAuth, async (req, res) => {
   const { userId } = req.params;
 

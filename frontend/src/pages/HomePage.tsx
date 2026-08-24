@@ -1,17 +1,34 @@
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import './pages.css';
 import { useAuth } from '../auth/AuthContext';
+import { apiFetch } from '../api';
 import adolarLogo from '../assets/brand/adolar-logo.svg';
 
 export function HomePage() {
   const { auth, logout } = useAuth();
+  const [gamesPlayed, setGamesPlayed] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!auth) return;
+    apiFetch<{ gamesPlayed: number }>('/stats/games-played', { token: auth.accessToken })
+      .then((r) => setGamesPlayed(r.gamesPlayed))
+      .catch(() => {});
+  }, [auth]);
 
   return (
     <div className="app-shell">
       <div className="sh-brand">
         <img src={adolarLogo} alt="" width={64} height={64} style={{ display: auth ? 'none' : undefined }} />
-        <div className="sh-brand-title">Willkommen bei Adolar Songster</div>
+        <div className="sh-brand-title">
+          Willkommen bei <span className="brand-name">Adolar Songster</span>
+        </div>
         <div className="sh-brand-sub">Zeitleisten-Ratespiel</div>
+        {auth && gamesPlayed !== null && (
+          <div className="sh-brand-stat">
+            Bisher insgesamt gespielte Spiele auf dem Server: <b>{gamesPlayed}</b>
+          </div>
+        )}
       </div>
 
       <div className="sh-card">

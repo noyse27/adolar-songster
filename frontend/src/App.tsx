@@ -1,5 +1,6 @@
 import { Route, Routes } from 'react-router-dom';
 import { SetupWizard } from './components/SetupWizard';
+import { Footer } from './components/Footer';
 import { RootGate } from './pages/RootGate';
 import { LoginPage } from './pages/LoginPage';
 import { RegisterPage } from './pages/RegisterPage';
@@ -18,20 +19,23 @@ import { LiveGameBoard } from './game/LiveGameBoard';
 // still open (see Playboard UI spec section 8).
 export function App() {
   return (
-    <Routes>
-      <Route path="/" element={<RootGate />} />
-      <Route path="/setup" element={<SetupWizard />} />
-      <Route path="/login" element={<LoginPage />} />
-      <Route path="/register" element={<RegisterPage />} />
-      <Route path="/anleitung" element={<InstructionsPage />} />
-      <Route path="/rangliste" element={<LeaderboardPage />} />
-      <Route path="/profil" element={<ProfilePage />} />
-      <Route path="/admin" element={<AdminPage />} />
-      <Route path="/einladungen" element={<InvitesPage />} />
-      <Route path="/lobby" element={<LobbyPage />} />
-      <Route path="/tisch/neu" element={<CreateTablePage />} />
-      <Route path="/tisch/:tableId" element={<TableRoomPage />} />
-      <Route path="/spiel/:gameId" element={<LiveGameBoard />} />
-    </Routes>
+    <>
+      <Routes>
+        <Route path="/" element={<RootGate />} />
+        <Route path="/setup" element={<SetupWizard />} />
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/register" element={<RegisterPage />} />
+        <Route path="/anleitung" element={<InstructionsPage />} />
+        <Route path="/rangliste" element={<LeaderboardPage />} />
+        <Route path="/profil" element={<ProfilePage />} />
+        <Route path="/admin" element={<AdminPage />} />
+        <Route path="/einladungen" element={<InvitesPage />} />
+        <Route path="/lobby" element={<LobbyPage />} />
+        <Route path="/tisch/neu" element={<CreateTablePage />} />
+        <Route path="/tisch/:tableId" element={<TableRoomPage />} />
+        <Route path="/spiel/:gameId" element={<LiveGameBoard />} />
+      </Routes>
+      <Footer />
+    </>
   );
 }
