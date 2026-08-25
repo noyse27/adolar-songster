@@ -419,3 +419,33 @@
   .pb-actions { justify-content: flex-start; }
   .pb-deck { grid-template-columns: 1fr; justify-items: center; }
 }
+
+/* A phone rotated to landscape is usually *wider* than the 780px breakpoint
+   above (so none of it applies) but much *shorter* - the fixed-size ring
+   (224px) and page padding alone can exceed the whole viewport height,
+   forcing the browser into a zoomed-out view the player then has to
+   manually zoom back in from. Targets viewport height, not width, and only
+   shrinks sizes (never re-flows columns - the wide layout is exactly right
+   for landscape, it's just too tall). */
+@media (max-height: 500px) and (orientation: landscape) {
+  .playboard { padding: 12px 20px 20px; }
+  .pb-app { gap: 10px; }
+  .pb-topbar { gap: 10px; }
+  .pb-brand-title { font-size: 16px; }
+  .pb-brand-sub { font-size: 10px; }
+  .pb-round-pill { padding: 5px 12px 5px 8px; font-size: 11px; }
+
+  .pb-ring-wrap { width: 130px; height: 130px; }
+  .pb-ring-mark { font-size: 22px; }
+  .pb-flip-face.pb-front.pb-counting .pb-ring-mark { font-size: 28px; }
+  .pb-reveal-year { font-size: 26px; }
+  .pb-reveal-artist, .pb-reveal-track { max-width: 100px; }
+
+  .pb-tokens { gap: 8px; }
+  .pb-token-btn { width: 44px; height: 44px; }
+  .pb-token-glyph { font-size: 15px; }
+
+  .pb-deck { gap: 12px; margin-top: 2px; }
+  .pb-status-card { padding: 8px 12px; min-width: 0; font-size: 11px; }
+  .pb-hint { margin-top: -2px; font-size: 11px; }
+}
