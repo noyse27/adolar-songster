@@ -6,6 +6,9 @@ import { verifyDisplayToken } from '../services/displayToken';
 import { pool } from '../db/pool';
 import { setIO, tableRoom, lobbyRoom, gameRoom } from './io';
 import { broadcastGame } from './broadcast';
+import { loadActiveSeat, authorizeDisplayGame } from '../services/tableAuthorization';
+
+type RoomJoinAck = (result: { ok: boolean; error?: string }) => void;
 
 interface AuthedSocketData {
   userId: string;
@@ -86,20 +89,76 @@ export function createSocketServer(httpServer: HttpServer): Server {
       .catch(() => next(new Error('invalid or expired token')));
   });
 
+  // H-02: a table/game room broadcasts that table's full detail / full game
+  // state (joinCode, seats, timelines, ...) to everyone in it, so joining
+  // one is exactly as sensitive as GET /tables/:tableId or GET
+  // /games/:gameId now are - same rule, same source of truth: an active
+  // seat at the table for a normal user, or the display's own bound
+  // tableId for a display socket. Neither ever trusts the client-supplied
+  // id alone.
+  async function canJoinTableRoom(socket: Socket, tableId: string): Promise<boolean> {
+    const displayTableId = (socket.data as Partial<DisplaySocketData>).displayTableId;
+    if (displayTableId) return displayTableId === tableId;
+
+    const userId = (socket.data as Partial<AuthedSocketData>).userId;
+    if (!userId) return false;
+    return (await loadActiveSeat(tableId, userId)) !== null;
+  }
+
+  async function canJoinGameRoom(socket: Socket, gameId: string): Promise<boolean> {
+    const displayTableId = (socket.data as Partial<DisplaySocketData>).displayTableId;
+    if (displayTableId) return authorizeDisplayGame(displayTableId, gameId);
+
+    const userId = (socket.data as Partial<AuthedSocketData>).userId;
+    if (!userId) return false;
+    const gameResult = await pool.query(`SELECT table_id FROM game WHERE id = $1`, [gameId]);
+    const tableId = gameResult.rows[0]?.table_id as string | undefined;
+    if (!tableId) return false;
+    return (await loadActiveSeat(tableId, userId)) !== null;
+  }
+
   io.on('connection', (socket: Socket) => {
     // Lobby list and per-table detail are opt-in subscriptions rather than
     // every client always receiving both - a client deep in a game
-    // shouldn't also get every public lobby table update.
+    // shouldn't also get every public lobby table update. The lobby room
+    // itself only ever broadcasts public/open tables (see broadcast.ts), so
+    // it stays open to any authenticated socket.
     socket.on('lobby:join', () => socket.join(lobbyRoom()));
     socket.on('lobby:leave', () => socket.leave(lobbyRoom()));
-    socket.on('table:join-room', (tableId: unknown) => {
-      if (typeof tableId === 'string') socket.join(tableRoom(tableId));
+    socket.on('table:join-room', (tableId: unknown, ack?: RoomJoinAck) => {
+      if (typeof tableId !== 'string') {
+        ack?.({ ok: false, error: 'invalid tableId' });
+        return;
+      }
+      canJoinTableRoom(socket, tableId)
+        .then((allowed) => {
+          if (!allowed) {
+            ack?.({ ok: false, error: 'forbidden' });
+            return;
+          }
+          socket.join(tableRoom(tableId));
+          ack?.({ ok: true });
+        })
+        .catch(() => ack?.({ ok: false, error: 'internal error' }));
     });
     socket.on('table:leave-room', (tableId: unknown) => {
       if (typeof tableId === 'string') socket.leave(tableRoom(tableId));
     });
-    socket.on('game:join-room', (gameId: unknown) => {
-      if (typeof gameId === 'string') socket.join(gameRoom(gameId));
+    socket.on('game:join-room', (gameId: unknown, ack?: RoomJoinAck) => {
+      if (typeof gameId !== 'string') {
+        ack?.({ ok: false, error: 'invalid gameId' });
+        return;
+      }
+      canJoinGameRoom(socket, gameId)
+        .then((allowed) => {
+          if (!allowed) {
+            ack?.({ ok: false, error: 'forbidden' });
+            return;
+          }
+          socket.join(gameRoom(gameId));
+          ack?.({ ok: true });
+        })
+        .catch(() => ack?.({ ok: false, error: 'internal error' }));
     });
     socket.on('game:leave-room', (gameId: unknown) => {
       if (typeof gameId === 'string') socket.leave(gameRoom(gameId));

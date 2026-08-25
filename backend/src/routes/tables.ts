@@ -8,10 +8,11 @@ import { applyEarlyLeavePenalty } from '../services/matchOutcome';
 import { AdolarClientError, isPlaylistAvailable } from '../services/adolarClient';
 import { startTableGame } from '../services/tableStart';
 import { restartTable } from '../services/tableRestart';
-import { fetchLobbyTables, loadTableDetail } from '../services/tableQueries';
+import { fetchLobbyTables, loadTableDetail, loadTablePreview } from '../services/tableQueries';
 import { broadcastLobby, broadcastTable } from '../realtime/broadcast';
 import { touchTableActivity } from '../services/tableActivity';
 import { issueDisplayToken, verifyDisplayToken } from '../services/displayToken';
+import { loadActiveSeat } from '../services/tableAuthorization';
 
 export const tablesRouter = Router();
 
@@ -208,12 +209,37 @@ tablesRouter.get('/tables/display/:token', async (req, res) => {
   res.status(200).json(table);
 });
 
-tablesRouter.get('/tables/:tableId', requireAuth, async (req, res) => {
+// H-01: minimal, safe-to-show-before-joining detail - name, capacity,
+// requirements, visibility/state - so the lobby/join-link flow keeps
+// working once the full detail below starts requiring membership. Never
+// includes joinCode, seats, ownerUserId or latestGameId.
+tablesRouter.get('/tables/:tableId/preview', requireAuth, async (req, res) => {
+  const preview = await loadTablePreview(req.params.tableId);
+  if (!preview) {
+    res.status(404).json({ error: 'table not found' });
+    return;
+  }
+  res.status(200).json(preview);
+});
+
+// H-01: full detail (seats, joinCode, latestGameId, ...) requires an active
+// seat - previously any logged-in user could read another table's private
+// join code, seat list and game id just by knowing/guessing the tableId.
+// Not-a-member and doesn't-exist both 404 identically, so a stranger can't
+// use this to confirm a given tableId is real.
+tablesRouter.get('/tables/:tableId', requireAuth, async (req: AuthenticatedRequest, res) => {
   const { tableId } = req.params;
+  const requesterId = req.userId as string;
 
   await evaluateOwnerHandover(tableId);
-  const table = await loadTableDetail(tableId);
 
+  const seatType = await loadActiveSeat(tableId, requesterId);
+  if (!seatType) {
+    res.status(404).json({ error: 'table not found' });
+    return;
+  }
+
+  const table = await loadTableDetail(tableId);
   if (!table) {
     res.status(404).json({ error: 'table not found' });
     return;

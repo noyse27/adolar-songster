@@ -224,7 +224,66 @@ async function assertNotSittingOut(roundId: string, userId: string): Promise<voi
   }
 }
 
+interface AuthorizedRound {
+  id: string;
+  gameId: string;
+  status: string;
+  mode: string;
+  songId: string;
+  tableId: string;
+}
+
+// H-03: every user-facing round mutation (guess/bonus-guess/token-claim/
+// token-submit) needs both of these, checked inside the same transaction
+// as the mutation itself so a concurrent leave/rejoin can't create a
+// window where the check and the write disagree:
+//  1. roundId actually belongs to the gameId from the URL path - otherwise
+//     a roundId from game A combined with a gameId from game B slips
+//     through, since only roundId ever drove the actual mutation.
+//  2. the requester currently holds an active *player* seat at that game's
+//     table - otherwise any logged-in non-participant who learns/guesses a
+//     roundId can claim tokens or submit guesses for someone else's game.
+// FOR UPDATE OF r keeps the exact row-locking behavior every caller already
+// relied on (only the round row, not the joined game row).
+async function loadAuthorizedRound(
+  client: PoolClient,
+  gameId: string,
+  roundId: string,
+  userId: string,
+): Promise<AuthorizedRound> {
+  const result = await client.query(
+    `SELECT r.id, r.game_id, r.status, r.mode, r.song_id, g.table_id
+     FROM round r
+     JOIN game g ON g.id = r.game_id
+     WHERE r.id = $1
+     FOR UPDATE OF r`,
+    [roundId],
+  );
+  if (result.rowCount === 0 || result.rows[0].game_id !== gameId) {
+    throw new RoundEngineError('ROUND_NOT_FOUND', 'round not found');
+  }
+  const round = result.rows[0];
+
+  const seatResult = await client.query(
+    `SELECT 1 FROM table_seat WHERE table_id = $1 AND user_id = $2 AND seat_type = 'player' AND left_at IS NULL`,
+    [round.table_id, userId],
+  );
+  if (seatResult.rowCount === 0) {
+    throw new RoundEngineError('FORBIDDEN', 'you are not an active player at this table');
+  }
+
+  return {
+    id: round.id,
+    gameId: round.game_id,
+    status: round.status,
+    mode: round.mode,
+    songId: round.song_id,
+    tableId: round.table_id,
+  };
+}
+
 export async function submitGuess(
+  gameId: string,
   roundId: string,
   userId: string,
   index: number,
@@ -244,13 +303,7 @@ export async function submitGuess(
   try {
     await client.query('BEGIN');
 
-    const roundResult = await client.query(`SELECT id, game_id, status FROM round WHERE id = $1 FOR UPDATE`, [
-      roundId,
-    ]);
-    if (roundResult.rowCount === 0) {
-      throw new RoundEngineError('ROUND_NOT_FOUND', 'round not found');
-    }
-    const round = roundResult.rows[0];
+    const round = await loadAuthorizedRound(client, gameId, roundId, userId);
     if (round.status !== 'playing') {
       throw new RoundEngineError('ROUND_LOCKED', 'round is not currently accepting guesses');
     }
@@ -265,7 +318,7 @@ export async function submitGuess(
       throw new RoundEngineError('ROUND_LOCKED', 'a token was claimed for this round');
     }
 
-    const timeline = await fetchTimeline(client, round.game_id, userId);
+    const timeline = await fetchTimeline(client, round.gameId, userId);
     if (!Number.isInteger(index) || index < 0 || index > timeline.length) {
       throw new RoundEngineError('INVALID_GUESS', 'index out of range for the current timeline');
     }
@@ -376,6 +429,7 @@ export async function resolveRound(
 }
 
 export async function submitBonusGuess(
+  gameId: string,
   roundId: string,
   userId: string,
   year: number,
@@ -384,14 +438,7 @@ export async function submitBonusGuess(
   try {
     await client.query('BEGIN');
 
-    const roundResult = await client.query(
-      `SELECT id, game_id, song_id, status, mode FROM round WHERE id = $1 FOR UPDATE`,
-      [roundId],
-    );
-    if (roundResult.rowCount === 0) {
-      throw new RoundEngineError('ROUND_NOT_FOUND', 'round not found');
-    }
-    const round = roundResult.rows[0];
+    const round = await loadAuthorizedRound(client, gameId, roundId, userId);
 
     if (round.mode !== 'bonus' || round.status !== 'playing') {
       throw new RoundEngineError('ROUND_LOCKED', 'no bonus guess window is open');
@@ -400,7 +447,7 @@ export async function submitBonusGuess(
       throw new RoundEngineError('INVALID_GUESS', 'year must be an integer');
     }
 
-    const tieResult = await checkForWinOrTie(client, round.game_id);
+    const tieResult = await checkForWinOrTie(client, round.gameId);
     if (!('tiedUserIds' in tieResult) || !tieResult.tiedUserIds.includes(userId)) {
       throw new RoundEngineError('TOKEN_NOT_AVAILABLE', 'you are not tied for the win in this round');
     }
@@ -414,7 +461,7 @@ export async function submitBonusGuess(
     }
 
     const songResult = await client.query(`SELECT year_value FROM song_ref WHERE id = $1`, [
-      round.song_id,
+      round.songId,
     ]);
     const correct = year === (songResult.rows[0].year_value as number);
 
@@ -432,15 +479,15 @@ export async function submitBonusGuess(
       // card, so this goes straight to finishGame rather than through
       // insertCardAndReindex.
       await client.query(`UPDATE round SET status = 'resolved', ended_at = NOW() WHERE id = $1`, [roundId]);
-      await finishGame(client, round.game_id, userId);
+      await finishGame(client, round.gameId, userId);
       await client.query('COMMIT');
-      await broadcastGame(round.game_id);
-      await afterRoundResolved(round.game_id);
+      await broadcastGame(round.gameId);
+      await afterRoundResolved(round.gameId);
       return { correct: true };
     }
 
     await client.query('COMMIT');
-    await broadcastGame(round.game_id);
+    await broadcastGame(round.gameId);
     return { correct };
   } catch (err) {
     await client.query('ROLLBACK');
@@ -505,6 +552,7 @@ async function resolveBonusRound(roundId: string): Promise<void> {
 }
 
 export async function claimToken(
+  gameId: string,
   roundId: string,
   userId: string,
 ): Promise<{ accepted: true; graceMs: number }> {
@@ -512,14 +560,7 @@ export async function claimToken(
   try {
     await client.query('BEGIN');
 
-    const roundResult = await client.query(
-      `SELECT id, game_id, status FROM round WHERE id = $1 FOR UPDATE`,
-      [roundId],
-    );
-    if (roundResult.rowCount === 0) {
-      throw new RoundEngineError('ROUND_NOT_FOUND', 'round not found');
-    }
-    const round = roundResult.rows[0];
+    const round = await loadAuthorizedRound(client, gameId, roundId, userId);
     if (round.status !== 'playing') {
       throw new RoundEngineError('TOKEN_NOT_AVAILABLE', 'no token claim window is open');
     }
@@ -538,7 +579,7 @@ export async function claimToken(
       `SELECT COUNT(*)::int AS used FROM token_usage tu
        JOIN round r ON r.id = tu.round_id
        WHERE r.game_id = $1 AND tu.user_id = $2`,
-      [round.game_id, userId],
+      [round.gameId, userId],
     );
     if (usedCountResult.rows[0].used >= TOKENS_PER_PLAYER) {
       throw new RoundEngineError('TOKEN_ALREADY_USED', 'no tokens remaining this game');
@@ -556,7 +597,7 @@ export async function claimToken(
     );
 
     await client.query('COMMIT');
-    await broadcastGame(round.game_id);
+    await broadcastGame(round.gameId);
 
     if (isFirstClaim) {
       setTimeout(() => {
@@ -662,6 +703,7 @@ async function resolveSoloTimeout(roundId: string): Promise<void> {
 }
 
 export async function submitTokenGuess(
+  gameId: string,
   roundId: string,
   userId: string,
   year: number,
@@ -670,14 +712,7 @@ export async function submitTokenGuess(
   try {
     await client.query('BEGIN');
 
-    const roundResult = await client.query(
-      `SELECT id, game_id, song_id, status FROM round WHERE id = $1 FOR UPDATE`,
-      [roundId],
-    );
-    if (roundResult.rowCount === 0) {
-      throw new RoundEngineError('ROUND_NOT_FOUND', 'round not found');
-    }
-    const round = roundResult.rows[0];
+    const round = await loadAuthorizedRound(client, gameId, roundId, userId);
 
     if (!['token_solo', 'token_others'].includes(round.status)) {
       throw new RoundEngineError('ROUND_LOCKED', 'no token guess window is open');
@@ -687,7 +722,7 @@ export async function submitTokenGuess(
     }
 
     const songResult = await client.query(`SELECT year_value FROM song_ref WHERE id = $1`, [
-      round.song_id,
+      round.songId,
     ]);
     const songYear = songResult.rows[0].year_value as number;
     const correct = year === songYear;
@@ -712,9 +747,9 @@ export async function submitTokenGuess(
       );
 
       if (correct) {
-        const timeline = await fetchTimeline(client, round.game_id, userId);
+        const timeline = await fetchTimeline(client, round.gameId, userId);
         await insertCardAndReindex(client, {
-          gameId: round.game_id,
+          gameId: round.gameId,
           userId,
           sourceRoundId: roundId,
           songYear,
@@ -724,17 +759,17 @@ export async function submitTokenGuess(
         await client.query(`UPDATE round SET status = 'resolved', ended_at = NOW() WHERE id = $1`, [
           roundId,
         ]);
-        await checkForGameEnd(client, round.game_id);
+        await checkForGameEnd(client, round.gameId);
         await client.query('COMMIT');
-        await broadcastGame(round.game_id);
-        await afterRoundResolved(round.game_id);
+        await broadcastGame(round.gameId);
+        await afterRoundResolved(round.gameId);
         return { correct: true };
       }
 
       // FR-034: a wrong solo guess opens a 10s window for opponents.
       await client.query(`UPDATE round SET status = 'token_others' WHERE id = $1`, [roundId]);
       await client.query('COMMIT');
-      await broadcastGame(round.game_id);
+      await broadcastGame(round.gameId);
 
       setTimeout(() => {
         resolveOthersWindow(roundId).catch((err) => {
@@ -772,7 +807,7 @@ export async function submitTokenGuess(
     );
 
     await client.query('COMMIT');
-    await broadcastGame(round.game_id);
+    await broadcastGame(round.gameId);
     return { correct };
   } catch (err) {
     await client.query('ROLLBACK');

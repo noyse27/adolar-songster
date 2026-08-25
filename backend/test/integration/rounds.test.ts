@@ -105,9 +105,11 @@ describe('table start seeds a starting timeline (FR-023)', () => {
   });
 
   it('gives each active player 2 start blocks', async () => {
-    const { gameId } = await createRunningGame();
+    const { gameId, owner } = await createRunningGame();
 
-    const detail = await request(app).get(`/api/v1/games/${gameId}`).set(authHeader((await createUserDirect({})).id, 'user'));
+    // H-01: game detail requires an active seat at the table - use a
+    // participant (the owner) rather than an unrelated fresh account.
+    const detail = await request(app).get(`/api/v1/games/${gameId}`).set(authHeader(owner.id, 'user'));
     expect(detail.status).toBe(200);
     expect(detail.body.players).toHaveLength(2);
     for (const player of detail.body.players) {

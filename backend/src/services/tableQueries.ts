@@ -41,6 +41,58 @@ export async function fetchLobbyTables(): Promise<LobbyTableRow[]> {
   }));
 }
 
+// H-01: minimal detail a not-yet-joined but logged-in user may see, so the
+// lobby/join-link flow still works once GET /tables/:tableId itself starts
+// requiring an active seat below. Deliberately excludes joinCode, seats,
+// ownerUserId and latestGameId - nothing here helps anyone who hasn't
+// joined yet, and all of it is worth protecting once membership is required.
+export interface TablePreview {
+  tableId: string;
+  name: string;
+  visibility: string;
+  state: string;
+  allowSpectators: boolean;
+  maxPlayers: number;
+  maxSpectators: number;
+  activePlayers: number;
+  activeSpectators: number;
+  minKarmaPoints: number | null;
+  minScorePoints: number | null;
+  minGamesPlayed: number | null;
+}
+
+export async function loadTablePreview(tableId: string): Promise<TablePreview | null> {
+  const result = await pool.query(
+    `SELECT
+        t.id, t.name, t.visibility, t.allow_spectators, t.max_players, t.max_spectators, t.state,
+        t.min_karma_points, t.min_score_points, t.min_games_played,
+        COUNT(*) FILTER (WHERE s.seat_type = 'player' AND s.left_at IS NULL) AS active_players,
+        COUNT(*) FILTER (WHERE s.seat_type = 'spectator' AND s.left_at IS NULL) AS active_spectators
+     FROM game_table t
+     LEFT JOIN table_seat s ON s.table_id = t.id
+     WHERE t.id = $1
+     GROUP BY t.id`,
+    [tableId],
+  );
+  const row = result.rows[0];
+  if (!row) return null;
+
+  return {
+    tableId: row.id,
+    name: row.name,
+    visibility: row.visibility,
+    state: row.state,
+    allowSpectators: row.allow_spectators,
+    maxPlayers: row.max_players,
+    maxSpectators: row.max_spectators,
+    activePlayers: Number(row.active_players),
+    activeSpectators: Number(row.active_spectators),
+    minKarmaPoints: row.min_karma_points,
+    minScorePoints: row.min_score_points,
+    minGamesPlayed: row.min_games_played,
+  };
+}
+
 export interface TableDetail {
   tableId: string;
   name: string;
