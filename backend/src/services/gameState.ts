@@ -65,6 +65,12 @@ export interface GameState {
   players: GamePlayerState[];
   currentRound: CurrentRoundState | null;
   roundReadyPhase: RoundReadyPhase | null;
+  // Hostmodus (gemeinsames Anzeigegerät): true while a display-token socket
+  // is connected for this table (see socketServer.ts/displayToken.ts).
+  // Drives LiveGameBoard's compact mode - every seated player's own device
+  // switches to showing only their own row and muting itself once a shared
+  // screen is doing the showing/playing for everyone.
+  displayAnchorPresent: boolean;
 }
 
 export async function loadGameState(
@@ -74,7 +80,8 @@ export async function loadGameState(
   bonusWindowMs: number,
 ): Promise<GameState | null> {
   const gameResult = await pool.query(
-    `SELECT g.id, g.table_id, g.status, g.winner_user_id, t.match_ended_at
+    `SELECT g.id, g.table_id, g.status, g.winner_user_id, t.match_ended_at,
+            t.display_connected_at IS NOT NULL AS display_anchor_present
      FROM game g
      JOIN game_table t ON t.id = g.table_id
      WHERE g.id = $1`,
@@ -237,5 +244,6 @@ export async function loadGameState(
     players,
     currentRound,
     roundReadyPhase,
+    displayAnchorPresent: game.display_anchor_present,
   };
 }
