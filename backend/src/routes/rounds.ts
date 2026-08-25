@@ -7,6 +7,7 @@ import { setRoundReady } from '../services/roundReady';
 import { loadGameState } from '../services/gameState';
 import { touchTableActivityForGame } from '../services/tableActivity';
 import { BONUS_WINDOW_MS, COUNTDOWN_MS, SONG_DURATION_MS } from '../services/roundConfig';
+import { verifyDisplayToken } from '../services/displayToken';
 
 export const roundsRouter = Router();
 
@@ -83,6 +84,27 @@ roundsRouter.get('/games/:gameId/state', requireAuth, async (req, res) => {
     res.status(404).json({ error: 'game not found' });
     return;
   }
+  res.status(200).json(state);
+});
+
+// Anzeigegerät variant of the state snapshot above, authenticated by a
+// display token (see displayToken.ts) instead of a normal session - checks
+// the token's tableId actually owns this game before returning anything, so
+// a display token from one table can't be pointed at another table's game.
+roundsRouter.get('/games/display/:token/:gameId', async (req, res) => {
+  const verified = verifyDisplayToken(req.params.token);
+  if (!verified) {
+    res.status(401).json({ error: 'invalid or expired display token' });
+    return;
+  }
+
+  const gameResult = await pool.query(`SELECT table_id FROM game WHERE id = $1`, [req.params.gameId]);
+  if (gameResult.rowCount === 0 || gameResult.rows[0].table_id !== verified.tableId) {
+    res.status(404).json({ error: 'game not found' });
+    return;
+  }
+
+  const state = await loadGameState(req.params.gameId, COUNTDOWN_MS, SONG_DURATION_MS, BONUS_WINDOW_MS);
   res.status(200).json(state);
 });
 

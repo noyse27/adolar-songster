@@ -11,6 +11,7 @@ import { restartTable } from '../services/tableRestart';
 import { fetchLobbyTables, loadTableDetail } from '../services/tableQueries';
 import { broadcastLobby, broadcastTable } from '../realtime/broadcast';
 import { touchTableActivity } from '../services/tableActivity';
+import { issueDisplayToken, verifyDisplayToken } from '../services/displayToken';
 
 export const tablesRouter = Router();
 
@@ -164,6 +165,47 @@ tablesRouter.post('/tables', requireAuth, async (req: AuthenticatedRequest, res)
 
 tablesRouter.get('/tables/lobby', requireAuth, async (_req, res) => {
   res.status(200).json({ tables: await fetchLobbyTables() });
+});
+
+// Hostmodus (gemeinsames Anzeigegerät): mints a token for a shared screen
+// (TV/tablet) that shows the full Playboard for everyone at the table.
+// Deliberately callable by anyone currently seated (player or spectator),
+// not just the owner - whoever is physically setting up the shared screen
+// should be able to, and the token only ever grants read access to data
+// already visible to the table anyway. See services/displayToken.ts for why
+// this is a token, not a seat or a login.
+tablesRouter.post('/tables/:tableId/display-link', requireAuth, async (req: AuthenticatedRequest, res) => {
+  const requesterId = req.userId as string;
+  const { tableId } = req.params;
+
+  const seatResult = await pool.query(
+    `SELECT id FROM table_seat WHERE table_id = $1 AND user_id = $2 AND left_at IS NULL`,
+    [tableId, requesterId],
+  );
+  if (seatResult.rowCount === 0) {
+    res.status(403).json({ error: 'not seated at this table' });
+    return;
+  }
+
+  res.status(200).json({ tableId, displayToken: issueDisplayToken(tableId) });
+});
+
+// Read-only table detail for the Anzeigegerät screen, authenticated by the
+// display token itself instead of a normal Bearer session - the display
+// device has no app_user login at all (see displayToken.ts).
+tablesRouter.get('/tables/display/:token', async (req, res) => {
+  const verified = verifyDisplayToken(req.params.token);
+  if (!verified) {
+    res.status(401).json({ error: 'invalid or expired display token' });
+    return;
+  }
+
+  const table = await loadTableDetail(verified.tableId);
+  if (!table) {
+    res.status(404).json({ error: 'table not found' });
+    return;
+  }
+  res.status(200).json(table);
 });
 
 tablesRouter.get('/tables/:tableId', requireAuth, async (req, res) => {

@@ -2,12 +2,35 @@ import { Server as HttpServer } from 'http';
 import { Server, Socket } from 'socket.io';
 import jwt from 'jsonwebtoken';
 import { JWT_SECRET } from '../middleware/auth';
+import { verifyDisplayToken } from '../services/displayToken';
 import { pool } from '../db/pool';
 import { setIO, tableRoom, lobbyRoom, gameRoom } from './io';
+import { broadcastGame } from './broadcast';
 
 interface AuthedSocketData {
   userId: string;
   userRole: string;
+}
+
+interface DisplaySocketData {
+  displayTableId: string;
+}
+
+async function setDisplayConnected(tableId: string, connected: boolean): Promise<void> {
+  await pool.query(`UPDATE game_table SET display_connected_at = $1 WHERE id = $2`, [
+    connected ? new Date() : null,
+    tableId,
+  ]);
+
+  // The flag only matters to clients already looking at a live game (see
+  // LiveGameBoard's compact-mode branch) - table-room-only viewers don't
+  // need it, so re-broadcasting the table's current game is enough.
+  const gameResult = await pool.query(
+    `SELECT id FROM game WHERE table_id = $1 ORDER BY created_at DESC LIMIT 1`,
+    [tableId],
+  );
+  const gameId = gameResult.rows[0]?.id as string | undefined;
+  if (gameId) await broadcastGame(gameId);
 }
 
 export function createSocketServer(httpServer: HttpServer): Server {
@@ -21,6 +44,19 @@ export function createSocketServer(httpServer: HttpServer): Server {
       next(new Error('missing auth token'));
       return;
     }
+
+    // Hostmodus (gemeinsames Anzeigegerät): a display-token socket is
+    // deliberately not an app_user session at all (see displayToken.ts) -
+    // verify it on its own terms and skip the app_user/session_version
+    // lookup below entirely, so it can never collide with (or be knocked
+    // out by) a real player's login on their own phone.
+    const display = verifyDisplayToken(token);
+    if (display) {
+      (socket.data as DisplaySocketData).displayTableId = display.tableId;
+      next();
+      return;
+    }
+
     let payload: { sub: string; role: string; sessionVersion: number };
     try {
       payload = jwt.verify(token, JWT_SECRET) as { sub: string; role: string; sessionVersion: number };
@@ -66,6 +102,16 @@ export function createSocketServer(httpServer: HttpServer): Server {
     socket.on('game:leave-room', (gameId: unknown) => {
       if (typeof gameId === 'string') socket.leave(gameRoom(gameId));
     });
+
+    // Hostmodus: a display socket's mere presence is the whole signal
+    // (see gameState.ts's displayAnchorPresent) - no seat, no room-join
+    // needed to track it, just flip the table's flag for as long as this
+    // one connection lives.
+    const displayTableId = (socket.data as Partial<DisplaySocketData>).displayTableId;
+    if (displayTableId) {
+      setDisplayConnected(displayTableId, true);
+      socket.on('disconnect', () => setDisplayConnected(displayTableId, false));
+    }
   });
 
   setIO(io);

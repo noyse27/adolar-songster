@@ -13,6 +13,7 @@ import { CenterControl } from '../playboard/CenterControl';
 import { ExitModal, HelpModal } from '../playboard/Modals';
 import { PendingResult, PlayerState, TokenState } from '../playboard/types';
 import { karmaLeavePenalty, placeAt } from '../playboard/gameLogic';
+import { useWakeLock } from '../hooks/useWakeLock';
 
 /*
  * Real-data counterpart of playboard/Playboard.tsx - reuses that prototype's
@@ -312,6 +313,17 @@ export function LiveGameBoard() {
     [],
   );
 
+  // Hostmodus (gemeinsames Anzeigegerät): once a shared screen is connected
+  // for this table (see gameState.ts's displayAnchorPresent), every
+  // player's own device switches to showing only their own row - the shared
+  // screen is already showing everyone's board, this device is now purely a
+  // controller for tapping your own placements - and mutes itself, since
+  // the shared screen is the one playing the song out loud for the room.
+  const compact = Boolean(state?.displayAnchorPresent);
+  const effectiveMuted = compact ? true : audioMuted;
+
+  useWakeLock(Boolean(state) && state?.status !== 'finished');
+
   const you = state?.players.find((p) => p.userId === auth?.user.id) ?? null;
   const maxScore = useMemo(() => Math.max(0, ...(state?.players.map((p) => p.timeline.length) ?? [0])), [state]);
   // Global skill rank (see backend/src/services/rankScore.ts), not a
@@ -593,16 +605,25 @@ export function LiveGameBoard() {
             </button>
             <button
               className="pb-icon-btn"
-              title={audioUnavailable ? 'Kein Ton für diesen Song verfügbar' : audioMuted ? 'Ton einschalten' : 'Ton ausschalten'}
+              title={
+                compact
+                  ? 'Ton läuft auf dem Anzeigegerät'
+                  : audioUnavailable
+                    ? 'Kein Ton für diesen Song verfügbar'
+                    : audioMuted
+                      ? 'Ton einschalten'
+                      : 'Ton ausschalten'
+              }
               aria-label="Ton ein/aus"
+              disabled={compact}
               onClick={() => setAudioMuted((m) => !m)}
             >
-              {audioMuted ? '🔇' : '🔊'}
+              {effectiveMuted ? '🔇' : '🔊'}
             </button>
             <div className="pb-brand-mark">AS</div>
             <div>
               <div className="pb-brand-title">Songster</div>
-              <div className="pb-brand-sub">Live-Partie</div>
+              <div className="pb-brand-sub">{compact ? 'Anzeigegerät verbunden' : 'Live-Partie'}</div>
             </div>
           </div>
           <div className="pb-round-pill">
@@ -611,7 +632,7 @@ export function LiveGameBoard() {
           </div>
         </div>
 
-        <audio ref={audioRef} preload="auto" muted={audioMuted} onError={() => setAudioUnavailable(true)} />
+        <audio ref={audioRef} preload="auto" muted={effectiveMuted} onError={() => setAudioUnavailable(true)} />
 
         {error && (
           <div className="sh-error" style={{ marginBottom: 4 }}>
@@ -620,7 +641,7 @@ export function LiveGameBoard() {
         )}
 
         <div className="pb-board">
-          {state.players.map((p) => {
+          {(compact && you ? [you] : state.players).map((p) => {
             const isSelf = p.userId === you?.userId;
             const sittingOut = round?.sitOutUserIds.includes(p.userId) ?? false;
 
@@ -715,6 +736,7 @@ export function LiveGameBoard() {
         </div>
 
         <div className="pb-hint">
+          {compact && <>Punktestand und Mitspieler siehst du auf dem Anzeigegerät. </>}
           {round?.status === 'playing' && round.mode === 'normal' && !iAmSittingOut && (
             <>
               Klick auf eine <b>Lücke</b> in deiner Zeitleiste, um deine Karte dort zu platzieren &mdash; oder buzzere mit
