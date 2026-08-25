@@ -12,6 +12,7 @@ import { InvitesPage } from './pages/InvitesPage';
 import { LobbyPage } from './pages/LobbyPage';
 import { CreateTablePage } from './pages/CreateTablePage';
 import { TableRoomPage } from './pages/TableRoomPage';
+import { DisplayPage } from './pages/DisplayPage';
 import { LiveGameBoard } from './game/LiveGameBoard';
 
 // TODO(popup): "/spiel/:gameId" still opens in the same tab/window as the
@@ -34,6 +35,7 @@ export function App() {
         <Route path="/tisch/neu" element={<CreateTablePage />} />
         <Route path="/tisch/:tableId" element={<TableRoomPage />} />
         <Route path="/spiel/:gameId" element={<LiveGameBoard />} />
+        <Route path="/display/:token" element={<DisplayPage />} />
       </Routes>
       <Footer />
     </>

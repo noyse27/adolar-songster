@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import './pages.css';
 import { useAuth } from '../auth/AuthContext';
 import { apiFetch, ApiError } from '../api';
 import { getSocket } from '../realtime/socket';
+import { QrCodeButton } from '../components/QrCodeButton';
 
 interface Seat {
   userId: string;
@@ -40,6 +41,7 @@ const INACTIVITY_WARNING_MS = 59 * 60 * 1000;
 export function TableRoomPage() {
   const { auth } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const { tableId } = useParams<{ tableId: string }>();
   const [searchParams] = useSearchParams();
   const joinCodeFromLink = searchParams.get('code') ?? '';
@@ -54,6 +56,8 @@ export function TableRoomPage() {
   const [codeInput, setCodeInput] = useState(joinCodeFromLink);
   const [now, setNow] = useState(Date.now());
   const [keepingAlive, setKeepingAlive] = useState(false);
+  const [creatingDisplayLink, setCreatingDisplayLink] = useState(false);
+  const [displayLink, setDisplayLink] = useState<string | null>(null);
 
   useEffect(() => {
     const id = window.setInterval(() => setNow(Date.now()), 5000);
@@ -164,6 +168,26 @@ export function TableRoomPage() {
     }
   }
 
+  // Hostmodus (gemeinsames Anzeigegerät): any currently-seated user can mint
+  // a link for the shared screen (see POST /tables/:tableId/display-link) -
+  // deliberately not owner-only, see tables.ts's route comment.
+  async function handleCreateDisplayLink() {
+    if (!auth || !tableId) return;
+    setCreatingDisplayLink(true);
+    setError(null);
+    try {
+      const result = await apiFetch<{ displayToken: string }>(`/tables/${tableId}/display-link`, {
+        method: 'POST',
+        token: auth.accessToken,
+      });
+      setDisplayLink(`${window.location.origin}/display/${result.displayToken}`);
+    } catch {
+      setError('Anzeige-Link konnte nicht erzeugt werden.');
+    } finally {
+      setCreatingDisplayLink(false);
+    }
+  }
+
   async function handleLeave() {
     if (!auth || !tableId) return;
     setLeaving(true);
@@ -181,7 +205,11 @@ export function TableRoomPage() {
       <div className="app-shell">
         <div className="sh-card">
           <p>
-            Bitte zuerst <Link to="/login">anmelden</Link>.
+            Bitte zuerst{' '}
+            <Link to="/login" state={{ next: location.pathname + location.search }}>
+              anmelden
+            </Link>
+            .
           </p>
         </div>
       </div>
@@ -236,7 +264,34 @@ export function TableRoomPage() {
 
         {shareLink && isOwner && (
           <div className="sh-info" style={{ marginBottom: 16, wordBreak: 'break-all' }}>
-            Einladungslink: <code>{shareLink}</code>
+            <div>
+              Einladungslink: <code>{shareLink}</code>
+            </div>
+            <div style={{ marginTop: 8 }}>
+              <QrCodeButton value={shareLink} label="Einladungs-QR-Code anzeigen" />
+            </div>
+          </div>
+        )}
+
+        {mySeat && table.state === 'open' && (
+          <div className="sh-info" style={{ marginBottom: 16 }}>
+            <div style={{ fontWeight: 600, marginBottom: 6 }}>Hostmodus: Anzeigegerät</div>
+            <p style={{ fontSize: 13, color: 'var(--sh-text-faint)', margin: '0 0 8px' }}>
+              Öffne diesen Link auf einem Fernseher/Tablet, das für alle sichtbar am Tisch steht - zeigt das volle
+              Playboard, ohne dass sich das Gerät einloggt oder einen Platz belegt.
+            </p>
+            {!displayLink ? (
+              <button className="admin-btn-sm" disabled={creatingDisplayLink} onClick={handleCreateDisplayLink}>
+                {creatingDisplayLink ? 'Erzeugt…' : 'Anzeigegerät verbinden'}
+              </button>
+            ) : (
+              <div style={{ wordBreak: 'break-all' }}>
+                <code>{displayLink}</code>
+                <div style={{ marginTop: 8 }}>
+                  <QrCodeButton value={displayLink} label="Anzeige-QR-Code anzeigen" />
+                </div>
+              </div>
+            )}
           </div>
         )}
 

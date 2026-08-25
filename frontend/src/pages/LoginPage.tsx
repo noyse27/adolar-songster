@@ -1,5 +1,5 @@
 import { FormEvent, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import './pages.css';
 import { useAuth } from '../auth/AuthContext';
 import { ApiError } from '../api';
@@ -7,6 +7,14 @@ import { ApiError } from '../api';
 export function LoginPage() {
   const { login } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  // Preserves a deep link (e.g. a private table's ?code=... invite/QR link,
+  // see TableRoomPage.tsx) through the login detour - without this, anyone
+  // not already logged in who scans an invite QR would land back on the
+  // home screen after logging in and have to scan/open the link a second
+  // time. Only ever an internal same-app path, set by our own <Link>s below
+  // - never taken from anything an outside page could control.
+  const next = (location.state as { next?: string } | null)?.next ?? '/';
   const [usernameOrEmail, setUsernameOrEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -18,7 +26,7 @@ export function LoginPage() {
     setSubmitting(true);
     try {
       await login(usernameOrEmail, password);
-      navigate('/');
+      navigate(next);
     } catch (err) {
       setError(describeLoginError(err));
     } finally {
