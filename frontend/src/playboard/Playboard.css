@@ -27,6 +27,17 @@
     radial-gradient(1200px 600px at 15% -10%, #2a2380 0%, transparent 60%),
     radial-gradient(900px 500px at 110% 10%, #1c3d6b 0%, transparent 55%),
     var(--adolar-navy);
+
+  /* This is an app surface, not readable content - nothing here should
+     ever be selected as text. Without this, tapping a clickable label on
+     Android (e.g. the ready ring's "Bereit"/"Warte" text) can select the
+     word instead of registering a clean tap, sometimes popping up the
+     OS's dictionary/definition card over it. Doesn't affect the actual
+     <input> guess field - form controls manage their own text selection
+     regardless of an ancestor's user-select. */
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .playboard * { box-sizing: border-box; }
