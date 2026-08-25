@@ -26,12 +26,15 @@ leaderboardRouter.get('/leaderboard', requireAuth, async (_req, res) => {
 });
 
 // Backs the "bisher insgesamt gespielte Spiele auf dem Server" line on the
-// post-login home screen - a count of actually-finished matches, not a sum
-// of every player's games_played (which would multi-count one match once
-// per participant).
+// post-login home screen. A dedicated counter (see the
+// persistent-games-played-counter migration and matchOutcome.ts's
+// finishGame), not a live COUNT(*) of finished games - game.table_id
+// cascades away whenever tableCleanup.ts hard-deletes an inactive table, so
+// counting the game table directly would silently lose history an hour
+// after every match.
 leaderboardRouter.get('/stats/games-played', requireAuth, async (_req, res) => {
-  const result = await pool.query(`SELECT COUNT(*)::int AS count FROM game WHERE status = 'finished'`);
-  res.status(200).json({ gamesPlayed: result.rows[0].count });
+  const result = await pool.query(`SELECT value FROM system_setting WHERE key = 'total_games_finished'`);
+  res.status(200).json({ gamesPlayed: result.rows[0] ? Number(result.rows[0].value) : 0 });
 });
 
 leaderboardRouter.get('/users/:userId/karma-ledger', requireAuth, async (req, res) => {

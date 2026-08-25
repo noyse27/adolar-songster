@@ -101,6 +101,16 @@ export async function finishGame(
     [winnerUserId, gameId],
   );
   await client.query(`UPDATE game_table SET state = 'finished', match_ended_at = NOW() WHERE id = $1`, [tableId]);
+
+  // See the persistent-games-played-counter migration: game.table_id
+  // cascades away with its table an hour after the last activity
+  // (tableCleanup.ts), so the home screen's "gespielte Spiele auf dem
+  // Server" stat can't just COUNT(*) the game table anymore - this counter
+  // is the one thing that's meant to survive that cleanup.
+  await client.query(
+    `INSERT INTO system_setting (key, value) VALUES ('total_games_finished', '1')
+     ON CONFLICT (key) DO UPDATE SET value = (system_setting.value::int + 1)::text, updated_at = NOW()`,
+  );
 }
 
 // FR-044: leaving mid-match costs -5, plus -1 per other player still
