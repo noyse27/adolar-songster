@@ -3,15 +3,13 @@
 **Status: Beta** - privates Musik-Ratespiel fuer kleine Gruppen. Projektdokumentation siehe
 [docs/Adolar_Songster_Masterindex_v1_20260821.md](docs/Adolar_Songster_Masterindex_v1_20260821.md).
 
-## Neu in dieser Beta (seit der Alpha)
+## Neu in dieser Beta (seit v0.2.0-beta)
 
-- Rangliste (Top 10 + eigener Rang), globale Rang-Formel aus Songster-/Karmapunkten und Spielanzahl
-- Tisch-Beitrittsvoraussetzungen (Mindest-Karma/-Punkte/-Spiele), sonst nur Zuschauer-Beitritt moeglich
-- Automatisches Aufraeumen inaktiver Tische (60 Min. ohne Interaktion) mit Vorwarnung, plus Admin-Uebersicht aller Tische
-- PDF-Export der Endspielstands-Zusammenfassung auf dem Siegerbildschirm
-- Song-Pool-Suche und manuelle Jahres-Korrektur im Admin-Bereich (inkl. Schutz vor Ueberschreiben durch den Adolar-Sync)
-- Adolar-Sync laeuft jetzt asynchron im Hintergrund (kein Blockieren/Timeout mehr bei grossen Playlists)
-- Diverse Stabilitaets-/Sicherheitsfixes (Session-Race-Conditions, Einladungslimits, "Backend nicht erreichbar")
+- **Hostmodus**: ein gemeinsames Anzeigegeraet (Tablet/Fernseher/Laptop) zeigt das volle Playboard und spielt den Song fuer alle hoerbar ab, waehrend jedes Handy nur die eigene Zeitleiste zeigt und stumm bleibt. Laeuft ueber einen eigenen Anzeige-Token statt eines Logins (kollidiert nicht mit Single-Active-Session), inkl. QR-Code-Beitritt direkt vom grossen Bildschirm
+- Wach-Halten des Bildschirms waehrend einer laufenden Partie (Screen Wake Lock, erfordert HTTPS)
+- Persistenter "gespielte Spiele auf dem Server"-Zaehler - ueberlebt jetzt das automatische Aufraeumen inaktiver Tische (vorher gingen abgeschlossene Partien nach 60 Minuten wieder aus der Statistik verloren)
+- Nginx liefert `index.html` nicht mehr gecacht aus - Handys bekamen nach einem Redeploy sonst teils tagelang die alte Version
+- Playboard-Layout-Fixes fuer schmale/quer gedrehte Handy-Bildschirme, inkl. eines Android-Bugs, bei dem Antippen von UI-Text die Woerterbuch-Einblendung ausloeste
 
 ## Quickstart (Docker)
 
