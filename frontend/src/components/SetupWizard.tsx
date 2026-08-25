@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { apiFetch, ApiError } from '../api';
 import adolarLogo from '../assets/brand/adolar-logo.svg';
 
@@ -25,10 +25,25 @@ interface SelfTestResult {
 
 export function SetupWizard() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [step, setStep] = useState<WizardStep>('loading');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const [adminForm, setAdminForm] = useState({ username: '', email: '', password: '' });
+  const [adminForm, setAdminForm] = useState({ username: '', email: '', password: '', setupToken: '' });
+
+  // Convenience path (see backend/src/services/setupToken.ts's logged
+  // link): pre-fill the token from ?token=... so the operator can just
+  // click through instead of copy-pasting it into the form by hand. The
+  // token is removed from the visible URL right away - it's single-use and
+  // shouldn't linger in browser history/screenshots any longer than
+  // necessary (same reasoning as the display-link token, see M-02).
+  useEffect(() => {
+    const tokenFromUrl = searchParams.get('token');
+    if (!tokenFromUrl) return;
+    setAdminForm((form) => ({ ...form, setupToken: tokenFromUrl }));
+    window.history.replaceState(null, '', window.location.pathname);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [adminToken, setAdminToken] = useState<string | null>(null);
   const [adminUsername, setAdminUsername] = useState<string | null>(null);
 
@@ -218,6 +233,18 @@ export function SetupWizard() {
         <section>
           <h2 className="adolar-heading">Schritt 1 von 4: Admin anlegen</h2>
           <form onSubmit={handleCreateAdmin} className="wizard-form">
+            <label>
+              Setup-Token
+              <input
+                required
+                autoFocus
+                value={adminForm.setupToken}
+                onChange={(e) => setAdminForm({ ...adminForm, setupToken: e.target.value })}
+              />
+            </label>
+            <p style={{ fontSize: '0.85em', opacity: 0.8 }}>
+              Steht in den Backend-Logs ("SETUP TOKEN"), z. B. mit <code>docker compose logs backend</code>.
+            </p>
             <label>
               Benutzername
               <input

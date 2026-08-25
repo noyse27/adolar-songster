@@ -1,6 +1,7 @@
 import request from 'supertest';
 import { pool } from '../../src/db/pool';
 import { authHeader, createUserDirect, markSeatReadyDirect, uniqueSuffix } from '../helpers/testUtils';
+import { getSetupTokenForTests } from '../../src/services/setupToken';
 
 // See rounds.test.ts for why these are set here (before the deferred
 // require) rather than via a normal import.
@@ -69,6 +70,7 @@ describe('GET /setup/status', () => {
       username: `admin_${suffix}`,
       email: `admin_${suffix}@example.test`,
       password: 'correct horse battery staple',
+      setupToken: getSetupTokenForTests(),
     });
 
     const after = await request(app).get('/api/v1/setup/status');

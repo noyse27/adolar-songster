@@ -57,9 +57,9 @@ export function createSocketServer(httpServer: HttpServer): Server {
       return;
     }
 
-    let payload: { sub: string; role: string; sessionVersion: number };
+    let payload: { sub: string; sessionVersion: number };
     try {
-      payload = jwt.verify(token, JWT_SECRET) as { sub: string; role: string; sessionVersion: number };
+      payload = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] }) as { sub: string; sessionVersion: number };
     } catch {
       next(new Error('invalid or expired token'));
       return;
@@ -69,16 +69,18 @@ export function createSocketServer(httpServer: HttpServer): Server {
     // newer login elsewhere (single-active-session) should fail a fresh
     // handshake the same way an expired token would - this only stops a
     // *new* connection/reconnect from a stale token though, it doesn't
-    // reach into an already-open socket from the old session.
+    // reach into an already-open socket from the old session. The role is
+    // loaded from the DB rather than trusted from the token payload, same
+    // reasoning as requireAuth.
     pool
-      .query(`SELECT session_version FROM app_user WHERE id = $1`, [payload.sub])
+      .query(`SELECT session_version, role FROM app_user WHERE id = $1`, [payload.sub])
       .then((result) => {
         if (result.rowCount === 0 || result.rows[0].session_version !== payload.sessionVersion) {
           next(new Error('invalid or expired token'));
           return;
         }
         (socket.data as AuthedSocketData).userId = payload.sub;
-        (socket.data as AuthedSocketData).userRole = payload.role;
+        (socket.data as AuthedSocketData).userRole = result.rows[0].role;
         next();
       })
       .catch(() => next(new Error('invalid or expired token')));

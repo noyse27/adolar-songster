@@ -2,6 +2,7 @@ import request from 'supertest';
 import { createApp } from '../../src/app';
 import { pool } from '../../src/db/pool';
 import { uniqueSuffix } from '../helpers/testUtils';
+import { getSetupTokenForTests } from '../../src/services/setupToken';
 
 const app = createApp();
 
@@ -16,12 +17,25 @@ describe('POST /api/v1/setup/bootstrap', () => {
     await pool.end();
   });
 
-  it('creates the first admin account', async () => {
+  it('rejects bootstrap without a valid setup token', async () => {
     const suffix = uniqueSuffix();
     const response = await request(app).post('/api/v1/setup/bootstrap').send({
       username: `admin_${suffix}`,
       email: `admin_${suffix}@example.test`,
       password: 'correct horse battery staple',
+      setupToken: 'not-the-real-token',
+    });
+
+    expect(response.status).toBe(403);
+  });
+
+  it('creates the first admin account with the correct setup token', async () => {
+    const suffix = uniqueSuffix();
+    const response = await request(app).post('/api/v1/setup/bootstrap').send({
+      username: `admin_${suffix}`,
+      email: `admin_${suffix}@example.test`,
+      password: 'correct horse battery staple',
+      setupToken: getSetupTokenForTests(),
     });
 
     expect(response.status).toBe(201);
@@ -34,7 +48,7 @@ describe('POST /api/v1/setup/bootstrap', () => {
     expect(row.rows[0].can_create_invites).toBe(true);
   });
 
-  it('refuses to bootstrap a second admin once one exists', async () => {
+  it('refuses to bootstrap a second admin - the setup token is single-use', async () => {
     const suffix = uniqueSuffix();
     const response = await request(app).post('/api/v1/setup/bootstrap').send({
       username: `second_admin_${suffix}`,
@@ -42,6 +56,6 @@ describe('POST /api/v1/setup/bootstrap', () => {
       password: 'correct horse battery staple',
     });
 
-    expect(response.status).toBe(409);
+    expect(response.status).toBe(403);
   });
 });
