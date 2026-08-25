@@ -11,9 +11,11 @@ services:
     # debugging with a host-side DB client, on a non-standard port so it
     # doesn't collide with another Postgres already using 5432 (Synology's
     # own package, another project) - override DB_HOST_PORT in .env if
-    # 15432 is also taken.
+    # 15432 is also taken. Bound to loopback only (D-01): the container's
+    # default credentials are fixed and not meant to be reachable from the
+    # LAN, let alone the internet.
     ports:
-      - "${DB_HOST_PORT:-15432}:5432"
+      - "127.0.0.1:${DB_HOST_PORT:-15432}:5432"
     volumes:
       - db_data:/var/lib/postgresql/data
     healthcheck:
@@ -43,12 +45,26 @@ services:
     environment:
       PORT: 4000
       DATABASE_URL: postgres://songster:songster@db:5432/adolar_songster
-      JWT_SECRET: ${JWT_SECRET:-dev-secret-change-me}
+      # No insecure default (K-01): the backend refuses to start without a
+      # real JWT_SECRET (see backend/src/middleware/auth.ts). Set it in a
+      # root .env file - see .env.example.
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in a .env file - see .env.example (openssl rand -hex 32)}
       ADOLAR_BASE_URL: ${ADOLAR_BASE_URL:-}
       ADOLAR_API_TOKEN: ${ADOLAR_API_TOKEN:-}
       ADOLAR_CLIENT_VERSION: ${ADOLAR_CLIENT_VERSION:-0.1.0}
-    ports:
-      - "4000:4000"
+      # Only used to build the clickable setup-token link logged on first
+      # start (see backend/src/services/setupToken.ts) - purely a
+      # convenience, not a trust boundary. Override in .env if you open the
+      # wizard from another device, e.g. FRONTEND_URL=http://192.168.1.50:5173
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5173}
+    # No host port here on purpose (H-04): the frontend's nginx is the only
+    # intended entry point and already proxies /api and /socket.io to this
+    # service over the internal compose network (see frontend/nginx.conf).
+    # A directly reachable backend port lets a client bypass nginx together
+    # with any header/rate-limit handling that lives there. For local
+    # debugging, add a `docker-compose.override.yml` with
+    # `ports: ["127.0.0.1:4000:4000"]` under the backend service instead of
+    # re-adding this here.
     depends_on:
       db:
         condition: service_healthy

@@ -14,22 +14,34 @@
 ## Quickstart (Docker)
 
 ```bash
+cp .env.example .env
+# JWT_SECRET eintragen, z. B.:
+echo "JWT_SECRET=$(openssl rand -hex 32)" >> .env
 docker compose up --build
 ```
 
-Startet Postgres, spielt die Migrationen ein und startet Backend (Port 4000)
-und Frontend (Port 5173).
+Startet Postgres (nur auf localhost erreichbar), spielt die Migrationen ein
+und startet Backend und Frontend (Port 5173). Das Backend ist absichtlich
+nicht direkt vom Host aus erreichbar - Frontend/nginx ist der einzige
+Eintrittspunkt und proxied `/api` und `/socket.io` intern.
 
 - Frontend: http://localhost:5173
-- Backend-Health: http://localhost:4000/api/v1/health
 
 ### Einrichtung (3-Schritte-Onboarding, FR-061/062)
 
-1. `.env`/`backend/.env.example` bei Bedarf anpassen (z. B. `JWT_SECRET`)
+1. `.env` mit einem echten `JWT_SECRET` anlegen (siehe oben) - ohne startet
+   das Backend absichtlich nicht (K-01: kein unsicherer Default mehr)
 2. `docker compose up --build`
 3. Im Browser http://localhost:5173 oeffnen - der Einrichtungsassistent
    fuehrt auf einem frischen System durch Admin-Anlage, erste Einladung,
-   Testtisch und einen abschliessenden Funktionstest (FR-063). Existiert
+   Testtisch und einen abschliessenden Funktionstest (FR-063). Fuer die
+   Admin-Anlage wird ein einmaliges Setup-Token abgefragt, das beim ersten
+   Start in den Backend-Logs steht (`docker compose logs backend`, Zeile
+   "SETUP TOKEN") - das verhindert, dass ein fremder Client im selben
+   Netzwerk sich vor dem Betreiber selbst zum Admin macht (K-02). Dort steht
+   auch ein fertiger Link mit vorausgefuelltem Token zum direkten Anklicken
+   (Host bei Bedarf per `FRONTEND_URL` in `.env` anpassen, falls der
+   Assistent von einem anderen Geraet im Netzwerk geoeffnet wird). Existiert
    bereits ein Admin, zeigt der Assistent das direkt an.
 
 Danach per `POST /api/v1/auth/login` einloggen und mit dem `accessToken`
@@ -43,6 +55,7 @@ Voraussetzung: Node.js 22, laufende PostgreSQL-Instanz.
 ```bash
 npm install
 cp backend/.env.example backend/.env   # DATABASE_URL ggf. anpassen
+echo "JWT_SECRET=$(openssl rand -hex 32)" >> backend/.env   # erforderlich, siehe K-01
 npm run --workspace backend migrate:up
 npm run --workspace backend dev        # Backend auf Port 4000
 npm run --workspace frontend dev       # Frontend auf Port 5173
@@ -60,6 +73,9 @@ npm run --workspace frontend dev       # Frontend auf Port 5173
 ```bash
 npm run lint
 npm run test:unit
-npm run test:integration   # benoetigt DATABASE_URL gegen eine laufende Postgres-Instanz
+npm run test:integration   # benoetigt DATABASE_URL gegen eine laufende Postgres-Instanz;
+                            # ACHTUNG: leert diese Datenbank komplett (TRUNCATE aller
+                            # Kerntabellen). Nur gegen eine Wegwerf-DB verwenden - siehe
+                            # backend/test/integration/globalSetup.js
 npm run build
 ```

@@ -5,6 +5,13 @@ import { requireAdmin, requireAuth } from '../middleware/auth';
 import { isPlacementCorrect } from '../services/timeline';
 import { testAdolarConnection } from '../services/adolarClient';
 import { getSetting, setSetting } from '../services/systemSettings';
+import { verifySetupToken, consumeSetupToken } from '../services/setupToken';
+
+// Arbitrary fixed key for the bootstrap advisory lock (any int8 works - it
+// just needs to be the same constant every time). Held for the duration of
+// the transaction, so two concurrent bootstrap requests are serialized even
+// while no admin row exists yet to `SELECT ... FOR UPDATE` on.
+const BOOTSTRAP_LOCK_KEY = 72700100;
 
 export const setupRouter = Router();
 
@@ -71,16 +78,25 @@ setupRouter.post('/setup/music-source', requireAuth, requireAdmin, async (req, r
 // One-time bootstrap: creates the first admin account. Only usable while
 // no admin exists yet, so it cannot be used to escalate privileges later.
 setupRouter.post('/setup/bootstrap', async (req, res) => {
-  const { username, email, password } = req.body ?? {};
+  const { username, email, password, setupToken } = req.body ?? {};
 
   if (!username || !email || !password) {
     res.status(400).json({ error: 'username, email and password are required' });
     return;
   }
 
+  if (!verifySetupToken(setupToken)) {
+    res.status(403).json({ error: 'setup token missing or invalid' });
+    return;
+  }
+
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+
+    // Serializes concurrent bootstrap attempts even in the empty-table
+    // case, where `SELECT ... FOR UPDATE` below has no row to lock yet.
+    await client.query(`SELECT pg_advisory_xact_lock($1)`, [BOOTSTRAP_LOCK_KEY]);
 
     const existingAdmin = await client.query(
       `SELECT id FROM app_user WHERE role = 'admin' LIMIT 1 FOR UPDATE`,
@@ -101,6 +117,7 @@ setupRouter.post('/setup/bootstrap', async (req, res) => {
     );
 
     await client.query('COMMIT');
+    consumeSetupToken();
     res.status(201).json({ userId: result.rows[0].id, username: result.rows[0].username });
   } catch (err) {
     await client.query('ROLLBACK');
