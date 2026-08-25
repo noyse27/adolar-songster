@@ -140,7 +140,14 @@
 .pb-score-track { width: 34px; height: 4px; border-radius: 3px; background: rgba(255,255,255,.08); overflow: hidden; }
 .pb-score-fill { height: 100%; background: linear-gradient(90deg, var(--adolar-cyan), var(--adolar-lavender)); transition: width .4s ease; }
 
-.pb-timeline { display: flex; align-items: center; gap: 3px; overflow-x: auto; padding: 4px 2px 8px; scrollbar-width: thin; scrollbar-color: var(--pb-panel-border) transparent; }
+/* min-width: 0 overrides the grid item's default content-based minimum
+   (its 10 fixed-width tiles otherwise refuse to shrink below their natural
+   width even though this column is `1fr` in .pb-row's grid) - without it,
+   the timeline pushes the whole row wider than the viewport on a narrow
+   screen instead of scrolling internally as overflow-x: auto here intends,
+   shoving the guess field/confirm-clear buttons off the right edge with no
+   way to reach them. */
+.pb-timeline { display: flex; align-items: center; gap: 3px; overflow-x: auto; min-width: 0; padding: 4px 2px 8px; scrollbar-width: thin; scrollbar-color: var(--pb-panel-border) transparent; }
 .pb-timeline::-webkit-scrollbar { height: 5px; }
 .pb-timeline::-webkit-scrollbar-thumb { background: var(--pb-panel-border); border-radius: 4px; }
 
@@ -418,4 +425,34 @@
   .pb-row, .pb-row.pb-you { grid-template-columns: 1fr; }
   .pb-actions { justify-content: flex-start; }
   .pb-deck { grid-template-columns: 1fr; justify-items: center; }
+}
+
+/* A phone rotated to landscape is usually *wider* than the 780px breakpoint
+   above (so none of it applies) but much *shorter* - the fixed-size ring
+   (224px) and page padding alone can exceed the whole viewport height,
+   forcing the browser into a zoomed-out view the player then has to
+   manually zoom back in from. Targets viewport height, not width, and only
+   shrinks sizes (never re-flows columns - the wide layout is exactly right
+   for landscape, it's just too tall). */
+@media (max-height: 500px) and (orientation: landscape) {
+  .playboard { padding: 12px 20px 20px; }
+  .pb-app { gap: 10px; }
+  .pb-topbar { gap: 10px; }
+  .pb-brand-title { font-size: 16px; }
+  .pb-brand-sub { font-size: 10px; }
+  .pb-round-pill { padding: 5px 12px 5px 8px; font-size: 11px; }
+
+  .pb-ring-wrap { width: 130px; height: 130px; }
+  .pb-ring-mark { font-size: 22px; }
+  .pb-flip-face.pb-front.pb-counting .pb-ring-mark { font-size: 28px; }
+  .pb-reveal-year { font-size: 26px; }
+  .pb-reveal-artist, .pb-reveal-track { max-width: 100px; }
+
+  .pb-tokens { gap: 8px; }
+  .pb-token-btn { width: 44px; height: 44px; }
+  .pb-token-glyph { font-size: 15px; }
+
+  .pb-deck { gap: 12px; margin-top: 2px; }
+  .pb-status-card { padding: 8px 12px; min-width: 0; font-size: 11px; }
+  .pb-hint { margin-top: -2px; font-size: 11px; }
 }
