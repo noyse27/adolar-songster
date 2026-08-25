@@ -90,6 +90,16 @@ Sie verweist auf alle relevanten Dokumente, die fuer Umsetzung, Uebergabe und Ab
 - Verwendung: Ausgangsdokument für eine generierte Anleitung/Hilfeseite
   (z. B. per adolar-whatsnew-Skill), nicht selbst die Endnutzer-Hilfeseite.
 
+## 3.13 Hostmodus-Anleitung (Einsteiger)
+- Datei: Adolar_Songster_Hostmodus_Anleitung_v1_20260825.md
+- Inhalt: Bereits im fertigen Endnutzer-Ton geschriebene Schritt-für-
+  Schritt-Anleitung für den Hostmodus (gemeinsamer Bildschirm + eigenes
+  Handy pro Spieler), inklusive Registrierung mit Einladungscode - nicht
+  aus dem Code abgeleitet wie das Benutzerhandbuch, sondern die
+  Endtext-Quelle selbst.
+- Verwendung: Direkt verwendbare Textquelle für den adolar-whatsnew-Skill
+  bzw. zum unveränderten Weitergeben an neue Spieler.
+
 ## 4. Bildmaterial
 - songster_home.png
 - songster_playboard.png
@@ -123,3 +133,5 @@ Danach pruefen:
 - 2026-08-24: Benutzerhandbuch (Abschnitt 3.12) ergaenzt - erste
   vollstaendige Nutzersicht-Dokumentation, generiert nach Release
   v0.2.0-beta.
+- 2026-08-25: Hostmodus-Anleitung fuer Einsteiger ergaenzt (Abschnitt
+  3.13) - fertige Endnutzer-Anleitung zum Hostmodus-Feature.
