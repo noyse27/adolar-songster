@@ -8,6 +8,7 @@ import { loadGameState } from '../services/gameState';
 import { touchTableActivityForGame } from '../services/tableActivity';
 import { BONUS_WINDOW_MS, COUNTDOWN_MS, SONG_DURATION_MS } from '../services/roundConfig';
 import { verifyDisplayToken } from '../services/displayToken';
+import { authorizeGameViewer } from '../services/tableAuthorization';
 
 export const roundsRouter = Router();
 
@@ -34,8 +35,17 @@ function handleEngineError(err: unknown, res: Response): boolean {
   return false;
 }
 
-roundsRouter.get('/games/:gameId', requireAuth, async (req, res) => {
+// H-01: requires an active seat (player or spectator) at this game's table
+// - "logged in" alone used to be enough, so any account could read another
+// table's full game/player detail just by knowing/guessing a gameId.
+roundsRouter.get('/games/:gameId', requireAuth, async (req: AuthenticatedRequest, res) => {
   const { gameId } = req.params;
+
+  const access = await authorizeGameViewer(gameId, req.userId as string);
+  if (!access) {
+    res.status(404).json({ error: 'game not found' });
+    return;
+  }
 
   const gameResult = await pool.query(
     `SELECT id, table_id, table_session_id, status, started_at, ended_at, winner_user_id
@@ -78,7 +88,13 @@ roundsRouter.get('/games/:gameId', requireAuth, async (req, res) => {
 // + current round incl. reveal-if-resolved) - what GET /games/:gameId and
 // GET .../rounds/:roundId each give separately, merged into the one shape
 // the socket broadcaster (broadcastGame) also emits on every state change.
-roundsRouter.get('/games/:gameId/state', requireAuth, async (req, res) => {
+roundsRouter.get('/games/:gameId/state', requireAuth, async (req: AuthenticatedRequest, res) => {
+  const access = await authorizeGameViewer(req.params.gameId, req.userId as string);
+  if (!access) {
+    res.status(404).json({ error: 'game not found' });
+    return;
+  }
+
   const state = await loadGameState(req.params.gameId, COUNTDOWN_MS, SONG_DURATION_MS, BONUS_WINDOW_MS);
   if (!state) {
     res.status(404).json({ error: 'game not found' });
@@ -140,16 +156,26 @@ roundsRouter.post('/games/:gameId/rounds', requireAuth, async (req: Authenticate
   }
 });
 
-roundsRouter.get('/games/:gameId/rounds/:roundId', requireAuth, async (req, res) => {
-  const { roundId } = req.params;
+// H-01/H-03: requires an active seat at the game's table, and the roundId
+// must actually belong to the gameId in the path - previously a roundId
+// from a different game slipped through unbound, and any logged-in user
+// could read any round's detail regardless of membership.
+roundsRouter.get('/games/:gameId/rounds/:roundId', requireAuth, async (req: AuthenticatedRequest, res) => {
+  const { gameId, roundId } = req.params;
+
+  const access = await authorizeGameViewer(gameId, req.userId as string);
+  if (!access) {
+    res.status(404).json({ error: 'game not found' });
+    return;
+  }
 
   const roundResult = await pool.query(
     `SELECT r.id, r.index_no, r.status, r.mode, r.started_at, r.ended_at,
             CASE WHEN r.status = 'resolved' THEN sr.year_value ELSE NULL END AS song_year
      FROM round r
      JOIN song_ref sr ON sr.id = r.song_id
-     WHERE r.id = $1`,
-    [roundId],
+     WHERE r.id = $1 AND r.game_id = $2`,
+    [roundId, gameId],
   );
   if (roundResult.rowCount === 0) {
     res.status(404).json({ error: 'round not found' });
@@ -213,7 +239,7 @@ roundsRouter.post(
 
     try {
       if (type === 'position') {
-        const result = await submitGuess(req.params.roundId, req.userId as string, Number(value));
+        const result = await submitGuess(req.params.gameId, req.params.roundId, req.userId as string, Number(value));
         await touchTableActivityForGame(req.params.gameId);
         res.status(200).json(result);
         return;
@@ -221,7 +247,7 @@ roundsRouter.post(
       if (type === 'exact_year') {
         // Bonus-round (Stichsong) exact-year guess (FR-041); the token
         // mechanic's exact-year guess has its own dedicated endpoint.
-        const result = await submitBonusGuess(req.params.roundId, req.userId as string, Number(value));
+        const result = await submitBonusGuess(req.params.gameId, req.params.roundId, req.userId as string, Number(value));
         await touchTableActivityForGame(req.params.gameId);
         res.status(200).json(result);
         return;
@@ -238,7 +264,7 @@ roundsRouter.post(
   requireAuth,
   async (req: AuthenticatedRequest, res) => {
     try {
-      const result = await claimToken(req.params.roundId, req.userId as string);
+      const result = await claimToken(req.params.gameId, req.params.roundId, req.userId as string);
       await touchTableActivityForGame(req.params.gameId);
       res.status(202).json(result);
     } catch (err) {
@@ -254,7 +280,7 @@ roundsRouter.post(
     const { year } = req.body ?? {};
 
     try {
-      const result = await submitTokenGuess(req.params.roundId, req.userId as string, Number(year));
+      const result = await submitTokenGuess(req.params.gameId, req.params.roundId, req.userId as string, Number(year));
       await touchTableActivityForGame(req.params.gameId);
       res.status(200).json(result);
     } catch (err) {

@@ -33,6 +33,24 @@ interface TableDetail {
   latestGameId: string | null;
 }
 
+// H-01: safe to fetch before joining (no joinCode/seats/ownerUserId/
+// latestGameId) - GET /tables/:tableId itself now requires an active seat,
+// see backend/src/routes/tables.ts.
+interface TablePreview {
+  tableId: string;
+  name: string;
+  visibility: string;
+  state: string;
+  allowSpectators: boolean;
+  maxPlayers: number;
+  maxSpectators: number;
+  activePlayers: number;
+  activeSpectators: number;
+  minKarmaPoints: number | null;
+  minScorePoints: number | null;
+  minGamesPlayed: number | null;
+}
+
 // Mirrors services/tableActivity.ts's INACTIVITY_DELETE_MS/WARNING_MS -
 // keep in sync.
 const INACTIVITY_DELETE_MS = 60 * 60 * 1000;
@@ -46,6 +64,7 @@ export function TableRoomPage() {
   const [searchParams] = useSearchParams();
   const joinCodeFromLink = searchParams.get('code') ?? '';
 
+  const [preview, setPreview] = useState<TablePreview | null>(null);
   const [table, setTable] = useState<TableDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notFound, setNotFound] = useState(false);
@@ -64,15 +83,47 @@ export function TableRoomPage() {
     return () => window.clearInterval(id);
   }, []);
 
+  // H-01: the preview is safe to fetch before joining and is what powers
+  // the "Beitreten" section below (name, capacity, requirements,
+  // visibility) - it's the only thing available if this account has never
+  // joined this table, since the full detail fetch right below now 404s
+  // for non-members.
   useEffect(() => {
     if (!auth || !tableId) return;
-    apiFetch<TableDetail>(`/tables/${tableId}`, { token: auth.accessToken })
-      .then(setTable)
+    apiFetch<TablePreview>(`/tables/${tableId}/preview`, { token: auth.accessToken })
+      .then(setPreview)
       .catch((err) => {
         if (err instanceof ApiError && err.status === 404) setNotFound(true);
         else setError('Tisch konnte nicht geladen werden.');
       });
+  }, [auth, tableId]);
 
+  // Full detail (seats, joinCode, latestGameId) only succeeds once this
+  // account actually has an active seat here. A 403/404 here just means
+  // "not a member yet" - the preview above already covers that case, so
+  // there's nothing to surface as an error.
+  useEffect(() => {
+    if (!auth || !tableId) return;
+    let cancelled = false;
+    apiFetch<TableDetail>(`/tables/${tableId}`, { token: auth.accessToken })
+      .then((detail) => {
+        if (!cancelled) setTable(detail);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [auth, tableId]);
+
+  const hasSeat = table !== null;
+
+  // Only subscribe to the table's live-update room once REST has confirmed
+  // membership (`table` is set) - joining earlier would just be denied by
+  // the server now that room-joins are authorized the same way (H-02), and
+  // silently doing nothing until then is simpler than reacting to that
+  // denial in the UI.
+  useEffect(() => {
+    if (!auth || !tableId || !hasSeat) return;
     const socket = getSocket(auth.accessToken);
     socket.emit('table:join-room', tableId);
     const onUpdate = (payload: TableDetail) => setTable(payload);
@@ -81,7 +132,7 @@ export function TableRoomPage() {
       socket.off('table:update', onUpdate);
       socket.emit('table:leave-room', tableId);
     };
-  }, [auth, tableId]);
+  }, [auth, tableId, hasSeat]);
 
   const mySeat = useMemo(() => table?.seats.find((s) => s.userId === auth?.user.id) ?? null, [table, auth]);
   const isOwner = table?.ownerUserId === auth?.user.id;
@@ -125,7 +176,7 @@ export function TableRoomPage() {
     try {
       await apiFetch(`/tables/${tableId}/join`, {
         method: 'POST',
-        body: { joinAs, joinCode: table?.visibility === 'private' ? codeInput : undefined },
+        body: { joinAs, joinCode: preview?.visibility === 'private' ? codeInput : undefined },
         token: auth.accessToken,
       });
       const fresh = await apiFetch<TableDetail>(`/tables/${tableId}`, { token: auth.accessToken });
@@ -225,7 +276,7 @@ export function TableRoomPage() {
       </div>
     );
   }
-  if (!table) {
+  if (!preview) {
     return (
       <div className="app-shell">
         <div className="sh-card">
@@ -236,7 +287,7 @@ export function TableRoomPage() {
   }
 
   const shareLink =
-    table.visibility === 'private' && table.joinCode
+    table && table.visibility === 'private' && table.joinCode
       ? `${window.location.origin}/tisch/${table.tableId}?code=${table.joinCode}`
       : null;
 
@@ -246,7 +297,7 @@ export function TableRoomPage() {
         <Link className="sh-back" to="/lobby">
           &larr; Zurück zur Lobby
         </Link>
-        <h2>{table.name}</h2>
+        <h2>{table?.name ?? preview.name}</h2>
 
         {error && <div className="sh-error" style={{ marginBottom: 14 }}>{error}</div>}
 
@@ -273,7 +324,7 @@ export function TableRoomPage() {
           </div>
         )}
 
-        {mySeat && table.state === 'open' && (
+        {mySeat && table && table.state === 'open' && (
           <div className="sh-info" style={{ marginBottom: 16 }}>
             <div style={{ fontWeight: 600, marginBottom: 6 }}>Hostmodus: Anzeigegerät</div>
             <p style={{ fontSize: 13, color: 'var(--sh-text-faint)', margin: '0 0 8px' }}>
@@ -300,9 +351,9 @@ export function TableRoomPage() {
             <h3>Beitreten</h3>
             {(() => {
               const requirements = [
-                table.minKarmaPoints !== null ? `Karma ≥ ${table.minKarmaPoints}` : null,
-                table.minScorePoints !== null ? `Punkte ≥ ${table.minScorePoints}` : null,
-                table.minGamesPlayed !== null ? `Spiele ≥ ${table.minGamesPlayed}` : null,
+                preview.minKarmaPoints !== null ? `Karma ≥ ${preview.minKarmaPoints}` : null,
+                preview.minScorePoints !== null ? `Punkte ≥ ${preview.minScorePoints}` : null,
+                preview.minGamesPlayed !== null ? `Spiele ≥ ${preview.minGamesPlayed}` : null,
               ].filter((r): r is string => r !== null);
               return (
                 requirements.length > 0 && (
@@ -312,20 +363,20 @@ export function TableRoomPage() {
                 )
               );
             })()}
-            {table.visibility === 'private' && (
+            {preview.visibility === 'private' && (
               <div className="sh-field" style={{ marginBottom: 10, maxWidth: 220 }}>
                 <label htmlFor="joinCode">Tischcode</label>
                 <input id="joinCode" value={codeInput} onChange={(e) => setCodeInput(e.target.value)} />
               </div>
             )}
             <div style={{ display: 'flex', gap: 8 }}>
-              <button className="admin-btn-sm" disabled={joining || table.activePlayers >= table.maxPlayers} onClick={() => handleJoin('player')}>
+              <button className="admin-btn-sm" disabled={joining || preview.activePlayers >= preview.maxPlayers} onClick={() => handleJoin('player')}>
                 Als Spieler beitreten
               </button>
-              {table.allowSpectators && (
+              {preview.allowSpectators && (
                 <button
                   className="admin-btn-sm"
-                  disabled={joining || table.activeSpectators >= table.maxSpectators}
+                  disabled={joining || preview.activeSpectators >= preview.maxSpectators}
                   onClick={() => handleJoin('spectator')}
                 >
                   Als Zuschauer beitreten
@@ -335,7 +386,7 @@ export function TableRoomPage() {
           </section>
         )}
 
-        {mySeat && (
+        {mySeat && table && (
           <>
             <section className="admin-section">
               <h3>
