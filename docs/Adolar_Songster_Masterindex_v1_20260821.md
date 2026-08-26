@@ -152,5 +152,7 @@ Danach pruefen:
   Emoticon-/Wortfilterlogik und frei belegbare Reaktionen für sechs Spielzustände
   in Abschnitt 3.14 nachdokumentiert.
 - 2026-08-26: Spielerkommunikations-Branch in die lokale Dev-Docker-Instanz
-  ausgerollt und per authentifiziertem Admin-API-Roundtrip geprüft; Merge und
-  Produktionsdeployment bleiben offen.
+  ausgerollt und per authentifiziertem Admin-API-Roundtrip geprüft; Merge über
+  PR #32 erfolgt, Produktionsdeployment bleibt offen.
+- 2026-08-26: Release `v0.5.0-beta` vorbereitet; README, Benutzerhandbuch und
+  Spielerkommunikationsstatus auf den gemergten Stand aktualisiert.
