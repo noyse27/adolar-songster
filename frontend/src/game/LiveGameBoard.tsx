@@ -625,6 +625,10 @@ export function LiveGameBoard() {
               <div className="pb-brand-title">Songster</div>
               <div className="pb-brand-sub">{compact ? 'Anzeigegerät verbunden' : 'Live-Partie'}</div>
             </div>
+            <div className="pb-brand-ids" title={`Tisch-ID: ${state.tableId}\nPlaylist-ID: ${state.playlistId}`}>
+              <span>Tisch {state.tableId.slice(0, 8)}</span>
+              <span>Playlist {state.playlistId.slice(0, 8)}</span>
+            </div>
           </div>
           <div className="pb-round-pill">
             <span className="pb-round-dot" />

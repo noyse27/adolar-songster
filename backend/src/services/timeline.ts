@@ -118,9 +118,16 @@ export async function generateStartBlocks(
   // Same start years for every player, drawn once - not one random pair
   // per player. Otherwise one player's start could be objectively easier
   // to place around than another's, before either has made a move.
-  const years = Array.from({ length: START_BLOCKS_PER_PLAYER }, () =>
-    randomYearInRange(range.lower, range.upper),
-  ).sort((a, b) => a - b);
+  // Drawn without repeats: two identical start years would give every
+  // player two indistinguishable starting cards, which the rules disallow.
+  const years: number[] = [];
+  while (years.length < START_BLOCKS_PER_PLAYER) {
+    const candidate = randomYearInRange(range.lower, range.upper);
+    if (!years.includes(candidate)) {
+      years.push(candidate);
+    }
+  }
+  years.sort((a, b) => a - b);
 
   for (const userId of playerUserIds) {
     for (let position = 0; position < years.length; position += 1) {

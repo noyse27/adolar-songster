@@ -170,21 +170,26 @@ tablesRouter.get('/tables/lobby', requireAuth, async (_req, res) => {
 
 // Hostmodus (gemeinsames Anzeigegerät): mints a token for a shared screen
 // (TV/tablet) that shows the full Playboard for everyone at the table.
-// Deliberately callable by anyone currently seated (player or spectator),
-// not just the owner - whoever is physically setting up the shared screen
-// should be able to, and the token only ever grants read access to data
-// already visible to the table anyway. See services/displayToken.ts for why
-// this is a token, not a seat or a login.
+// Restricted to the table owner, and only for private tables: at a public
+// table anyone can join, so letting any seated player mint a display link
+// would let a stranger point a "shared screen" feed at a table they don't
+// own. See services/displayToken.ts for why this is a token, not a seat or
+// a login.
 tablesRouter.post('/tables/:tableId/display-link', requireAuth, async (req: AuthenticatedRequest, res) => {
   const requesterId = req.userId as string;
   const { tableId } = req.params;
 
-  const seatResult = await pool.query(
-    `SELECT id FROM table_seat WHERE table_id = $1 AND user_id = $2 AND left_at IS NULL`,
-    [tableId, requesterId],
+  const tableResult = await pool.query(
+    `SELECT visibility, owner_user_id FROM game_table WHERE id = $1`,
+    [tableId],
   );
-  if (seatResult.rowCount === 0) {
-    res.status(403).json({ error: 'not seated at this table' });
+  if (tableResult.rowCount === 0) {
+    res.status(404).json({ error: 'table not found' });
+    return;
+  }
+  const table = tableResult.rows[0];
+  if (table.visibility !== 'private' || table.owner_user_id !== requesterId) {
+    res.status(403).json({ error: 'display link only available to the owner of a private table' });
     return;
   }
 

@@ -159,8 +159,10 @@ POST /tables/{tableId}/new-game
 Konkretisierung (Sprint 3, Rundenkern):
 - Beim Tischstart (POST /tables/{id}/start) erhaelt jeder aktive Spieler 2
   Start-Jahresbloecke (FR-023), gezogen aus [minSongYear-10,
-  max(maxSongYear+10, aktuelles Jahr)] (FR-024). Ohne gueltige Songs im
-  Songpool schlaegt der Tischstart fehl (400).
+  max(maxSongYear+10, aktuelles Jahr)] (FR-024). Die beiden gezogenen Jahre
+  werden ohne Wiederholung gezogen (FR-023: keine zwei identischen
+  Startjahre). Ohne gueltige Songs im Songpool schlaegt der Tischstart fehl
+  (400).
 - Rundenablauf ist serverautoritativ per Timer: 3s Countdown (status
   "countdown", FR-021) -> 25s Songfenster (status "playing", FR-022) ->
   automatische Auswertung (status "resolved"). Diese Dauern sind ueber

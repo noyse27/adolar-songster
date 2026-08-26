@@ -346,3 +346,89 @@ adminRouter.get('/tables', async (_req, res) => {
     })),
   });
 });
+
+// Playlist-Tracking (Fehleranalyse): Nachschlagen einer gespielten Playlist
+// per Playlist-ID. game_table/game koennen zu diesem Zeitpunkt schon hart
+// geloescht sein (siehe tableCleanup.ts) - table_id/table_name sind deshalb
+// als Snapshot in game_playlist selbst gespeichert, kein JOIN noetig.
+adminRouter.get('/playlists/:playlistId', async (req, res) => {
+  const { playlistId } = req.params;
+
+  const playlistResult = await pool.query(
+    `SELECT id, table_id, table_name, game_id, created_at, expires_at
+     FROM game_playlist WHERE id = $1`,
+    [playlistId],
+  );
+  if (playlistResult.rowCount === 0) {
+    res.status(404).json({ error: 'playlist not found' });
+    return;
+  }
+  const playlist = playlistResult.rows[0];
+
+  const tracksResult = await pool.query(
+    `SELECT id, position, song_ref_id, title, artist, year_value
+     FROM game_playlist_track WHERE playlist_id = $1 ORDER BY position ASC`,
+    [playlistId],
+  );
+
+  res.status(200).json({
+    playlistId: playlist.id,
+    tableId: playlist.table_id,
+    tableName: playlist.table_name,
+    gameId: playlist.game_id,
+    createdAt: playlist.created_at,
+    expiresAt: playlist.expires_at,
+    tracks: tracksResult.rows.map((row) => ({
+      trackId: row.id,
+      position: row.position,
+      songId: row.song_ref_id,
+      title: row.title,
+      artist: row.artist,
+      year: row.year_value,
+    })),
+  });
+});
+
+// Korrektur eines falsch erkannten Tracks in einer gespeicherten Playlist -
+// verweist auf einen anderen song_ref (ausgewaehlt ueber die bestehende
+// Song-Suche, GET /admin/songs) und uebernimmt dessen title/artist/year als
+// neuen Snapshot.
+adminRouter.put('/playlists/:playlistId/tracks/:trackId', async (req, res) => {
+  const { playlistId, trackId } = req.params;
+  const { songId } = req.body ?? {};
+  if (typeof songId !== 'string') {
+    res.status(400).json({ error: 'songId is required' });
+    return;
+  }
+
+  const songResult = await pool.query(
+    `SELECT id, title, artist, year_value FROM song_ref WHERE id = $1`,
+    [songId],
+  );
+  if (songResult.rowCount === 0) {
+    res.status(404).json({ error: 'song not found' });
+    return;
+  }
+  const song = songResult.rows[0];
+
+  const result = await pool.query(
+    `UPDATE game_playlist_track
+     SET song_ref_id = $1, title = $2, artist = $3, year_value = $4
+     WHERE id = $5 AND playlist_id = $6
+     RETURNING id, position, song_ref_id, title, artist, year_value`,
+    [song.id, song.title, song.artist, song.year_value, trackId, playlistId],
+  );
+  if (result.rowCount === 0) {
+    res.status(404).json({ error: 'playlist track not found' });
+    return;
+  }
+
+  res.status(200).json({
+    trackId: result.rows[0].id,
+    position: result.rows[0].position,
+    songId: result.rows[0].song_ref_id,
+    title: result.rows[0].title,
+    artist: result.rows[0].artist,
+    year: result.rows[0].year_value,
+  });
+});

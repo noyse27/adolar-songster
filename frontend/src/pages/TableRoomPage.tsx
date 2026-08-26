@@ -219,9 +219,9 @@ export function TableRoomPage() {
     }
   }
 
-  // Hostmodus (gemeinsames Anzeigegerät): any currently-seated user can mint
-  // a link for the shared screen (see POST /tables/:tableId/display-link) -
-  // deliberately not owner-only, see tables.ts's route comment.
+  // Hostmodus (gemeinsames Anzeigegerät): only the owner of a private table
+  // can mint a link for the shared screen (see POST /tables/:tableId/display-link) -
+  // matches the backend restriction in tables.ts.
   async function handleCreateDisplayLink() {
     if (!auth || !tableId) return;
     setCreatingDisplayLink(true);
@@ -324,7 +324,7 @@ export function TableRoomPage() {
           </div>
         )}
 
-        {mySeat && table && table.state === 'open' && (
+        {mySeat && table && table.state === 'open' && isOwner && table.visibility === 'private' && (
           <div className="sh-info" style={{ marginBottom: 16 }}>
             <div style={{ fontWeight: 600, marginBottom: 6 }}>Hostmodus: Anzeigegerät</div>
             <p style={{ fontSize: 13, color: 'var(--sh-text-faint)', margin: '0 0 8px' }}>
