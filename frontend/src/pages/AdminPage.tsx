@@ -73,6 +73,9 @@ export function AdminPage() {
         <CollapsibleSection title="Playlist-Suche">
           <PlaylistsSection token={token as string} />
         </CollapsibleSection>
+        <CollapsibleSection title="Playlistadministration">
+          <PlaylistAdminSection token={token as string} />
+        </CollapsibleSection>
         <CollapsibleSection title="Tische">
           <TablesSection token={token as string} />
         </CollapsibleSection>
@@ -409,6 +412,124 @@ function SongsSection({ token }: { token: string }) {
         </div>
       )}
     </section>
+  );
+}
+
+interface PlaylistCatalogEntry {
+  id: number;
+  name: string;
+  displayName: string | null;
+  adminDescription: string | null;
+}
+
+// Lets an admin override how a playlist is shown to players: displayName
+// replaces the raw Adolar name everywhere (table creation, Song-Pool, the
+// "Songster PlayLists" lobby dialog), adminDescription is the blurb shown
+// in that lobby dialog. Both live outside adolar_playlist's synced
+// name/description columns, so a later sync run never clobbers them - see
+// backend/src/services/adolarPlaylistCatalog.ts.
+function PlaylistAdminSection({ token }: { token: string }) {
+  const [playlists, setPlaylists] = useState<PlaylistCatalogEntry[]>([]);
+  const [playlistId, setPlaylistId] = useState('');
+  const [displayName, setDisplayName] = useState('');
+  const [adminDescription, setAdminDescription] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    apiFetch<{ playlists: PlaylistCatalogEntry[] }>('/admin/playlist-catalog', { token })
+      .then((r) => setPlaylists(r.playlists))
+      .catch(() => setError('Playlists konnten nicht geladen werden.'));
+  }, [token]);
+
+  function selectPlaylist(id: string) {
+    setPlaylistId(id);
+    setSaved(false);
+    setError(null);
+    const selected = playlists.find((p) => String(p.id) === id);
+    setDisplayName(selected?.displayName ?? '');
+    setAdminDescription(selected?.adminDescription ?? '');
+  }
+
+  async function save() {
+    if (!playlistId) return;
+    setSaving(true);
+    setSaved(false);
+    setError(null);
+    try {
+      await apiFetch(`/admin/playlist-catalog/${playlistId}`, {
+        method: 'PUT',
+        body: { displayName, adminDescription },
+        token,
+      });
+      setPlaylists((prev) =>
+        prev.map((p) =>
+          String(p.id) === playlistId
+            ? { ...p, displayName: displayName || null, adminDescription: adminDescription || null }
+            : p,
+        ),
+      );
+      setSaved(true);
+    } catch {
+      setError('Speichern fehlgeschlagen.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const selected = playlists.find((p) => String(p.id) === playlistId);
+
+  return (
+    <div>
+      <div className="sh-field">
+        <label htmlFor="playlist-admin-select">Playlist</label>
+        <select id="playlist-admin-select" className="admin-search-input" value={playlistId} onChange={(e) => selectPlaylist(e.target.value)}>
+          <option value="">Playlist wählen…</option>
+          {playlists.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.displayName ?? p.name}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {selected && (
+        <>
+          <div className="sh-field">
+            <label htmlFor="playlist-admin-displayname">Alternative Anzeigename</label>
+            <input
+              id="playlist-admin-displayname"
+              className="admin-search-input"
+              placeholder={selected.name}
+              value={displayName}
+              onChange={(e) => {
+                setDisplayName(e.target.value);
+                setSaved(false);
+              }}
+            />
+          </div>
+          <div className="sh-field">
+            <label htmlFor="playlist-admin-description">Beschreibung</label>
+            <textarea
+              id="playlist-admin-description"
+              className="admin-search-input"
+              rows={3}
+              value={adminDescription}
+              onChange={(e) => {
+                setAdminDescription(e.target.value);
+                setSaved(false);
+              }}
+            />
+          </div>
+          <button className="admin-btn-sm" type="button" disabled={saving} onClick={save}>
+            {saving ? 'Speichert…' : 'Speichern'}
+          </button>
+          {saved && <span style={{ marginLeft: 8, fontSize: 12, color: 'var(--sh-text-faint)' }}>Gespeichert.</span>}
+        </>
+      )}
+      {error && <div className="sh-error" style={{ marginTop: 10 }}>{error}</div>}
+    </div>
   );
 }
 

@@ -4,7 +4,7 @@ import { pool } from '../db/pool';
 import { requireAdmin, requireAuth } from '../middleware/auth';
 import { getSetting } from '../services/systemSettings';
 import { getSyncState, triggerBackgroundSync } from '../services/adolarSync';
-import { listCatalogedPlaylists } from '../services/adolarPlaylistCatalog';
+import { listCatalogedPlaylists, listPlaylistsForAdmin, updatePlaylistOverrides } from '../services/adolarPlaylistCatalog';
 import { ADMIN_INACTIVE_MS } from '../services/tableActivity';
 
 export const adminRouter = Router();
@@ -269,6 +269,33 @@ adminRouter.get('/adolar-playlists', async (_req, res) => {
       trackCount: countByPlaylist.get(p.id) ?? 0,
     })),
   });
+});
+
+// Playlistadministration: lets an admin set a display name (shown to
+// players instead of the raw Adolar name everywhere - table creation,
+// Song-Pool, the "Songster PlayLists" lobby dialog) and a description
+// (shown only in that lobby dialog) per playlist. Both live in their own
+// columns on adolar_playlist so syncAllAdolarPlaylists never overwrites
+// them - see the playlist-display-override migration.
+adminRouter.get('/playlist-catalog', async (_req, res) => {
+  const playlists = await listPlaylistsForAdmin();
+  res.status(200).json({ playlists });
+});
+
+adminRouter.put('/playlist-catalog/:playlistId', async (req, res) => {
+  const playlistId = Number(req.params.playlistId);
+  if (!Number.isInteger(playlistId)) {
+    res.status(400).json({ error: 'invalid playlist id' });
+    return;
+  }
+  const displayNameRaw = typeof req.body?.displayName === 'string' ? req.body.displayName.trim() : '';
+  const adminDescriptionRaw = typeof req.body?.adminDescription === 'string' ? req.body.adminDescription.trim() : '';
+  const ok = await updatePlaylistOverrides(playlistId, displayNameRaw || null, adminDescriptionRaw || null);
+  if (!ok) {
+    res.status(404).json({ error: 'playlist not found' });
+    return;
+  }
+  res.status(200).json({ ok: true });
 });
 
 // ?q= scopes the search to the backend instead of the admin page fetching

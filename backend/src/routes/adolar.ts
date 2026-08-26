@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { requireAuth } from '../middleware/auth';
 import { isAdolarConfigured } from '../services/adolarClient';
-import { listCatalogedPlaylists } from '../services/adolarPlaylistCatalog';
+import { listCatalogedPlaylists, listPlaylistsForBrowsing } from '../services/adolarPlaylistCatalog';
 
 export const adolarRouter = Router();
 
@@ -19,4 +19,12 @@ adolarRouter.get('/adolar/playlists', requireAuth, async (_req, res) => {
   }
   const playlists = await listCatalogedPlaylists();
   res.status(200).json({ configured: true, playlists });
+});
+
+// Feeds the "Songster PlayLists" lobby dialog - every currently cataloged
+// playlist with its effective display name and admin-set description, for
+// browsing only (no table/session tie-in). Any authenticated user.
+adolarRouter.get('/playlists', requireAuth, async (_req, res) => {
+  const playlists = await listPlaylistsForBrowsing();
+  res.status(200).json({ playlists });
 });
