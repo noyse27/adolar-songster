@@ -151,3 +151,6 @@ Danach pruefen:
 - 2026-08-26: Adminbereich „Chateinstellungen“, serverseitige
   Emoticon-/Wortfilterlogik und frei belegbare Reaktionen für sechs Spielzustände
   in Abschnitt 3.14 nachdokumentiert.
+- 2026-08-26: Spielerkommunikations-Branch in die lokale Dev-Docker-Instanz
+  ausgerollt und per authentifiziertem Admin-API-Roundtrip geprüft; Merge und
+  Produktionsdeployment bleiben offen.

@@ -21,13 +21,15 @@ Zweck: Verbindliche Übergabequelle für Entwicklung, Review, Release und eine s
 | Datenbankmigrationen | implementiert und gegen separate Testdatenbank geprüft |
 | Unit-/Integrationsprüfung | grün |
 | Review/Merge nach `main` | **noch offen** |
-| Deployment in die laufende Instanz | **noch offen** |
+| Deployment in lokale Dev-Docker-Instanz | erfolgt und per API-Smoke-Test geprüft |
+| Deployment in Produktion | **noch offen** |
 | Melden, Moderationsoberfläche, manuelles Löschen | **nicht Teil dieser Phase** |
 | Sprachchat/WebRTC | **nicht Teil dieser Variante** |
 
-Eine What’s-new-Mitteilung darf das Feature erst nach Merge und Deployment als
-„verfügbar“ bezeichnen. Vorher ist die korrekte Formulierung „für das nächste
-Update vorbereitet“ oder „auf dem Feature-Branch implementiert“.
+Eine What’s-new-Mitteilung darf das Feature erst nach Merge und
+Produktionsdeployment als allgemein „verfügbar“ bezeichnen. Das lokale
+Dev-Deployment ist nur die Testfreigabe. Vorher ist die korrekte Formulierung
+„für das nächste Update vorbereitet“ oder „auf dem Feature-Branch implementiert“.
 
 ## 2. Nutzerfunktion
 
@@ -254,6 +256,10 @@ Am 2026-08-26 ausgeführt:
 - Backend-Integrationstests: 106/106 erfolgreich auf separater Testdatenbank.
 - Produktionsbuild beider Workspaces: erfolgreich.
 - Migration von leerer Datenbank bis einschließlich Spielerkommunikation: erfolgreich.
+- Lokales Dev-Docker-Deployment: Migration `1757750400000` angewendet; Backend
+  gesund, Adminseite über nginx erreichbar.
+- Authentifizierter Dev-Smoke-Test: Login als Admin sowie GET und identischer PUT der
+  Kommunikationseinstellungen erfolgreich; sechs Phasen und 20 Katalogmotive geliefert.
 
 Feature-spezifisch geprüft werden unter anderem:
 
@@ -280,7 +286,7 @@ Browserkonten plus optionales Hostdisplay, jeweils Desktop und Smartphone-Breite
 | Reaktionskonfiguration wird parallel geändert | atomare Datenbanktransaktion; Oberfläche kennzeichnet ungespeicherte Änderungen, besitzt aber bewusst noch keine Versionskonfliktanzeige |
 | Frontend-/Backend-Phasenmatrix driftet auseinander | sechs gemeinsame Bezeichner und Tests vorhanden; Backend bleibt die Autorität beim Senden |
 | Reaktionen verdecken kleine Displays | kurze Dauer und responsive Buttons; manueller Mobiltest vor Merge empfohlen |
-| Bestehende Instanz kennt `chat_message` noch nicht | Deployment muss Migration vor Backendstart ausführen |
+| Produktionsinstanz kennt die neuen Tabellen noch nicht | Deployment muss beide Kommunikation-Migrationen vor dem Backendstart ausführen; im lokalen Dev-Docker erfolgreich geprüft |
 
 ## 10. Freigegebener What’s-new-Kerntext nach Deployment
 

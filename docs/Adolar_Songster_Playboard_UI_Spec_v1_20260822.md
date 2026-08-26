@@ -267,7 +267,8 @@ dealing → idle ⇄ waiting → countdown → playing → reveal → idle (naec
 
 Diese Ergänzung gehört zum Feature-Branch
 `codex/feature-player-communication`; der Merge ist zum Stand 2026-08-26
-noch offen. Die vollständige Phasenmatrix und technische Quelle
+noch offen, das lokale Dev-Docker-Deployment ist erfolgt. Die vollständige
+Phasenmatrix und technische Quelle
 steht in
 `Adolar_Songster_Spielerkommunikation_Whatsnew_Quelle_v1_20260826.md`.
 
