@@ -1,4 +1,14 @@
+import { useEffect, useRef } from 'react';
 import { SLOT_COUNT, STARTER_YEARS, PlayerState } from './types';
+
+// Browsers fire click, click, dblclick for a double-click gesture - they
+// don't suppress the two intervening clicks. Wiring onToggleReady straight
+// to onClick meant the *first* click of a double-click could already mark
+// the last remaining player ready and start the round server-side, so the
+// second click then hit a game no longer accepting a ready-toggle and
+// errored out (see LiveGameBoard's handleSetReady). Debouncing the click
+// lets a genuine double-click be recognized before either action fires.
+const DOUBLE_CLICK_MS = 280;
 
 interface PlayerRowProps {
   player: PlayerState;
@@ -39,6 +49,28 @@ export function PlayerRow({
   onGuessSubmit,
   timelineRef,
 }: PlayerRowProps) {
+  const clickTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    return () => {
+      if (clickTimer.current) clearTimeout(clickTimer.current);
+    };
+  }, []);
+
+  function handleAvatarClick() {
+    if (!canReady) return;
+    if (clickTimer.current) {
+      // Second click within the window - this is a double-click.
+      clearTimeout(clickTimer.current);
+      clickTimer.current = null;
+      onToggleAutoReady?.();
+      return;
+    }
+    clickTimer.current = setTimeout(() => {
+      clickTimer.current = null;
+      onToggleReady();
+    }, DOUBLE_CLICK_MS);
+  }
+
   const score = p.slots.filter((v) => v != null).length;
   const rowClasses = [
     'pb-row',
@@ -123,8 +155,7 @@ export function PlayerRow({
       <div className="pb-player">
         <div
           className={`pb-avatar-wrap${canReady ? '' : ' pb-static'}`}
-          onClick={canReady ? onToggleReady : undefined}
-          onDoubleClick={canReady && onToggleAutoReady ? onToggleAutoReady : undefined}
+          onClick={canReady ? handleAvatarClick : undefined}
           title={canReady ? 'Klick: bereit. Doppelklick: Auto bereit (für diese Partie gelockt).' : undefined}
         >
           <div className="pb-avatar">{p.initials}</div>
