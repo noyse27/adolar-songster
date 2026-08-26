@@ -202,12 +202,16 @@ export function PlayerRow({
         <label>Jahr</label>
         <input
           className={inputClasses.join(' ')}
-          type="number"
+          type="text"
+          inputMode="numeric"
+          pattern="[0-9]*"
           placeholder="&mdash;"
           readOnly={!p.you}
           disabled={!guessActive}
           value={guessWrongValue != null ? guessWrongValue : guessActive ? guessValue : ''}
-          onChange={p.you && onGuessChange ? (e) => onGuessChange(e.target.value) : undefined}
+          onChange={
+            p.you && onGuessChange ? (e) => onGuessChange(e.target.value.replace(/\D/g, '').slice(0, 4)) : undefined
+          }
           onKeyDown={
             p.you && onGuessSubmit
               ? (e) => {
@@ -220,10 +224,18 @@ export function PlayerRow({
 
       {p.you ? (
         <div className="pb-actions">
-          <button className="pb-act-btn pb-act-confirm" onClick={onConfirm} disabled={p.pendingSlot === null}>
+          <button
+            className="pb-act-btn pb-act-confirm"
+            onClick={guessActive ? onGuessSubmit : onConfirm}
+            disabled={guessActive ? !guessValue : p.pendingSlot === null}
+          >
             &#10003;
           </button>
-          <button className="pb-act-btn pb-act-clear" onClick={onClear} disabled={p.pendingSlot === null}>
+          <button
+            className="pb-act-btn pb-act-clear"
+            onClick={guessActive ? () => onGuessChange?.('') : onClear}
+            disabled={guessActive ? !guessValue : p.pendingSlot === null}
+          >
             &#10005;
           </button>
         </div>

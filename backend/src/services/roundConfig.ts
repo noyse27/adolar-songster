@@ -20,8 +20,14 @@ export const TOKEN_SOLO_WINDOW_MS = Number(process.env.TOKEN_SOLO_WINDOW_MS ?? 1
 export const TOKEN_OTHERS_WINDOW_MS = Number(process.env.TOKEN_OTHERS_WINDOW_MS ?? 10000);
 
 // FR-041: a Stichsong bonus round for players tied at the winning card
-// count; fastest correct exact-year guess wins the match outright.
-export const BONUS_WINDOW_MS = Number(process.env.BONUS_WINDOW_MS ?? 10000);
+// count. The Stichsong plays for BONUS_SONG_DURATION_MS (same as a normal
+// round), then the guess field stays open for an extra grace period so the
+// full guess window (BONUS_WINDOW_MS) outlasts the music itself. An exact
+// year guess wins immediately (it can never be beaten); otherwise, once the
+// window closes, whoever's guess is numerically closest to the real year
+// wins - ties broken by whoever submitted first (resolveClaimWinner).
+export const BONUS_SONG_DURATION_MS = Number(process.env.BONUS_SONG_DURATION_MS ?? 25000);
+export const BONUS_WINDOW_MS = Number(process.env.BONUS_WINDOW_MS ?? 35000);
 
 // Per-round readiness window (roundReady.ts): every round after the game's
 // first (table_seat.ready gates that one) opens with this same ready

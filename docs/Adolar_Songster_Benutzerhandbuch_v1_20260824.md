@@ -109,7 +109,12 @@ Der/die Erstellende wird automatisch als erste(r) Spieler(in) gesetzt.
 - **Auflösung**: richtige Platzierungen bleiben stehen, falsche werden
   wieder entfernt.
 - **Stichrunde (Bonusrunde)**: erreichen mehrere Spieler gleichzeitig 10
-  Karten, entscheidet eine Zusatzrunde mit exaktem Jahres-Tipp.
+  Karten, entscheidet eine Zusatzrunde. Alle Angetretenen hören denselben
+  Song (25 Sekunden) und tippen danach mit 10 Sekunden Karenz das
+  Erscheinungsjahr. Wer am nächsten dran ist, gewinnt sofort die Partie —
+  bei Gleichstand die schnellste Eingabe, ein exaktes Jahr gewinnt immer
+  sofort. Tippt niemand etwas ein, gibt es die nächste Stichrunde mit
+  einem neuen Song.
 - **Sieg**: wer zuerst 10 korrekt platzierte Karten hat, gewinnt die
   Partie.
 

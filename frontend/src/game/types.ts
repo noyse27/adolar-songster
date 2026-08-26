@@ -22,6 +22,7 @@ export interface CurrentRoundState {
   startedAt: string;
   countdownMs: number;
   windowMs: number;
+  songPlaybackMs: number;
   tokenClaimantUserId: string | null;
   tokenWrongGuessYear: number | null;
   exactYearAttemptedUserIds: string[];

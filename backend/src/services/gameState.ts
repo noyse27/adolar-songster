@@ -1,6 +1,6 @@
 import { pool } from '../db/pool';
 import { fetchTimeline } from './timeline';
-import { ROUND_READY_WINDOW_MS, TOKENS_PER_PLAYER } from './roundConfig';
+import { BONUS_SONG_DURATION_MS, ROUND_READY_WINDOW_MS, TOKENS_PER_PLAYER } from './roundConfig';
 import { AUTO_CLOSE_MS } from './tableRestart';
 import { RANK_SCORE_SQL } from './rankScore';
 
@@ -27,6 +27,13 @@ export interface CurrentRoundState {
   startedAt: string;
   countdownMs: number;
   windowMs: number;
+  // How long the audio itself actually plays, in ms from the moment the
+  // round enters 'playing'. Equal to windowMs for 'normal'/'token' (music
+  // and the guess window end together, as before). For 'bonus' this is
+  // shorter than windowMs: the Stichsong plays for BONUS_SONG_DURATION_MS,
+  // then the guess field stays open on its own for the remaining grace
+  // period - see LiveGameBoard's audio-pause effect.
+  songPlaybackMs: number;
   tokenClaimantUserId: string | null;
   tokenWrongGuessYear: number | null;
   exactYearAttemptedUserIds: string[];
@@ -209,6 +216,8 @@ export async function loadGameState(
     );
     const sitOutResult = await pool.query(`SELECT user_id FROM round_sitout WHERE round_id = $1`, [round.id]);
 
+    const windowMs = round.mode === 'bonus' ? bonusWindowMs : songWindowMs;
+
     currentRound = {
       roundId: round.id,
       indexNo: round.index_no,
@@ -216,7 +225,8 @@ export async function loadGameState(
       status: round.status,
       startedAt: round.started_at,
       countdownMs,
-      windowMs: round.mode === 'bonus' ? bonusWindowMs : songWindowMs,
+      windowMs,
+      songPlaybackMs: round.mode === 'bonus' ? Math.min(BONUS_SONG_DURATION_MS, bonusWindowMs) : windowMs,
       tokenClaimantUserId,
       tokenWrongGuessYear,
       exactYearAttemptedUserIds: attemptedResult.rows.map((r) => r.user_id),

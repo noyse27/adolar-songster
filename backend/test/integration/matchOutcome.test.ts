@@ -272,6 +272,67 @@ describe('bonus round tie-break (FR-041)', () => {
     expect(finalGame.body.winnerUserId).toBe(other.id);
   });
 
+  it('awards the win to the closest (not necessarily exact) guess once the window closes', async () => {
+    const { gameId, owner, other } = await createRunningGame();
+
+    await setTimeline(gameId, owner.id, [1900, 1901, 1902, 1903, 1904, 1905, 1906, 1907, 1908]);
+    await setTimeline(gameId, other.id, [1910, 1911, 1912, 1913, 1914, 1915, 1916, 1917, 1918]);
+    await invalidateAllSongs();
+    await seedSong(2000); // fits after both players' timelines at index 9; the only valid candidate
+
+    const tieRound = await request(app)
+      .post(`/api/v1/games/${gameId}/rounds`)
+      .set(authHeader(owner.id, 'user'));
+    const tieRoundId = tieRound.body.roundId;
+    await waitForRoundStatus(owner.id, gameId, tieRoundId, ['playing']);
+
+    await request(app)
+      .post(`/api/v1/games/${gameId}/rounds/${tieRoundId}/guess`)
+      .set(authHeader(owner.id, 'user'))
+      .send({ type: 'position', value: 9 });
+    await request(app)
+      .post(`/api/v1/games/${gameId}/rounds/${tieRoundId}/guess`)
+      .set(authHeader(other.id, 'user'))
+      .send({ type: 'position', value: 9 });
+
+    await waitForRoundStatus(owner.id, gameId, tieRoundId, ['resolved']);
+
+    const bonusSongYear = 2010;
+    await seedSong(bonusSongYear);
+
+    const bonusRound = await request(app)
+      .post(`/api/v1/games/${gameId}/rounds`)
+      .set(authHeader(owner.id, 'user'));
+    const bonusRoundId = bonusRound.body.roundId;
+    await waitForRoundStatus(owner.id, gameId, bonusRoundId, ['playing']);
+
+    // Neither guess is exact - owner is 5 years off, other is 1 year off.
+    // Nothing here should resolve the round immediately; both submissions
+    // stay 'correct: false' and the winner is only decided once the window
+    // closes and the guesses are compared by distance.
+    const ownerGuess = await request(app)
+      .post(`/api/v1/games/${gameId}/rounds/${bonusRoundId}/guess`)
+      .set(authHeader(owner.id, 'user'))
+      .send({ type: 'exact_year', value: bonusSongYear - 5 });
+    expect(ownerGuess.status).toBe(200);
+    expect(ownerGuess.body.correct).toBe(false);
+
+    const otherGuess = await request(app)
+      .post(`/api/v1/games/${gameId}/rounds/${bonusRoundId}/guess`)
+      .set(authHeader(other.id, 'user'))
+      .send({ type: 'exact_year', value: bonusSongYear - 1 });
+    expect(otherGuess.status).toBe(200);
+    expect(otherGuess.body.correct).toBe(false);
+
+    await waitForRoundStatus(owner.id, gameId, bonusRoundId, ['resolved']);
+
+    const finalGame = await request(app)
+      .get(`/api/v1/games/${gameId}`)
+      .set(authHeader(owner.id, 'user'));
+    expect(finalGame.body.status).toBe('finished');
+    expect(finalGame.body.winnerUserId).toBe(other.id);
+  });
+
   it('rejects a bonus guess from a player who is not tied for the win', async () => {
     const { gameId, tableId, owner, other } = await createRunningGame();
 
