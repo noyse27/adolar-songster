@@ -6,7 +6,7 @@ import '../playboard/Playboard.css';
 import './pages.css';
 import { apiFetch, ApiError, API_BASE_URL } from '../api';
 import { useWakeLock } from '../hooks/useWakeLock';
-import { GameState } from '../game/types';
+import { CurrentRoundState, GameState } from '../game/types';
 import { embedTimeline, packedIndexToBoxIndex, SLOT_COUNT } from '../game/timelineSlots';
 import { placeAt } from '../playboard/gameLogic';
 import { PlayerRow } from '../playboard/PlayerRow';
@@ -46,12 +46,7 @@ export function DisplayPage() {
   const [now, setNow] = useState(() => Date.now());
   const [audioMuted, setAudioMuted] = useState(false);
   const [revealUntil, setRevealUntil] = useState<number | null>(null);
-  const [lastResolvedSong, setLastResolvedSong] = useState<{
-    roundId: string;
-    songArtist: string | null;
-    songTitle: string | null;
-    songYear: number | null;
-  } | null>(null);
+  const [lastResolvedRound, setLastResolvedRound] = useState<CurrentRoundState | null>(null);
 
   const socketRef = useRef<Socket | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -158,11 +153,7 @@ export function DisplayPage() {
   // entirely instead of holding it for 5s. Mirrors LiveGameBoard.tsx.
   useEffect(() => {
     if (roundStatus !== 'resolved' || !roundId || !round) return;
-    setLastResolvedSong((prev) =>
-      prev?.roundId === roundId
-        ? prev
-        : { roundId, songArtist: round.songArtist, songTitle: round.songTitle, songYear: round.songYear },
-    );
+    setLastResolvedRound((prev) => (prev?.roundId === roundId ? prev : round));
     setRevealUntil((prev) => (prev !== null ? prev : Date.now() + 5000));
   }, [roundStatus, roundId, round]);
 
@@ -256,11 +247,26 @@ export function DisplayPage() {
     } else if (round.status === 'playing') {
       const elapsed = now - new Date(round.startedAt).getTime() - round.countdownMs;
       const remaining = Math.max(0, round.windowMs - elapsed);
-      ringMark = '♪';
-      ringLabel = 'läuft';
-      progress = clamp01(elapsed / round.windowMs);
-      frontState = 'pb-playing';
-      phaseLabel = `Songfenster offen · ${Math.ceil(remaining / 1000)}s`;
+      // See LiveGameBoard.tsx's matching comment: a Stichrunde's guess
+      // window outlasts its own song by a fixed grace period, so once the
+      // music has stopped this needs its own "Beeil dich!" countdown
+      // instead of continuing the song-progress ring.
+      const hurryUp = round.mode === 'bonus' && elapsed >= round.songPlaybackMs;
+      if (hurryUp) {
+        const graceMs = Math.max(1, round.windowMs - round.songPlaybackMs);
+        const graceElapsed = elapsed - round.songPlaybackMs;
+        ringMark = String(Math.ceil(remaining / 1000) || 1);
+        ringLabel = 'Beeil dich!';
+        progress = clamp01(graceElapsed / graceMs);
+        frontState = 'pb-counting';
+        phaseLabel = `Letzte Chance zu tippen · ${Math.ceil(remaining / 1000)}s`;
+      } else {
+        ringMark = '♪';
+        ringLabel = 'läuft';
+        progress = clamp01(elapsed / round.windowMs);
+        frontState = 'pb-playing';
+        phaseLabel = `Songfenster offen · ${Math.ceil(remaining / 1000)}s`;
+      }
     } else if (round.status === 'token_solo' || round.status === 'token_others') {
       ringMark = '!!';
       ringLabel = round.status === 'token_solo' ? 'Solo-Versuch' : 'Deine Chance';
@@ -314,8 +320,8 @@ export function DisplayPage() {
             let pendingSlot: number | null = null;
             let pendingResult: PendingResult = null;
 
-            if (round?.status === 'resolved' && round.mode === 'normal') {
-              const mine = round.results.find((r) => r.userId === p.userId);
+            if (revealUntil !== null && now < revealUntil && lastResolvedRound?.mode === 'normal') {
+              const mine = lastResolvedRound.results.find((r) => r.userId === p.userId);
               if (mine?.submitted && mine.guessedIndex !== null) {
                 if (mine.correct) {
                   slots = embedTimeline(p.timeline);
@@ -388,8 +394,8 @@ export function DisplayPage() {
               frontState={frontState}
               flipped={flipped}
               revealSong={
-                lastResolvedSong
-                  ? { artist: lastResolvedSong.songArtist ?? '', title: lastResolvedSong.songTitle ?? '', year: lastResolvedSong.songYear ?? 0 }
+                lastResolvedRound
+                  ? { artist: lastResolvedRound.songArtist ?? '', title: lastResolvedRound.songTitle ?? '', year: lastResolvedRound.songYear ?? 0 }
                   : null
               }
               onClick={() => undefined}
@@ -398,7 +404,7 @@ export function DisplayPage() {
           <div className="pb-status-card">
             <div className="pb-status-row">
               <span>Letzter Song</span>
-              <b>{lastResolvedSong ? `${lastResolvedSong.songArtist} – ${lastResolvedSong.songTitle} (${lastResolvedSong.songYear})` : '—'}</b>
+              <b>{lastResolvedRound ? `${lastResolvedRound.songArtist} – ${lastResolvedRound.songTitle} (${lastResolvedRound.songYear})` : '—'}</b>
             </div>
             <div className="pb-status-row">
               <span>Karten</span>
@@ -407,6 +413,43 @@ export function DisplayPage() {
           </div>
         </div>
       </div>
+
+      {revealUntil !== null && now < revealUntil && lastResolvedRound?.mode === 'bonus' && (
+        <div className="pb-modal-overlay pb-open">
+          <div className="pb-modal">
+            <h3>🎯 Stichrunde: Auflösung</h3>
+            <p>
+              Der Song erschien <b>{lastResolvedRound.songYear}</b>.
+            </p>
+            {lastResolvedRound.results.some((r) => r.submitted) ? (
+              <ol className="pb-winner-standings">
+                {[...lastResolvedRound.results]
+                  .filter((r) => r.submitted)
+                  .sort(
+                    (a, b) =>
+                      Math.abs((a.guessedYear ?? 0) - (lastResolvedRound.songYear ?? 0)) -
+                      Math.abs((b.guessedYear ?? 0) - (lastResolvedRound.songYear ?? 0)),
+                  )
+                  .map((r) => {
+                    const player = state.players.find((p) => p.userId === r.userId);
+                    const won = r.userId === state.winnerUserId;
+                    return (
+                      <li key={r.userId} className={`pb-winner-row${won ? ' pb-winner-you' : ''}`}>
+                        <span className="pb-winner-row-name">
+                          {player?.username ?? '?'}
+                          {won ? ' 👑' : ''}
+                        </span>
+                        <span className="pb-winner-row-cards">{r.guessedYear ?? '—'}</span>
+                      </li>
+                    );
+                  })}
+              </ol>
+            ) : (
+              <p>Niemand hat getippt — es gibt einen neuen Stichsong.</p>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

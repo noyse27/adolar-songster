@@ -7,6 +7,7 @@ import { authHeader, createUserDirect, markSeatReadyDirect, uniqueSuffix } from 
 process.env.ROUND_COUNTDOWN_MS = '150';
 process.env.ROUND_SONG_DURATION_MS = '400';
 process.env.ROUND_READY_WINDOW_MS = '200';
+process.env.AUTO_READY_GRACE_MS = '150';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { createApp } = require('../../src/app');
@@ -103,7 +104,7 @@ describe('per-round readiness (30s ready window, sit-outs)', () => {
       .send({ ready: true });
     // other never readies up.
 
-    await wait(350); // past ROUND_READY_WINDOW_MS=200
+    await wait(500); // comfortably past ROUND_READY_WINDOW_MS=200
 
     const state = await request(app)
       .get(`/api/v1/games/${gameId}/state`)
@@ -169,7 +170,11 @@ describe('"Auto bereit" (round_ready_pref)', () => {
 
     // "other" is the only one who actually clicks ready - this arms the
     // window, which should immediately auto-ready the owner too (no 30s
-    // wait, no second click) and start the round with both participating.
+    // wait, no second click). "other"'s click is itself a *manual* ready
+    // click and, being the one that completes the group, starts the round
+    // right away same as before - AUTO_READY_GRACE_MS only holds back a
+    // round start that would otherwise be triggered by auto-ready alone
+    // (see the next test's "instant start" isn't exercised here at all).
     const otherReady = await request(app)
       .post(`/api/v1/games/${gameId}/ready`)
       .set(authHeader(other.id, 'user'))
@@ -182,6 +187,65 @@ describe('"Auto bereit" (round_ready_pref)', () => {
     expect(stateAfterOtherReady.body.currentRound).not.toBeNull();
     expect(stateAfterOtherReady.body.currentRound.status).toBe('countdown');
     expect(stateAfterOtherReady.body.currentRound.sitOutUserIds).toEqual([]);
+  });
+
+  it('holds a fully auto-ready table\'s next round back for AUTO_READY_GRACE_MS instead of starting it the instant round 2\'s window auto-re-arms', async () => {
+    const { gameId, owner, other } = await createRunningGame();
+
+    // Get round 1 running the ordinary manual way first - the fix under
+    // test is specifically about the *automatic* re-arm after a round
+    // resolves (afterRoundResolved -> startReadyWindow, called with no
+    // request/response cycle of its own to piggyback a completion check
+    // on), not about this first window.
+    await request(app)
+      .post(`/api/v1/games/${gameId}/ready`)
+      .set(authHeader(owner.id, 'user'))
+      .send({ ready: true });
+    await request(app)
+      .post(`/api/v1/games/${gameId}/ready`)
+      .set(authHeader(other.id, 'user'))
+      .send({ ready: true });
+
+    const stateAfterRound1Start = await request(app)
+      .get(`/api/v1/games/${gameId}/state`)
+      .set(authHeader(owner.id, 'user'));
+    const round1Id = stateAfterRound1Start.body.currentRound.roundId;
+    expect(round1Id).toBeTruthy();
+
+    // Both lock in auto-ready while round 1 is in progress (round_ready was
+    // already cleared when it started, so this is just a standing
+    // preference for now, same as "locks in ... for future windows" above).
+    await request(app)
+      .post(`/api/v1/games/${gameId}/ready/auto`)
+      .set(authHeader(owner.id, 'user'))
+      .send({ autoReady: true });
+    await request(app)
+      .post(`/api/v1/games/${gameId}/ready/auto`)
+      .set(authHeader(other.id, 'user'))
+      .send({ autoReady: true });
+
+    // Round 1 auto-resolves at ROUND_COUNTDOWN_MS + ROUND_SONG_DURATION_MS
+    // = 150 + 400 = 550ms after it started, which re-arms round 2's window
+    // automatically and (via applyAutoReadyOnWindowOpen) marks both ready
+    // right away since both are auto-ready - but must not start round 2
+    // yet. Checked with plenty of margin below AUTO_READY_GRACE_MS=150 so
+    // this doesn't flake if the resolve itself lands a bit late under CI
+    // load - it only needs to still be round 1 by now, whenever "now" is.
+    await wait(600);
+    const stateBeforeGrace = await request(app)
+      .get(`/api/v1/games/${gameId}/state`)
+      .set(authHeader(owner.id, 'user'));
+    expect(stateBeforeGrace.body.currentRound.roundId).toBe(round1Id);
+
+    // Comfortably past round 1's resolve (550) + the grace period (150) =
+    // 700ms mark, with a wide margin for CI jitter.
+    await wait(600);
+    const stateAfterGrace = await request(app)
+      .get(`/api/v1/games/${gameId}/state`)
+      .set(authHeader(owner.id, 'user'));
+    expect(stateAfterGrace.body.currentRound).not.toBeNull();
+    expect(stateAfterGrace.body.currentRound.roundId).not.toBe(round1Id);
+    expect(stateAfterGrace.body.currentRound.sitOutUserIds).toEqual([]);
   });
 
   it('locking in auto-ready while a window is already open applies it to that window too', async () => {

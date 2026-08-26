@@ -208,7 +208,14 @@ export function PlayerRow({
           placeholder="&mdash;"
           readOnly={!p.you}
           disabled={!guessActive}
-          value={guessWrongValue != null ? guessWrongValue : guessActive ? guessValue : ''}
+          // Gated on p.you, not guessActive: a submitted-but-not-yet-resolved
+          // Stichrunde guess turns guessActive false (see
+          // exactYearAttemptedUserIds in LiveGameBoard) well before the
+          // round resolves, but the value you typed should stay visible
+          // (just grayed out via the disabled attribute below) instead of
+          // vanishing the instant it's submitted - there's no other on-
+          // screen record of what you guessed until the reveal.
+          value={guessWrongValue != null ? guessWrongValue : p.you ? guessValue : ''}
           onChange={
             p.you && onGuessChange ? (e) => onGuessChange(e.target.value.replace(/\D/g, '').slice(0, 4)) : undefined
           }

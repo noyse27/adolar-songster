@@ -31,7 +31,7 @@ export interface CurrentRoundState {
   songTitle: string | null;
   songArtist: string | null;
   songYear: number | null;
-  results: { userId: string; submitted: boolean; correct: boolean; guessedIndex: number | null }[];
+  results: { userId: string; submitted: boolean; correct: boolean; guessedIndex: number | null; guessedYear: number | null }[];
 }
 
 export interface RoundReadyPhase {

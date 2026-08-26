@@ -50,7 +50,18 @@ export interface CurrentRoundState {
   songTitle: string | null;
   songArtist: string | null;
   songYear: number | null;
-  results: { userId: string; submitted: boolean; correct: boolean; guessedIndex: number | null }[];
+  results: {
+    userId: string;
+    submitted: boolean;
+    correct: boolean;
+    guessedIndex: number | null;
+    // Only meaningful for mode 'bonus' (the guessed exact year) - lets the
+    // client show a Stichrunde reveal (who guessed what, how close) instead
+    // of jumping straight from "song played" to the match-winner screen.
+    // Null for 'normal' (guessedIndex covers that case) and when nothing
+    // was submitted.
+    guessedYear: number | null;
+  }[];
 }
 
 export interface RoundReadyPhase {
@@ -188,6 +199,7 @@ export async function loadGameState(
           // (that guess is a year, not an index) and when nothing was
           // submitted.
           guessedIndex: round.mode === 'normal' && row ? row.value_number : null,
+          guessedYear: round.mode === 'bonus' && row ? row.value_number : null,
         };
       });
     }
