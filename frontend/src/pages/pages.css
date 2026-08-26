@@ -135,6 +135,16 @@
   font-family: var(--sh-font-display); font-size: 14px; letter-spacing: .04em; text-transform: uppercase;
   color: var(--adolar-lavender-light); margin-bottom: 12px;
 }
+.admin-section h3.admin-section-toggle {
+  display: flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; margin-bottom: 0;
+  padding: 6px 0;
+}
+.admin-section h3.admin-section-toggle:hover { color: var(--adolar-white); }
+.admin-section-caret { display: inline-block; font-size: 10px; transition: transform .15s ease; }
+.admin-section-caret.open { transform: rotate(90deg); }
+.admin-section-body { margin-top: 12px; }
+
+.admin-table-wrap.admin-table-scroll { max-height: 520px; overflow-y: auto; }
 .admin-stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
 .admin-stat {
   display: flex; flex-direction: column; gap: 4px; padding: 12px 14px;

@@ -66,6 +66,16 @@ export async function syncAllAdolarPlaylists(): Promise<AdolarSyncResult> {
 
   let trackCount = 0;
   for (const playlist of playlists) {
+    // Local catalog (adolar_playlist) so table creation, session start, and
+    // the playlist dropdowns can check name/availability without calling
+    // Adolar live on every request - see adolarPlaylistCatalog.ts.
+    await pool.query(
+      `INSERT INTO adolar_playlist (id, name, description, synced_at)
+       VALUES ($1, $2, $3, NOW())
+       ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, description = EXCLUDED.description, synced_at = NOW()`,
+      [playlist.id, playlist.name, playlist.description],
+    );
+
     const tracks = await fetchAllPlaylistTracks(playlist.id);
     for (const track of tracks) {
       if (track.year === null) continue;
@@ -79,6 +89,12 @@ export async function syncAllAdolarPlaylists(): Promise<AdolarSyncResult> {
       trackCount += 1;
     }
   }
+
+  // Drops catalog rows for playlists Adolar no longer lists, so a
+  // deleted/disabled playlist is caught by table creation/session start's
+  // local availability check as of the next sync, instead of staying
+  // "available" forever (see adolarPlaylistCatalog.ts).
+  await pool.query(`DELETE FROM adolar_playlist WHERE id != ALL($1::int[])`, [playlists.map((p) => p.id)]);
 
   return { playlistCount: playlists.length, trackCount };
 }

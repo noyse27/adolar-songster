@@ -4,6 +4,7 @@ import './pages.css';
 import { useAuth } from '../auth/AuthContext';
 import { apiFetch } from '../api';
 import { InvitesSection } from './InvitesSection';
+import { CollapsibleSection } from './CollapsibleSection';
 
 interface Song {
   songId: string;
@@ -62,12 +63,22 @@ export function AdminPage() {
         </Link>
         <h2>Admin-Bereich</h2>
 
-        <MusicSourceSection token={token as string} />
-        <InvitesSection token={token as string} isAdmin />
+        <CollapsibleSection title="Musikquelle">
+          <MusicSourceSection token={token as string} />
+        </CollapsibleSection>
+        <CollapsibleSection title="Einladungen">
+          <InvitesSection token={token as string} isAdmin collapsible />
+        </CollapsibleSection>
         <SongsSection token={token as string} />
-        <PlaylistsSection token={token as string} />
-        <TablesSection token={token as string} />
-        <UsersSection token={token as string} />
+        <CollapsibleSection title="Playlist-Suche">
+          <PlaylistsSection token={token as string} />
+        </CollapsibleSection>
+        <CollapsibleSection title="Tische">
+          <TablesSection token={token as string} />
+        </CollapsibleSection>
+        <CollapsibleSection title="Nutzer">
+          <UsersSection token={token as string} />
+        </CollapsibleSection>
       </div>
     </div>
   );
@@ -170,8 +181,7 @@ function MusicSourceSection({ token }: { token: string }) {
   }
 
   return (
-    <section className="admin-section">
-      <h3>Musikquelle</h3>
+    <>
       <p style={{ fontSize: 13, color: 'var(--sh-text-dim)', marginBottom: 4 }}>
         {status?.configured ? (
           <>
@@ -206,7 +216,7 @@ function MusicSourceSection({ token }: { token: string }) {
           </button>
         )}
       </form>
-    </section>
+    </>
   );
 }
 
@@ -279,75 +289,124 @@ function YearCell({ song, token, onSaved }: { song: Song; token: string; onSaved
   );
 }
 
+interface AdolarPlaylistOption {
+  playlistId: number;
+  name: string;
+  trackCount: number;
+}
+
+// Its own click-to-open header (rather than the generic CollapsibleSection
+// wrapper) because the header text needs the selected playlist's live track
+// count in parentheses, which only this component has.
 function SongsSection({ token }: { token: string }) {
+  const [open, setOpen] = useState(false);
+  const [playlists, setPlaylists] = useState<AdolarPlaylistOption[]>([]);
+  const [playlistId, setPlaylistId] = useState('');
   const [songs, setSongs] = useState<Song[]>([]);
   const [query, setQuery] = useState('');
 
-  function load(q: string) {
-    apiFetch<{ songs: Song[] }>(`/admin/songs${q ? `?q=${encodeURIComponent(q)}` : ''}`, { token })
-      .then((r) => setSongs(r.songs))
+  useEffect(() => {
+    if (!open) return;
+    apiFetch<{ playlists: AdolarPlaylistOption[] }>('/admin/adolar-playlists', { token })
+      .then((r) => setPlaylists(r.playlists))
       .catch(() => {});
-  }
+  }, [open, token]);
 
   // Debounced so the search dialog doesn't fire a request per keystroke -
-  // this scopes to the backend's LIMIT 50 instead of fetching the whole
-  // ~8000-track pool just to slice it client-side, see routes/admin.ts.
+  // this scopes to the backend's LIMIT (50 with a query, 20 without) instead
+  // of fetching the whole ~8000-track pool just to filter/slice it
+  // client-side, see routes/admin.ts. No playlist selected -> nothing
+  // loaded, which is also the dialog's default state (see below).
   useEffect(() => {
-    const id = setTimeout(() => load(query), 300);
+    if (!playlistId) {
+      setSongs([]);
+      return;
+    }
+    const id = setTimeout(() => {
+      const params = new URLSearchParams({ playlistId });
+      if (query) params.set('q', query);
+      apiFetch<{ songs: Song[] }>(`/admin/songs?${params}`, { token })
+        .then((r) => setSongs(r.songs))
+        .catch(() => {});
+    }, 300);
     return () => clearTimeout(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query, token]);
+  }, [playlistId, query, token]);
 
   function updateSong(updated: Song) {
     setSongs((prev) => prev.map((s) => (s.songId === updated.songId ? updated : s)));
   }
 
+  const selectedPlaylist = playlists.find((p) => String(p.playlistId) === playlistId);
+
   return (
     <section className="admin-section">
-      <h3>Song-Pool</h3>
-      <input
-        className="admin-search-input"
-        placeholder="Song oder Interpret suchen…"
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-      />
-      <div className="admin-table-wrap">
-        <table className="admin-table">
-          <thead>
-            <tr>
-              <th>Titel</th>
-              <th>Interpret</th>
-              <th>Jahr</th>
-              <th>Quelle</th>
-              <th>Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {songs.map((s) => (
-              <tr key={s.songId}>
-                <td>{s.title}</td>
-                <td>{s.artist ?? '–'}</td>
-                <td>
-                  <YearCell song={s} token={token} onSaved={updateSong} />
-                </td>
-                <td>{s.source}</td>
-                <td>{s.isValid ? <span className="admin-pill">gültig</span> : <span className="admin-pill warn">ungültig</span>}</td>
-              </tr>
+      <h3 className="admin-section-toggle" onClick={() => setOpen((o) => !o)}>
+        <span className={`admin-section-caret${open ? ' open' : ''}`}>▶</span>
+        Song-Pool{selectedPlaylist && ` (${selectedPlaylist.trackCount})`}
+      </h3>
+      {open && (
+        <div className="admin-section-body">
+          <select
+            className="admin-search-input"
+            value={playlistId}
+            onChange={(e) => {
+              setPlaylistId(e.target.value);
+              setQuery('');
+            }}
+          >
+            <option value="">Playlist wählen…</option>
+            {playlists.map((p) => (
+              <option key={p.playlistId} value={p.playlistId}>
+                {p.name} ({p.trackCount})
+              </option>
             ))}
-            {songs.length === 0 && (
-              <tr>
-                <td colSpan={5} style={{ color: 'var(--sh-text-faint)' }}>
-                  {query ? 'Keine Treffer.' : 'Noch keine Songs im Pool.'}
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-      {songs.length === 50 && (
-        <p style={{ fontSize: 12, color: 'var(--sh-text-faint)', marginTop: 8 }}>
-          Zeigt die ersten 50 Treffer - Suche eingrenzen, um mehr zu sehen.
-        </p>
+          </select>
+          <input
+            className="admin-search-input"
+            placeholder="Song oder Interpret suchen…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            disabled={!playlistId}
+          />
+          <div className="admin-table-wrap admin-table-scroll">
+            <table className="admin-table">
+              <thead>
+                <tr>
+                  <th>Titel</th>
+                  <th>Interpret</th>
+                  <th>Jahr</th>
+                  <th>Quelle</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {songs.map((s) => (
+                  <tr key={s.songId}>
+                    <td>{s.title}</td>
+                    <td>{s.artist ?? '–'}</td>
+                    <td>
+                      <YearCell song={s} token={token} onSaved={updateSong} />
+                    </td>
+                    <td>{s.source}</td>
+                    <td>{s.isValid ? <span className="admin-pill">gültig</span> : <span className="admin-pill warn">ungültig</span>}</td>
+                  </tr>
+                ))}
+                {songs.length === 0 && (
+                  <tr>
+                    <td colSpan={5} style={{ color: 'var(--sh-text-faint)' }}>
+                      {!playlistId ? 'Playlist wählen, um Songs zu sehen.' : query ? 'Keine Treffer.' : 'Noch keine Songs in dieser Playlist.'}
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+          {songs.length === 50 && (
+            <p style={{ fontSize: 12, color: 'var(--sh-text-faint)', marginTop: 8 }}>
+              Zeigt die ersten 50 Treffer - Suche eingrenzen, um mehr zu sehen.
+            </p>
+          )}
+        </div>
       )}
     </section>
   );
@@ -410,8 +469,7 @@ function PlaylistsSection({ token }: { token: string }) {
   }
 
   return (
-    <section className="admin-section">
-      <h3>Playlist-Suche</h3>
+    <>
       <p style={{ fontSize: 13, color: 'var(--sh-text-dim)', marginBottom: 12 }}>
         Jede Partie speichert die tatsächlich gespielten Tracks unter einer eigenen Playlist-ID (1 Woche, danach
         automatisch gelöscht) - zur Fehleranalyse bei falsch erkannten Songs.
@@ -480,7 +538,7 @@ function PlaylistsSection({ token }: { token: string }) {
           </div>
         </div>
       )}
-    </section>
+    </>
   );
 }
 
@@ -563,11 +621,10 @@ function TablesSection({ token }: { token: string }) {
   useEffect(load, [token]);
 
   return (
-    <section className="admin-section">
-      <h3>Tische ({tables.length})</h3>
+    <>
       <p style={{ fontSize: 12, color: 'var(--sh-text-faint)', marginBottom: 12 }}>
-        "Inaktiv" = seit 30 Minuten keine Interaktion. Ohne jede Interaktion für 60 Minuten wird ein Tisch automatisch
-        gelöscht.
+        {tables.length} Tische - "Inaktiv" = seit 30 Minuten keine Interaktion. Ohne jede Interaktion für 60 Minuten
+        wird ein Tisch automatisch gelöscht.
       </p>
       <div className="admin-table-wrap">
         <table className="admin-table">
@@ -610,7 +667,7 @@ function TablesSection({ token }: { token: string }) {
           </tbody>
         </table>
       </div>
-    </section>
+    </>
   );
 }
 
@@ -664,8 +721,8 @@ function UsersSection({ token }: { token: string }) {
   }
 
   return (
-    <section className="admin-section">
-      <h3>Nutzer ({users.length})</h3>
+    <>
+      <p style={{ fontSize: 12, color: 'var(--sh-text-faint)', marginBottom: 12 }}>{users.length} Nutzer</p>
       <div className="admin-table-wrap">
         <table className="admin-table">
           <thead>
@@ -710,6 +767,6 @@ function UsersSection({ token }: { token: string }) {
           </tbody>
         </table>
       </div>
-    </section>
+    </>
   );
 }

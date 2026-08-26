@@ -22,7 +22,15 @@ const MAX_USES_FOR_DELEGATED_USERS = 1;
 // Shared by AdminPage (admins see everyone's invites) and InvitesPage
 // (delegated non-admin users see only their own) - GET/POST /invites is
 // already scoped that way server-side, see backend/src/routes/invites.ts.
-export function InvitesSection({ token, isAdmin }: { token: string; isAdmin: boolean }) {
+export function InvitesSection({
+  token,
+  isAdmin,
+  collapsible = false,
+}: {
+  token: string;
+  isAdmin: boolean;
+  collapsible?: boolean;
+}) {
   const [invites, setInvites] = useState<Invite[]>([]);
   const [maxUses, setMaxUses] = useState(5);
   const [expiresInDays, setExpiresInDays] = useState(14);
@@ -51,9 +59,8 @@ export function InvitesSection({ token, isAdmin }: { token: string; isAdmin: boo
     load();
   }
 
-  return (
-    <section className="admin-section">
-      <h3>Einladungen</h3>
+  const content = (
+    <>
       <form className="admin-inline-form" onSubmit={handleCreate}>
         {isAdmin ? (
           <input
@@ -130,6 +137,23 @@ export function InvitesSection({ token, isAdmin }: { token: string; isAdmin: boo
           </tbody>
         </table>
       </div>
+    </>
+  );
+
+  // When used from AdminPage the collapsible wrapper (and its click-to-open
+  // header) already lives one level up, around the whole InvitesSection
+  // instance, so the section itself only mounts - and only then fires its
+  // load() effect above - once the admin opens it. InvitesPage embeds this
+  // directly as its main content, so there it keeps its own always-open
+  // section/header.
+  if (collapsible) {
+    return content;
+  }
+
+  return (
+    <section className="admin-section">
+      <h3>Einladungen</h3>
+      {content}
     </section>
   );
 }
