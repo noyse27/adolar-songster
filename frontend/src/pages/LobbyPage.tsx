@@ -29,7 +29,7 @@ export function LobbyPage() {
   const { auth } = useAuth();
   const navigate = useNavigate();
   const [tables, setTables] = useState<LobbyTable[]>([]);
-  const [joiningId, setJoiningId] = useState<string | null>(null);
+  const [joiningKey, setJoiningKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(Date.now());
 
@@ -54,31 +54,23 @@ export function LobbyPage() {
     };
   }, [auth]);
 
-  async function handleJoin(tableId: string) {
+  async function handleJoin(tableId: string, joinAs: 'player' | 'spectator') {
     if (!auth) return;
-    setJoiningId(tableId);
+    const key = `${tableId}:${joinAs}`;
+    setJoiningKey(key);
     setError(null);
     try {
-      await apiFetch(`/tables/${tableId}/join`, { method: 'POST', body: { joinAs: 'player' }, token: auth.accessToken });
+      await apiFetch(`/tables/${tableId}/join`, { method: 'POST', body: { joinAs }, token: auth.accessToken });
       navigate(`/tisch/${tableId}`);
     } catch (err) {
       const code = err instanceof ApiError ? (err.body as { error?: string } | null)?.error : undefined;
       if (code === 'PLAYER_REQUIREMENTS_NOT_MET') {
-        // This table has a minimum karma/score/games-played bar the
-        // requester doesn't clear - spectating is never gated by that, so
-        // fall back to it instead of just failing the join outright.
-        try {
-          await apiFetch(`/tables/${tableId}/join`, { method: 'POST', body: { joinAs: 'spectator' }, token: auth.accessToken });
-          navigate(`/tisch/${tableId}`);
-          return;
-        } catch {
-          setError('Die Mindestanforderungen für Spieler erfüllst du nicht, und der Beitritt als Zuschauer ist ebenfalls fehlgeschlagen.');
-          return;
-        }
+        setError('Die Mindestanforderungen für Spieler erfüllst du an diesem Tisch nicht.');
+        return;
       }
       setError('Beitritt fehlgeschlagen - Tisch evtl. schon voll.');
     } finally {
-      setJoiningId(null);
+      setJoiningKey(null);
     }
   }
 
@@ -121,27 +113,40 @@ export function LobbyPage() {
               </tr>
             </thead>
             <tbody>
-              {tables.map((t) => (
-                <tr key={t.tableId}>
-                  <td>{t.name}</td>
-                  <td>
-                    {t.activePlayers}/{t.maxPlayers}
-                  </td>
-                  <td>{t.allowSpectators ? `${t.activeSpectators}/${t.maxSpectators}` : '—'}</td>
-                  <td>
-                    <button
-                      className="admin-btn-sm"
-                      disabled={joiningId === t.tableId || t.activePlayers >= t.maxPlayers}
-                      onClick={() => handleJoin(t.tableId)}
-                    >
-                      Beitreten
-                    </button>{' '}
-                    <span style={{ fontSize: 11, color: 'var(--sh-text-faint)' }} title="Wie lange es diesen Tisch schon gibt">
-                      {tableAge(t.createdAt, now)}
-                    </span>
-                  </td>
-                </tr>
-              ))}
+              {tables.map((t) => {
+                const playerFull = t.activePlayers >= t.maxPlayers;
+                const spectatorFull = !t.allowSpectators || t.activeSpectators >= t.maxSpectators;
+                return (
+                  <tr key={t.tableId}>
+                    <td>{t.name}</td>
+                    <td>
+                      {t.activePlayers}/{t.maxPlayers}
+                    </td>
+                    <td>{t.allowSpectators ? `${t.activeSpectators}/${t.maxSpectators}` : '—'}</td>
+                    <td>
+                      <button
+                        className="admin-btn-sm"
+                        disabled={joiningKey !== null || playerFull}
+                        title={playerFull ? 'Tisch für Spieler voll' : undefined}
+                        onClick={() => handleJoin(t.tableId, 'player')}
+                      >
+                        Spieler
+                      </button>{' '}
+                      <button
+                        className="admin-btn-sm"
+                        disabled={joiningKey !== null || spectatorFull}
+                        title={spectatorFull ? 'Zuschauen an diesem Tisch nicht möglich' : undefined}
+                        onClick={() => handleJoin(t.tableId, 'spectator')}
+                      >
+                        Zuschauer
+                      </button>{' '}
+                      <span style={{ fontSize: 11, color: 'var(--sh-text-faint)' }} title="Wie lange es diesen Tisch schon gibt">
+                        {tableAge(t.createdAt, now)}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
               {tables.length === 0 && (
                 <tr>
                   <td colSpan={4} style={{ color: 'var(--sh-text-faint)' }}>
