@@ -32,6 +32,15 @@ export function InstructionsPage() {
             Verlassen kostet welche und erschwert später die Tisch-/Mitspielersuche.
           </li>
         </ol>
+        <a
+          className="sh-action"
+          href="https://polze.net/adolar-songster-help.html"
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{ marginTop: 18 }}
+        >
+          Songster Hilfe <span className="sh-action-arrow">→</span>
+        </a>
       </div>
     </div>
   );
