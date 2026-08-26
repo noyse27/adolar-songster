@@ -10,6 +10,8 @@ COPY backend ./backend
 RUN npm run build --workspace backend
 
 FROM node:22-alpine AS runtime
+# Keep in sync with the root Dockerfile's runtime stage - see its comment.
+RUN apk upgrade --no-cache
 WORKDIR /app
 ENV NODE_ENV=production
 COPY package.json package-lock.json ./

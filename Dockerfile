@@ -11,6 +11,11 @@ COPY backend ./backend
 RUN npm run build --workspace backend
 
 FROM node:22-alpine AS runtime
+# Picks up whatever Alpine security patches (e.g. openssl/libcrypto3/libssl3)
+# have landed since this image tag was baked - CI's Trivy scan fails the
+# build on known-fixed HIGH/CRITICAL CVEs in the base image, and floating
+# tags like node:22-alpine can lag behind Alpine's own package index.
+RUN apk upgrade --no-cache
 WORKDIR /app
 ENV NODE_ENV=production
 COPY package.json package-lock.json ./
