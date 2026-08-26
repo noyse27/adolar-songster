@@ -3,13 +3,17 @@
 **Status: Beta** - privates Musik-Ratespiel fuer kleine Gruppen. Projektdokumentation siehe
 [docs/Adolar_Songster_Masterindex_v1_20260821.md](docs/Adolar_Songster_Masterindex_v1_20260821.md).
 
-## Neu in dieser Beta (seit v0.2.0-beta)
+## Neu in dieser Beta (seit v0.3.0-beta)
 
-- **Hostmodus**: ein gemeinsames Anzeigegeraet (Tablet/Fernseher/Laptop) zeigt das volle Playboard und spielt den Song fuer alle hoerbar ab, waehrend jedes Handy nur die eigene Zeitleiste zeigt und stumm bleibt. Laeuft ueber einen eigenen Anzeige-Token statt eines Logins (kollidiert nicht mit Single-Active-Session), inkl. QR-Code-Beitritt direkt vom grossen Bildschirm
-- Wach-Halten des Bildschirms waehrend einer laufenden Partie (Screen Wake Lock, erfordert HTTPS)
-- Persistenter "gespielte Spiele auf dem Server"-Zaehler - ueberlebt jetzt das automatische Aufraeumen inaktiver Tische (vorher gingen abgeschlossene Partien nach 60 Minuten wieder aus der Statistik verloren)
-- Nginx liefert `index.html` nicht mehr gecacht aus - Handys bekamen nach einem Redeploy sonst teils tagelang die alte Version
-- Playboard-Layout-Fixes fuer schmale/quer gedrehte Handy-Bildschirme, inkl. eines Android-Bugs, bei dem Antippen von UI-Text die Woerterbuch-Einblendung ausloeste
+- **Songster-Playlists-Menue**: eigener Menuepunkt zur Playlistadministration im Spielclient
+- **Stichrunde ueberarbeitet**: bei Gleichstand gewinnt jetzt die naeheste Jahresschaetzung statt eines exakten Treffers
+- Playlist-scoped Song-Pool-Suche im Admin-Bereich, plus lokaler (Adolar-unabhaengiger) Playlist-Katalog
+- Neuer "Auto bereit"-Toggle pro Runde im Bereit-Fenster
+- Lobby-Tischliste: Spieler- oder Zuschauer-Beitritt direkt waehlbar
+- Anzeigegeraet-/Startkarten-Fixes, Playlist-Tracking, ueberarbeitetes PDF-Branding; 24h-Uhrzeit im Datum der Spielzusammenfassung
+- Fix: Avatar-Doppelklick startete versehentlich eine Runde mit haengendem Fehler
+- Fix: weisser Text auf weissem Grund in der Song-Pool-Playlist-Auswahl
+- Sicherheits-Haertung: Autorisierungsluecken aus dem Audit vom 25.08.2026 geschlossen (Phase 0 + 1), CVE-Patch im Docker-Basisimage
 
 ## Quickstart (Docker)
 
