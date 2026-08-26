@@ -265,9 +265,9 @@ dealing → idle ⇄ waiting → countdown → playing → reveal → idle (naec
 
 ## 10. Ergänzung 2026-08-26: phasenabhängige Schnellreaktionen
 
-Diese Ergänzung gehört zum Feature-Branch
-`codex/feature-player-communication`; der Merge ist zum Stand 2026-08-26
-noch offen, das lokale Dev-Docker-Deployment ist erfolgt. Die vollständige
+Diese Ergänzung wurde über den Ursprungsbranch
+`codex/feature-player-communication` nach `main` übernommen und ist Bestandteil
+von `v0.5.0-beta`. Das lokale Dev-Docker-Deployment ist erfolgt. Die vollständige
 Phasenmatrix und technische Quelle
 steht in
 `Adolar_Songster_Spielerkommunikation_Whatsnew_Quelle_v1_20260826.md`.

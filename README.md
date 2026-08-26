@@ -1,19 +1,29 @@
 # Adolar Songster
 
-**Status: Beta** - privates Musik-Ratespiel fuer kleine Gruppen. Projektdokumentation siehe
+**Version: v0.5.0-beta** - privates Musik-Ratespiel fuer kleine Gruppen. Projektdokumentation siehe
 [docs/Adolar_Songster_Masterindex_v1_20260821.md](docs/Adolar_Songster_Masterindex_v1_20260821.md).
 
-## Neu in dieser Beta (seit v0.3.0-beta)
+## Neu in v0.5.0-beta
 
-- **Songster-Playlists-Menue**: eigener Menuepunkt zur Playlistadministration im Spielclient
-- **Stichrunde ueberarbeitet**: bei Gleichstand gewinnt jetzt die naeheste Jahresschaetzung statt eines exakten Treffers
-- Playlist-scoped Song-Pool-Suche im Admin-Bereich, plus lokaler (Adolar-unabhaengiger) Playlist-Katalog
-- Neuer "Auto bereit"-Toggle pro Runde im Bereit-Fenster
-- Lobby-Tischliste: Spieler- oder Zuschauer-Beitritt direkt waehlbar
-- Anzeigegeraet-/Startkarten-Fixes, Playlist-Tracking, ueberarbeitetes PDF-Branding; 24h-Uhrzeit im Datum der Spielzusammenfassung
-- Fix: Avatar-Doppelklick startete versehentlich eine Runde mit haengendem Fehler
-- Fix: weisser Text auf weissem Grund in der Song-Pool-Playlist-Auswahl
-- Sicherheits-Haertung: Autorisierungsluecken aus dem Audit vom 25.08.2026 geschlossen (Phase 0 + 1), CVE-Patch im Docker-Basisimage
+- **Lobby-Chat:** angemeldete Nutzer koennen sich bereits vor dem Tischbeitritt
+  austauschen. Angezeigt werden maximal 50 Nachrichten aus den letzten 30 Minuten.
+- **Tisch-Chat:** eigener Kommunikationskanal fuer aktive Spieler und Zuschauer
+  eines Tisches.
+- **Playboard-Reaktionen:** kurze, phasenabhaengige Emoji-/Text-Reaktionen statt
+  freiem Chat waehrend der Partie. Sie erscheinen am Spieleravatar und auf dem
+  gemeinsamen Hostdisplay.
+- **Admin-Konfiguration:** Text-Smileys koennen serverseitig in Emojis umgewandelt
+  werden. Ein Wortfilter ersetzt konfigurierte Woerter und Phrasen durch `*piep*`.
+- **Frei belegbare Reaktionen:** sechs Spielzustaende mit jeweils bis zu acht
+  eindeutigen Motiven aus einem kuratierten Katalog, inklusive eigener
+  Beschriftung, Sortierung und Live-Aktualisierung geoeffneter Playboards.
+- **Rundenstabilitaet:** Auto-bereit startet nur noch den vorgesehenen
+  Bereit-Vorgang; Reveal-Timer, letzter Song und Stichrunden-Regelmodale wurden
+  gegen konkurrierende Timer abgesichert.
+
+Details zur Spielerkommunikation, API, Sicherheitsentscheidung und den
+Restrisiken stehen in
+[docs/Adolar_Songster_Spielerkommunikation_Whatsnew_Quelle_v1_20260826.md](docs/Adolar_Songster_Spielerkommunikation_Whatsnew_Quelle_v1_20260826.md).
 
 ## Quickstart (Docker)
 

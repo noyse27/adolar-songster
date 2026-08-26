@@ -2,7 +2,7 @@
 
 Stand: 2026-08-26
 
-Feature-Branch: `codex/feature-player-communication`
+Release: `v0.5.0-beta` (Ursprungsbranch: `codex/feature-player-communication`)
 
 Zweck: Verbindliche Übergabequelle für Entwicklung, Review, Release und eine spätere What’s-new-Erstellung.
 
@@ -11,25 +11,26 @@ Zweck: Verbindliche Übergabequelle für Entwicklung, Review, Release und eine s
 | Lieferabschnitt | Status am 2026-08-26 |
 |---|---|
 | Produktentscheidung „Variante 1“ | entschieden |
-| Lobby-Chat | auf Feature-Branch implementiert |
-| Tisch-Chat | auf Feature-Branch implementiert |
-| Playboard-Schnellreaktionen | auf Feature-Branch implementiert |
-| Anzeige der Reaktionen im Hostmodus | auf Feature-Branch implementiert |
-| Adminbereich „Chateinstellungen“ | auf Feature-Branch implementiert |
-| Emoticon-Konvertierung und Wortfilter | auf Feature-Branch implementiert |
-| Administrierbarer Reaktionskatalog | auf Feature-Branch implementiert |
+| Lobby-Chat | in `main`, Bestandteil von `v0.5.0-beta` |
+| Tisch-Chat | in `main`, Bestandteil von `v0.5.0-beta` |
+| Playboard-Schnellreaktionen | in `main`, Bestandteil von `v0.5.0-beta` |
+| Anzeige der Reaktionen im Hostmodus | in `main`, Bestandteil von `v0.5.0-beta` |
+| Adminbereich „Chateinstellungen“ | in `main`, Bestandteil von `v0.5.0-beta` |
+| Emoticon-Konvertierung und Wortfilter | in `main`, Bestandteil von `v0.5.0-beta` |
+| Administrierbarer Reaktionskatalog | in `main`, Bestandteil von `v0.5.0-beta` |
 | Datenbankmigrationen | implementiert und gegen separate Testdatenbank geprüft |
 | Unit-/Integrationsprüfung | grün |
-| Review/Merge nach `main` | **noch offen** |
+| Review/Merge nach `main` | erfolgt über PR #32 |
+| GitHub-Prerelease | Bestandteil von `v0.5.0-beta` |
 | Deployment in lokale Dev-Docker-Instanz | erfolgt und per API-Smoke-Test geprüft |
 | Deployment in Produktion | **noch offen** |
 | Melden, Moderationsoberfläche, manuelles Löschen | **nicht Teil dieser Phase** |
 | Sprachchat/WebRTC | **nicht Teil dieser Variante** |
 
-Eine What’s-new-Mitteilung darf das Feature erst nach Merge und
-Produktionsdeployment als allgemein „verfügbar“ bezeichnen. Das lokale
-Dev-Deployment ist nur die Testfreigabe. Vorher ist die korrekte Formulierung
-„für das nächste Update vorbereitet“ oder „auf dem Feature-Branch implementiert“.
+Das Feature ist Bestandteil des installierbaren Prereleases `v0.5.0-beta`.
+Eine instanzbezogene What’s-new-Mitteilung darf es erst nach dem jeweiligen
+Deployment als dort „verfügbar“ bezeichnen. Das lokale Dev-Deployment ist bereits
+erfolgt; ein Produktionsdeployment bleibt Sache des Instanzbetreibers.
 
 ## 2. Nutzerfunktion
 

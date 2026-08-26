@@ -1,7 +1,7 @@
 # Adolar Songster - Benutzerhandbuch
 
-Version: 1.0 (entspricht Release v0.2.0-beta)
-Stand: 2026-08-24
+Version: 1.1 (entspricht Release v0.5.0-beta)
+Stand: 2026-08-26
 Quelle: aus dem aktuellen Code generiert (Frontend `frontend/src/pages/*`,
 `frontend/src/game/*`, Backend-Routen `backend/src/routes/*`) - beschreibt
 den tatsächlichen Funktionsstand, keine Planung/Wunschliste.
@@ -53,7 +53,7 @@ Karten hat, gewinnt. Zugang ausschließlich per Einladungscode - kein
 - "Neuen Tisch erstellen" führt zu Abschnitt 5.
 - Live-Aktualisierung per WebSocket, sobald sich an einem Tisch etwas
   ändert.
-- **Feature-Branch Spielerkommunikation:** Unter der
+- **Seit v0.5.0-beta:** Unter der
   Tischliste steht ein Live-Chat für alle angemeldeten Nutzer. Er zeigt
   maximal 50 Nachrichten aus den letzten 30 Minuten; eine Nachricht darf
   höchstens 500 Zeichen lang sein.
@@ -96,7 +96,7 @@ Der/die Erstellende wird automatisch als erste(r) Spieler(in) gesetzt.
 - **Verlassen**: vorzeitiges Verlassen während einer laufenden Partie kann
   Karma kosten (siehe Abschnitt 8), außer man kehrt innerhalb von 90
   Sekunden zurück.
-- **Feature-Branch Spielerkommunikation:** Nach dem
+- **Seit v0.5.0-beta:** Nach dem
   Beitritt steht Spielern und Zuschauern ein eigener Tisch-Chat zur
   Verfügung. Nutzer ohne aktiven Sitz können ihn weder lesen noch
   beschreiben.
@@ -125,7 +125,7 @@ Der/die Erstellende wird automatisch als erste(r) Spieler(in) gesetzt.
   einem neuen Song.
 - **Sieg**: wer zuerst 10 korrekt platzierte Karten hat, gewinnt die
   Partie.
-- **Feature-Branch Spielerkommunikation:** Im
+- **Seit v0.5.0-beta:** Im
   Playboard gibt es statt freiem Text kurze, von der Spielphase abhängige
   Reaktionen. Sie erscheinen 3,5 Sekunden am Avatar und auch auf dem
   gemeinsamen Hostdisplay. Zuschauer und Displaygeräte können sie nur
@@ -236,7 +236,7 @@ Der PDF-Export enthält:
 
 ## 16. Versionsstand
 
-Beta (v0.2.0-beta). Kernspiel vollständig getestet (115 Backend-Tests,
+Beta (v0.5.0-beta). Kernspiel und Spielerkommunikation sind automatisiert getestet,
 CI inkl. CodeQL/Docker-Image-Scan), noch nicht produktionsgehärtet für
 große Nutzergruppen. Änderungsverlauf siehe GitHub Releases
 (https://github.com/noyse27/adolar-songster/releases).
