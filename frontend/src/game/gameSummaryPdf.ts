@@ -65,7 +65,8 @@ export async function buildGameSummaryPdf(state: GameState): Promise<void> {
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(11);
   doc.setTextColor(...WHITE);
-  doc.text(`Spiel vom ${playedOn.toLocaleDateString('de-DE')}`, marginX, y);
+  const playedOnTime = playedOn.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', hour12: false });
+  doc.text(`Spiel vom ${playedOn.toLocaleDateString('de-DE')}, ${playedOnTime} Uhr`, marginX, y);
   y += 7;
   doc.text(`Anzahl Runden: ${roundCount}`, marginX, y);
   y += 7;
