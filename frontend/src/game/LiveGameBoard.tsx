@@ -159,6 +159,34 @@ export function LiveGameBoard() {
     setRevealUntil(null);
   }, [revealUntil, now]);
 
+  // A Stichsong (bonus round) is entirely derivable from data the client
+  // already has - matchOutcome.ts's checkForWinOrTie logic mirrored here.
+  // Computed up here (ahead of the `!state` guard below) so the tie-rule
+  // reveal timer effect right after it can depend on it like any other hook.
+  const maxCardsForTie = Math.max(0, ...(state?.players.map((p) => p.timeline.length) ?? [0]));
+  const tiedLeadersForTie = state?.players.filter((p) => p.timeline.length === maxCardsForTie) ?? [];
+  const isTieBreakPending = Boolean(state?.roundReadyPhase) && maxCardsForTie >= SLOT_COUNT && tiedLeadersForTie.length > 1;
+
+  // Holds the Stichrunde rule announcement up for a fixed REVEAL_MS once it
+  // first becomes relevant to show (i.e. once the *previous* round's own
+  // Auflösung has cleared - revealUntil === null), the same way revealUntil
+  // itself holds the Auflösung up: readyPhase (which isTieBreakPending
+  // depends on) disappears the instant the round actually starts, and at a
+  // fully auto-ready table that can happen just as this modal was about to
+  // become visible - see roundReady.ts's AUTO_READY_GRACE_MS, which is
+  // sized to the *previous* round's reveal, not to "plus however long this
+  // modal needs afterwards". Without its own independent timer here, the
+  // modal and the round start race each other and the modal loses.
+  const [tieRuleUntil, setTieRuleUntil] = useState<number | null>(null);
+  useEffect(() => {
+    if (!isTieBreakPending || revealUntil !== null || tieModalDismissed) return;
+    setTieRuleUntil((prev) => (prev !== null ? prev : Date.now() + REVEAL_MS));
+  }, [isTieBreakPending, revealUntil, tieModalDismissed]);
+  useEffect(() => {
+    if (tieRuleUntil === null || now < tieRuleUntil) return;
+    setTieRuleUntil(null);
+  }, [tieRuleUntil, now]);
+
   // Ticks while any timed phase is on screen, so rings/clocks animate
   // smoothly between the (infrequent) real state updates from the server.
   const roundStatus = state?.currentRound?.status;
@@ -167,11 +195,12 @@ export function LiveGameBoard() {
       state?.roundReadyPhase?.startedAt ||
       (roundStatus && ['countdown', 'playing'].includes(roundStatus)) ||
       state?.status === 'finished' ||
-      revealUntil !== null;
+      revealUntil !== null ||
+      tieRuleUntil !== null;
     if (!active) return;
     const id = window.setInterval(() => setNow(Date.now()), 200);
     return () => window.clearInterval(id);
-  }, [state?.roundReadyPhase?.startedAt, roundStatus, state?.status, revealUntil]);
+  }, [state?.roundReadyPhase?.startedAt, roundStatus, state?.status, revealUntil, tieRuleUntil]);
 
   // The winner screen's own auto-close countdown - navigates everyone back
   // to the lobby if nobody rematches within the server's window (mirrors
@@ -548,15 +577,9 @@ export function LiveGameBoard() {
 
   const round = state.currentRound;
   const readyPhase = state.roundReadyPhase;
-
-  // A Stichsong (bonus round) is entirely derivable from data the client
-  // already has - matchOutcome.ts's checkForWinOrTie logic mirrored here -
-  // so there's no need for the backend to flag it separately. Only
-  // meaningful between rounds; once the bonus round itself starts, `round`
-  // is non-null and this naturally stops mattering.
-  const maxCards = Math.max(0, ...state.players.map((p) => p.timeline.length));
-  const tiedLeaders = state.players.filter((p) => p.timeline.length === maxCards);
-  const isTieBreakPending = Boolean(readyPhase) && maxCards >= SLOT_COUNT && tiedLeaders.length > 1;
+  // maxCardsForTie/tiedLeadersForTie/isTieBreakPending are computed above,
+  // ahead of the `!state` guard (see the tieRuleUntil effect's comment).
+  const tiedLeaders = tiedLeadersForTie;
 
   // ---------- center ring content ----------
   let ringMark = '?';
@@ -880,12 +903,13 @@ export function LiveGameBoard() {
       <HelpModal open={helpOpen} onClose={() => setHelpOpen(false)} />
 
       <div
-        // Also waits for revealUntil to clear: a Stichsong nobody guessed
-        // stays tied and re-opens this exact same rule announcement for the
-        // next one (see roundEngine.ts's resolveBonusRound) - without this,
-        // it would stack directly on top of the "Stichrunde: Auflösung"
-        // panel above instead of following it.
-        className={`pb-modal-overlay${isTieBreakPending && !tieModalDismissed && revealUntil === null ? ' pb-open' : ''}`}
+        // Gated on tieRuleUntil (a fixed-length reveal, see its effect
+        // above), not isTieBreakPending directly: readyPhase disappears the
+        // instant the round actually starts, which at a fully auto-ready
+        // table can happen right as this modal was about to show - without
+        // its own independent timer, this and the round start race each
+        // other and the modal loses (visible for ~1s or less).
+        className={`pb-modal-overlay${tieRuleUntil !== null && now < tieRuleUntil && !tieModalDismissed ? ' pb-open' : ''}`}
         onClick={(e) => e.target === e.currentTarget && handleTieBreakAcknowledge()}
       >
         <div className="pb-modal">
