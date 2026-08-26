@@ -5,11 +5,11 @@ import { authHeader, createUserDirect, uniqueSuffix } from '../helpers/testUtils
 
 const app = createApp();
 
-async function createTable(ownerId: string) {
+async function createTable(ownerId: string, visibility: 'private' | 'public' = 'private') {
   const response = await request(app)
     .post('/api/v1/tables')
     .set(authHeader(ownerId, 'user'))
-    .send({ name: `Table_${uniqueSuffix()}`, visibility: 'private' });
+    .send({ name: `Table_${uniqueSuffix()}`, visibility });
   return response.body as { tableId: string; joinCode: string };
 }
 
@@ -45,6 +45,32 @@ describe('Hostmodus display link', () => {
     const issue = await request(app)
       .post(`/api/v1/tables/${table.tableId}/display-link`)
       .set(authHeader(stranger.id, 'user'));
+    expect(issue.status).toBe(403);
+  });
+
+  it('rejects minting a display link for a seated player who is not the owner', async () => {
+    const owner = await createUserDirect({});
+    const table = await createTable(owner.id, 'private');
+    const player = await createUserDirect({});
+
+    await request(app)
+      .post(`/api/v1/tables/${table.tableId}/join`)
+      .set(authHeader(player.id, 'user'))
+      .send({ joinAs: 'player', joinCode: table.joinCode });
+
+    const issue = await request(app)
+      .post(`/api/v1/tables/${table.tableId}/display-link`)
+      .set(authHeader(player.id, 'user'));
+    expect(issue.status).toBe(403);
+  });
+
+  it('rejects minting a display link for a public table, even for its owner', async () => {
+    const owner = await createUserDirect({});
+    const table = await createTable(owner.id, 'public');
+
+    const issue = await request(app)
+      .post(`/api/v1/tables/${table.tableId}/display-link`)
+      .set(authHeader(owner.id, 'user'));
     expect(issue.status).toBe(403);
   });
 

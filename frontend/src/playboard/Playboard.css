@@ -66,6 +66,12 @@
 }
 .pb-brand-title { font-size: 20px; letter-spacing: .02em; }
 .pb-brand-sub { font-size: 12px; color: var(--pb-text-faint); letter-spacing: .08em; text-transform: uppercase; margin-top: 2px; }
+.pb-brand-ids {
+  display: flex; flex-direction: column; gap: 2px; margin-left: 14px; padding-left: 14px;
+  border-left: 1px solid var(--pb-panel-border);
+  font-size: 10px; font-family: var(--pb-font-mono, monospace); color: var(--pb-text-faint);
+  letter-spacing: .02em; white-space: nowrap;
+}
 
 .pb-round-pill {
   display: flex; align-items: center; gap: 10px;
@@ -436,6 +442,7 @@
   .pb-row, .pb-row.pb-you { grid-template-columns: 1fr; }
   .pb-actions { justify-content: flex-start; }
   .pb-deck { grid-template-columns: 1fr; justify-items: center; }
+  .pb-brand-ids { display: none; }
 }
 
 /* A phone rotated to landscape is usually *wider* than the 780px breakpoint
@@ -451,6 +458,7 @@
   .pb-topbar { gap: 10px; }
   .pb-brand-title { font-size: 16px; }
   .pb-brand-sub { font-size: 10px; }
+  .pb-brand-ids { display: none; }
   .pb-round-pill { padding: 5px 12px 5px 8px; font-size: 11px; }
 
   .pb-ring-wrap { width: 130px; height: 130px; }

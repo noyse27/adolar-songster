@@ -23,7 +23,7 @@ export async function startTableGame(tableId: string): Promise<TableStartOutcome
     await client.query('BEGIN');
 
     const tableResult = await client.query(
-      `SELECT id, state, source_playlist_id FROM game_table WHERE id = $1 FOR UPDATE`,
+      `SELECT id, name, state, source_playlist_id FROM game_table WHERE id = $1 FOR UPDATE`,
       [tableId],
     );
     if (tableResult.rowCount === 0) {
@@ -126,6 +126,16 @@ export async function startTableGame(tableId: string): Promise<TableStartOutcome
     );
     await generateStartBlocks(client, gameResult.rows[0].id, activePlayerIds, tableSessionId);
     await client.query(`UPDATE game_table SET state = 'running' WHERE id = $1`, [tableId]);
+
+    // Playlist-Tracking (Fehleranalyse): eine eigene, nicht erratbare
+    // Playlist-ID pro Partie, denormalisiert von game_table/game losgeloest
+    // (siehe Migration game-playlist-tracking) - ueberlebt deren Hard-Delete
+    // nach ~1h Inaktivitaet und wird erst nach 1 Woche automatisch geloescht
+    // (siehe playlistCleanup.ts).
+    await client.query(
+      `INSERT INTO game_playlist (table_id, table_name, game_id) VALUES ($1, $2, $3)`,
+      [tableId, table.name, gameResult.rows[0].id],
+    );
 
     await client.query('COMMIT');
     return { ok: true, tableSessionId, gameId: gameResult.rows[0].id };

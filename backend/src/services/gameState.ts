@@ -55,6 +55,10 @@ export interface RoundReadyPhase {
 export interface GameState {
   gameId: string;
   tableId: string;
+  // Playlist-Tracking (Fehleranalyse): die nicht erratbare Playlist-ID
+  // dieser Partie (siehe game_playlist, angelegt in tableStart.ts), gezeigt
+  // im Playboard neben dem Markennamen und aufgedruckt im Spielabschluss-PDF.
+  playlistId: string;
   status: string;
   winnerUserId: string | null;
   // Set once the match finishes (matchOutcome.ts's finishGame) - drives
@@ -81,9 +85,11 @@ export async function loadGameState(
 ): Promise<GameState | null> {
   const gameResult = await pool.query(
     `SELECT g.id, g.table_id, g.status, g.winner_user_id, t.match_ended_at,
-            t.display_connected_at IS NOT NULL AS display_anchor_present
+            t.display_connected_at IS NOT NULL AS display_anchor_present,
+            gp.id AS playlist_id
      FROM game g
      JOIN game_table t ON t.id = g.table_id
+     LEFT JOIN game_playlist gp ON gp.game_id = g.id
      WHERE g.id = $1`,
     [gameId],
   );
@@ -237,6 +243,7 @@ export async function loadGameState(
   return {
     gameId: game.id,
     tableId: game.table_id,
+    playlistId: game.playlist_id,
     status: game.status,
     winnerUserId: game.winner_user_id,
     matchEndedAt: game.match_ended_at,

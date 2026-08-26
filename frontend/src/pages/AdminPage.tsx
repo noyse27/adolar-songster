@@ -65,6 +65,7 @@ export function AdminPage() {
         <MusicSourceSection token={token as string} />
         <InvitesSection token={token as string} isAdmin />
         <SongsSection token={token as string} />
+        <PlaylistsSection token={token as string} />
         <TablesSection token={token as string} />
         <UsersSection token={token as string} />
       </div>
@@ -349,6 +350,192 @@ function SongsSection({ token }: { token: string }) {
         </p>
       )}
     </section>
+  );
+}
+
+interface PlaylistTrack {
+  trackId: string;
+  position: number;
+  songId: string | null;
+  title: string;
+  artist: string | null;
+  year: number;
+}
+
+interface Playlist {
+  playlistId: string;
+  tableId: string;
+  tableName: string;
+  gameId: string;
+  createdAt: string;
+  expiresAt: string;
+  tracks: PlaylistTrack[];
+}
+
+function PlaylistsSection({ token }: { token: string }) {
+  const [playlistId, setPlaylistId] = useState('');
+  const [playlist, setPlaylist] = useState<Playlist | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [correctingTrackId, setCorrectingTrackId] = useState<string | null>(null);
+
+  async function search(event: FormEvent) {
+    event.preventDefault();
+    if (!playlistId.trim()) return;
+    setLoading(true);
+    setError(null);
+    setPlaylist(null);
+    try {
+      const result = await apiFetch<Playlist>(`/admin/playlists/${playlistId.trim()}`, { token });
+      setPlaylist(result);
+    } catch {
+      setError('Playlist nicht gefunden (falsche ID oder älter als 1 Woche).');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function correctTrack(track: PlaylistTrack, song: Song) {
+    if (!playlist) return;
+    const updated = await apiFetch<PlaylistTrack>(`/admin/playlists/${playlist.playlistId}/tracks/${track.trackId}`, {
+      method: 'PUT',
+      body: { songId: song.songId },
+      token,
+    });
+    setPlaylist({
+      ...playlist,
+      tracks: playlist.tracks.map((t) => (t.trackId === updated.trackId ? updated : t)),
+    });
+    setCorrectingTrackId(null);
+  }
+
+  return (
+    <section className="admin-section">
+      <h3>Playlist-Suche</h3>
+      <p style={{ fontSize: 13, color: 'var(--sh-text-dim)', marginBottom: 12 }}>
+        Jede Partie speichert die tatsächlich gespielten Tracks unter einer eigenen Playlist-ID (1 Woche, danach
+        automatisch gelöscht) - zur Fehleranalyse bei falsch erkannten Songs.
+      </p>
+      <form className="admin-inline-form" onSubmit={search}>
+        <input
+          className="admin-search-input"
+          placeholder="Playlist-ID einfügen…"
+          value={playlistId}
+          onChange={(e) => setPlaylistId(e.target.value)}
+        />
+        <button className="admin-btn-sm" type="submit" disabled={loading}>
+          {loading ? 'Suche…' : 'Suchen'}
+        </button>
+      </form>
+      {error && <div className="sh-error" style={{ marginTop: 12 }}>{error}</div>}
+      {playlist && (
+        <div style={{ marginTop: 16 }}>
+          <p style={{ fontSize: 13, color: 'var(--sh-text-dim)' }}>
+            Tisch: <strong>{playlist.tableName}</strong> (<code>{playlist.tableId}</code>) &middot; erstellt{' '}
+            {new Date(playlist.createdAt).toLocaleString()} &middot; läuft ab{' '}
+            {new Date(playlist.expiresAt).toLocaleString()}
+          </p>
+          <div className="admin-table-wrap" style={{ marginTop: 8 }}>
+            <table className="admin-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Titel</th>
+                  <th>Interpret</th>
+                  <th>Jahr</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {playlist.tracks.map((t) => (
+                  <tr key={t.trackId}>
+                    <td>{t.position}</td>
+                    <td>{t.title}</td>
+                    <td>{t.artist ?? '–'}</td>
+                    <td>{t.year}</td>
+                    <td>
+                      {correctingTrackId === t.trackId ? (
+                        <InlineTrackCorrection
+                          token={token}
+                          onPick={(song) => correctTrack(t, song)}
+                          onCancel={() => setCorrectingTrackId(null)}
+                        />
+                      ) : (
+                        <button className="admin-btn-sm" type="button" onClick={() => setCorrectingTrackId(t.trackId)}>
+                          Korrigieren
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+                {playlist.tracks.length === 0 && (
+                  <tr>
+                    <td colSpan={5} style={{ color: 'var(--sh-text-faint)' }}>
+                      Noch keine Tracks gespielt (Partie läuft noch oder wurde nie beendet).
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function InlineTrackCorrection({
+  token,
+  onPick,
+  onCancel,
+}: {
+  token: string;
+  onPick: (song: Song) => void;
+  onCancel: () => void;
+}) {
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState<Song[]>([]);
+
+  useEffect(() => {
+    const id = setTimeout(() => {
+      if (!query.trim()) {
+        setResults([]);
+        return;
+      }
+      apiFetch<{ songs: Song[] }>(`/admin/songs?q=${encodeURIComponent(query)}`, { token })
+        .then((r) => setResults(r.songs))
+        .catch(() => {});
+    }, 300);
+    return () => clearTimeout(id);
+  }, [query, token]);
+
+  return (
+    <div style={{ minWidth: 260 }}>
+      <input
+        className="admin-search-input"
+        placeholder="Richtigen Song suchen…"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        autoFocus
+      />
+      <ul style={{ listStyle: 'none', margin: '6px 0 0', padding: 0, maxHeight: 160, overflowY: 'auto' }}>
+        {results.map((s) => (
+          <li key={s.songId} style={{ padding: '2px 0' }}>
+            <button
+              className="admin-btn-sm"
+              type="button"
+              onClick={() => onPick(s)}
+              style={{ width: '100%', textAlign: 'left' }}
+            >
+              {s.title} — {s.artist ?? '–'} ({s.year})
+            </button>
+          </li>
+        ))}
+      </ul>
+      <button className="admin-btn-sm" type="button" onClick={onCancel} style={{ marginTop: 6 }}>
+        Abbrechen
+      </button>
+    </div>
   );
 }
 

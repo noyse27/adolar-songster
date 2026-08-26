@@ -1,4 +1,4 @@
-import { computeYearRange, isPlacementCorrect, TimelineEntry } from '../../src/services/timeline';
+import { computeYearRange, generateStartBlocks, isPlacementCorrect, TimelineEntry } from '../../src/services/timeline';
 
 describe('isPlacementCorrect (FR-026/FR-027)', () => {
   const timeline: TimelineEntry[] = [
@@ -66,5 +66,35 @@ describe('computeYearRange', () => {
   it('does not artificially extend the upper bound up to the current year when the pool is older', async () => {
     const range = await computeYearRange(mockClient(1970, 2000));
     expect(range).toEqual({ lower: 1960, upper: 2010 });
+  });
+});
+
+describe('generateStartBlocks (FR-023: no duplicate start years)', () => {
+  it('retries the draw so the two start years are never identical, even when the RNG initially repeats', async () => {
+    // Narrow range [2000, 2001]: only two possible years, so a naive
+    // independent draw has a 50% chance of landing on the same year twice
+    // (the bug this replaces - see the game-summary PDF regression where
+    // both players started with two 1971 cards).
+    const insertedYears: number[] = [];
+    const client = {
+      query: jest.fn().mockImplementation((sql: string, params: unknown[]) => {
+        if (sql.includes('MIN(year_value)')) {
+          return Promise.resolve({ rows: [{ min_year: 2010, max_year: 1991 }] });
+        }
+        insertedYears.push(params[2] as number);
+        return Promise.resolve({ rows: [] });
+      }),
+    } as never;
+
+    // Force Math.random to return the same value twice (both would draw
+    // 2000) before returning a value that draws 2001 - proving the retry
+    // loop rejects the repeat instead of accepting it.
+    const randomSpy = jest.spyOn(Math, 'random');
+    randomSpy.mockReturnValueOnce(0.1).mockReturnValueOnce(0.1).mockReturnValueOnce(0.9);
+
+    await generateStartBlocks(client, 'game-1', ['user-1']);
+    randomSpy.mockRestore();
+
+    expect(insertedYears).toEqual([2000, 2001]);
   });
 });

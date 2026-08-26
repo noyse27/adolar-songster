@@ -52,7 +52,7 @@ FR-017: Nach Abschluss einer Partie kann am selben Tisch per "Neue Partie" direk
 FR-020: Spielstart erst ab mindestens 2 aktiven Spielern.
 FR-021: Rundenstart mit 3 Sekunden Countdown.
 FR-022: Songdauer pro Runde: 25 Sekunden (fix).
-FR-023: Start-Jahresbloecke pro Spieler: 2 (fix).
+FR-023: Start-Jahresbloecke pro Spieler: 2 (fix). Die gezogenen Jahre muessen sich voneinander unterscheiden - zwei identische Startjahre sind nicht zulaessig.
 FR-024: Jahrspanne fuer Startbloecke:
 - Untergrenze = minSongYear - 10
 - Obergrenze = max(maxSongYear + 10, aktuelles Jahr)

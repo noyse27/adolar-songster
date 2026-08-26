@@ -102,6 +102,8 @@ export async function finishGame(
   );
   await client.query(`UPDATE game_table SET state = 'finished', match_ended_at = NOW() WHERE id = $1`, [tableId]);
 
+  await snapshotPlaylistTracks(client, gameId);
+
   // See the persistent-games-played-counter migration: game.table_id
   // cascades away with its table an hour after the last activity
   // (tableCleanup.ts), so the home screen's "gespielte Spiele auf dem
@@ -111,6 +113,35 @@ export async function finishGame(
     `INSERT INTO system_setting (key, value) VALUES ('total_games_finished', '1')
      ON CONFLICT (key) DO UPDATE SET value = (system_setting.value::int + 1)::text, updated_at = NOW()`,
   );
+}
+
+// Playlist-Tracking (Fehleranalyse): schreibt den Track-Snapshot fuer die
+// Fehleranalyse-Playlist dieser Partie (angelegt in tableStart.ts). Nur
+// tatsaechlich gespielte Runden (started_at gesetzt) werden uebernommen, in
+// exakter Spielreihenfolge (index_no) - eine begonnene, aber nie gestartete
+// Runde (z. B. bei vorzeitigem Spielende) zaehlt nicht als "gespielt".
+async function snapshotPlaylistTracks(client: Queryable, gameId: string): Promise<void> {
+  const playlistResult = await client.query(`SELECT id FROM game_playlist WHERE game_id = $1`, [gameId]);
+  if (playlistResult.rowCount === 0) return;
+  const playlistId = playlistResult.rows[0].id;
+
+  const tracksResult = await client.query(
+    `SELECT r.index_no, r.song_id, sr.title, sr.artist, sr.year_value
+     FROM round r
+     JOIN song_ref sr ON sr.id = r.song_id
+     WHERE r.game_id = $1 AND r.started_at IS NOT NULL
+     ORDER BY r.index_no ASC`,
+    [gameId],
+  );
+
+  for (const track of tracksResult.rows) {
+    await client.query(
+      `INSERT INTO game_playlist_track (playlist_id, position, song_ref_id, title, artist, year_value)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       ON CONFLICT (playlist_id, position) DO NOTHING`,
+      [playlistId, track.index_no, track.song_id, track.title, track.artist, track.year_value],
+    );
+  }
 }
 
 // FR-044: leaving mid-match costs -5, plus -1 per other player still

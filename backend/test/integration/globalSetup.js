@@ -42,7 +42,8 @@ module.exports = async () => {
     TRUNCATE TABLE
       score_ledger, karma_ledger, timeline_card, token_usage, guess,
       session_song_history, round, game, song_ref, table_session,
-      table_seat, game_table, invite_token, app_user
+      table_seat, game_table, invite_token, app_user,
+      game_playlist, game_playlist_track
     RESTART IDENTITY CASCADE;
   `);
   await pool.end();
