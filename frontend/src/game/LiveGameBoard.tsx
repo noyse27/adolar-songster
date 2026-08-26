@@ -339,6 +339,7 @@ export function LiveGameBoard() {
     if (!auth || !gameId) return;
     try {
       await setRoundReady(gameId, auth.accessToken, ready);
+      setError(null);
     } catch {
       setError('Bereit-Status konnte nicht gesetzt werden.');
     }
@@ -349,6 +350,7 @@ export function LiveGameBoard() {
     const isAutoReady = state?.autoReadyUserIds.includes(auth.user.id) ?? false;
     try {
       await setAutoReady(gameId, auth.accessToken, !isAutoReady);
+      setError(null);
     } catch {
       setError('Auto bereit konnte nicht gesetzt werden.');
     }
