@@ -69,6 +69,11 @@ export interface GameState {
   players: GamePlayerState[];
   currentRound: CurrentRoundState | null;
   roundReadyPhase: RoundReadyPhase | null;
+  // "Auto bereit" lock (see roundReady.ts's setAutoReady) - unlike
+  // roundReadyPhase.readyUserIds, this is meaningful regardless of whether
+  // a round is currently active, since it's a standing per-match
+  // preference rather than a transient per-window state.
+  autoReadyUserIds: string[];
   // Hostmodus (gemeinsames Anzeigegerät): true while a display-token socket
   // is connected for this table (see socketServer.ts/displayToken.ts).
   // Drives LiveGameBoard's compact mode - every seated player's own device
@@ -240,6 +245,11 @@ export async function loadGameState(
     };
   }
 
+  const autoReadyResult = await pool.query(
+    `SELECT user_id FROM round_ready_pref WHERE game_id = $1 AND auto_ready = TRUE`,
+    [gameId],
+  );
+
   return {
     gameId: game.id,
     tableId: game.table_id,
@@ -251,6 +261,7 @@ export async function loadGameState(
     players,
     currentRound,
     roundReadyPhase,
+    autoReadyUserIds: autoReadyResult.rows.map((r) => r.user_id),
     displayAnchorPresent: game.display_anchor_present,
   };
 }

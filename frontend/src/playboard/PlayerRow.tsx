@@ -6,6 +6,7 @@ interface PlayerRowProps {
   rank: number;
   canReady: boolean;
   onToggleReady: () => void;
+  onToggleAutoReady?: () => void;
   onGapClick?: (index: number) => void;
   onHandleClick?: (index: number) => void;
   onConfirm?: () => void;
@@ -25,6 +26,7 @@ export function PlayerRow({
   rank,
   canReady,
   onToggleReady,
+  onToggleAutoReady,
   onGapClick,
   onHandleClick,
   onConfirm,
@@ -119,15 +121,28 @@ export function PlayerRow({
   return (
     <div className={rowClasses}>
       <div className="pb-player">
-        <div className={`pb-avatar-wrap${canReady ? '' : ' pb-static'}`} onClick={canReady ? onToggleReady : undefined}>
+        <div
+          className={`pb-avatar-wrap${canReady ? '' : ' pb-static'}`}
+          onClick={canReady ? onToggleReady : undefined}
+          onDoubleClick={canReady && onToggleAutoReady ? onToggleAutoReady : undefined}
+          title={canReady ? 'Klick: bereit. Doppelklick: Auto bereit (für diese Partie gelockt).' : undefined}
+        >
           <div className="pb-avatar">{p.initials}</div>
-          <div className={`pb-ready-badge${p.ready ? ' pb-ready' : ''}`}>{p.ready ? '✓' : ''}</div>
+          <div className={`pb-ready-badge${p.autoReady ? ' pb-ready-locked' : p.ready ? ' pb-ready' : ''}`}>
+            {p.autoReady ? '🔒' : p.ready ? '✓' : ''}
+          </div>
           <div className="pb-tooltip">
             Songster-Punkte: <b>{p.songsterPoints}</b>
             <br />
             Karma-Punkte: <b>{p.karma}</b>
             <br />
             Rang: <b>#{rank}</b>
+            {p.autoReady && (
+              <>
+                <br />
+                Auto bereit: <b>an</b>
+              </>
+            )}
           </div>
         </div>
         <div className="pb-player-meta">

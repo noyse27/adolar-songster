@@ -4,7 +4,7 @@ import '../playboard/Playboard.css';
 import { useAuth } from '../auth/AuthContext';
 import { apiFetch, ApiError, API_BASE_URL } from '../api';
 import { getSocket } from '../realtime/socket';
-import { fetchGameState, setRoundReady, submitPositionGuess, submitBonusGuess, claimToken, submitTokenGuess, restartTable } from './gameApi';
+import { fetchGameState, setRoundReady, setAutoReady, submitPositionGuess, submitBonusGuess, claimToken, submitTokenGuess, restartTable } from './gameApi';
 import { GameState } from './types';
 import { buildGameSummaryPdf } from './gameSummaryPdf';
 import { embedTimeline, boxIndexToPackedIndex, packedIndexToBoxIndex, SLOT_COUNT } from './timelineSlots';
@@ -341,6 +341,16 @@ export function LiveGameBoard() {
       await setRoundReady(gameId, auth.accessToken, ready);
     } catch {
       setError('Bereit-Status konnte nicht gesetzt werden.');
+    }
+  }
+
+  async function handleToggleAutoReady() {
+    if (!auth || !gameId) return;
+    const isAutoReady = state?.autoReadyUserIds.includes(auth.user.id) ?? false;
+    try {
+      await setAutoReady(gameId, auth.accessToken, !isAutoReady);
+    } catch {
+      setError('Auto bereit konnte nicht gesetzt werden.');
     }
   }
 
@@ -710,6 +720,7 @@ export function LiveGameBoard() {
               songsterPoints: p.scorePoints,
               karma: p.karmaPoints,
               ready: readyPhase?.readyUserIds.includes(p.userId) ?? false,
+              autoReady: state.autoReadyUserIds.includes(p.userId),
               sittingOut,
             };
 
@@ -721,6 +732,7 @@ export function LiveGameBoard() {
                 rank={rankMap[p.userId]}
                 canReady={dealt && isSelf && canReadyNow}
                 onToggleReady={() => handleSetReady(!(readyPhase?.readyUserIds.includes(p.userId) ?? false))}
+                onToggleAutoReady={isSelf ? handleToggleAutoReady : undefined}
                 onGapClick={isSelf ? handlePlaceClick : undefined}
                 onHandleClick={isSelf ? handlePlaceClick : undefined}
                 onConfirm={isSelf ? handleConfirm : undefined}

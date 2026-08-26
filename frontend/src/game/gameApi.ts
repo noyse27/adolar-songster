@@ -9,6 +9,10 @@ export function setRoundReady(gameId: string, token: string, ready = true): Prom
   return apiFetch(`/games/${gameId}/ready`, { method: 'POST', body: { ready }, token });
 }
 
+export function setAutoReady(gameId: string, token: string, autoReady: boolean): Promise<{ accepted: true }> {
+  return apiFetch(`/games/${gameId}/ready/auto`, { method: 'POST', body: { autoReady }, token });
+}
+
 export function submitPositionGuess(gameId: string, roundId: string, token: string, index: number): Promise<{ accepted: true }> {
   return apiFetch(`/games/${gameId}/rounds/${roundId}/guess`, {
     method: 'POST',

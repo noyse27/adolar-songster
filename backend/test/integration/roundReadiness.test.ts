@@ -148,3 +148,81 @@ describe('per-round readiness (30s ready window, sit-outs)', () => {
     expect(lateReady.body.error).toBe('ROUND_ALREADY_ACTIVE');
   });
 });
+
+describe('"Auto bereit" (round_ready_pref)', () => {
+  it('locks in auto-ready for future windows and applies it the instant the next one opens', async () => {
+    const { gameId, owner, other } = await createRunningGame();
+
+    // Locked in before any window is open yet - just a standing preference,
+    // no round_ready row for owner should exist yet.
+    const lockResponse = await request(app)
+      .post(`/api/v1/games/${gameId}/ready/auto`)
+      .set(authHeader(owner.id, 'user'))
+      .send({ autoReady: true });
+    expect(lockResponse.status).toBe(200);
+
+    const stateAfterLock = await request(app)
+      .get(`/api/v1/games/${gameId}/state`)
+      .set(authHeader(owner.id, 'user'));
+    expect(stateAfterLock.body.autoReadyUserIds).toEqual([owner.id]);
+    expect(stateAfterLock.body.roundReadyPhase.readyUserIds).toEqual([]);
+
+    // "other" is the only one who actually clicks ready - this arms the
+    // window, which should immediately auto-ready the owner too (no 30s
+    // wait, no second click) and start the round with both participating.
+    const otherReady = await request(app)
+      .post(`/api/v1/games/${gameId}/ready`)
+      .set(authHeader(other.id, 'user'))
+      .send({ ready: true });
+    expect(otherReady.status).toBe(200);
+
+    const stateAfterOtherReady = await request(app)
+      .get(`/api/v1/games/${gameId}/state`)
+      .set(authHeader(owner.id, 'user'));
+    expect(stateAfterOtherReady.body.currentRound).not.toBeNull();
+    expect(stateAfterOtherReady.body.currentRound.status).toBe('countdown');
+    expect(stateAfterOtherReady.body.currentRound.sitOutUserIds).toEqual([]);
+  });
+
+  it('locking in auto-ready while a window is already open applies it to that window too', async () => {
+    const { gameId, owner, other } = await createRunningGame();
+
+    // "other" readies up first, arming the window; owner has not locked in
+    // auto-ready yet, so nothing starts.
+    await request(app)
+      .post(`/api/v1/games/${gameId}/ready`)
+      .set(authHeader(other.id, 'user'))
+      .send({ ready: true });
+
+    const stateBeforeLock = await request(app)
+      .get(`/api/v1/games/${gameId}/state`)
+      .set(authHeader(owner.id, 'user'));
+    expect(stateBeforeLock.body.currentRound).toBeNull();
+    expect(stateBeforeLock.body.roundReadyPhase.startedAt).not.toBeNull();
+
+    // Owner locks in auto-ready mid-window (Variante A) - should count as
+    // ready for *this* window immediately, no separate confirmation.
+    const lockResponse = await request(app)
+      .post(`/api/v1/games/${gameId}/ready/auto`)
+      .set(authHeader(owner.id, 'user'))
+      .send({ autoReady: true });
+    expect(lockResponse.status).toBe(200);
+
+    const stateAfterLock = await request(app)
+      .get(`/api/v1/games/${gameId}/state`)
+      .set(authHeader(owner.id, 'user'));
+    expect(stateAfterLock.body.currentRound).not.toBeNull();
+    expect(stateAfterLock.body.currentRound.status).toBe('countdown');
+    expect(stateAfterLock.body.currentRound.sitOutUserIds).toEqual([]);
+  });
+
+  it('rejects a non-boolean autoReady value', async () => {
+    const { gameId, owner } = await createRunningGame();
+
+    const response = await request(app)
+      .post(`/api/v1/games/${gameId}/ready/auto`)
+      .set(authHeader(owner.id, 'user'))
+      .send({ autoReady: 'yes' });
+    expect(response.status).toBe(400);
+  });
+});

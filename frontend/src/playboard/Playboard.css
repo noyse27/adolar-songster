@@ -131,6 +131,7 @@
   font-size: 8px; color: var(--pb-text-faint); transition: all .15s ease;
 }
 .pb-ready-badge.pb-ready { background: var(--pb-good); border-color: var(--pb-good); color: var(--adolar-navy); }
+.pb-ready-badge.pb-ready-locked { background: var(--adolar-yellow); border-color: var(--adolar-yellow); color: var(--adolar-navy); font-size: 9px; }
 
 .pb-tooltip {
   position: absolute; left: 50%; bottom: calc(100% + 10px); transform: translateX(-50%) translateY(4px);

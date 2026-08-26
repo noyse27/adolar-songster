@@ -10,10 +10,20 @@ import { ROUND_READY_WINDOW_MS } from './roundConfig';
 // same reasoning as roundConfig.ts's constant extraction.
 const pendingTimeouts = new Map<string, NodeJS.Timeout>();
 let onExpire: ((gameId: string) => Promise<void>) | null = null;
+let onOpen: ((gameId: string) => Promise<void>) | null = null;
 
 /** roundReady.ts registers its own expiry handler once at module load. */
 export function registerExpiryHandler(handler: (gameId: string) => Promise<void>): void {
   onExpire = handler;
+}
+
+// roundReady.ts also registers this once, to auto-ready any player with
+// "auto bereit" locked in (round_ready_pref) the instant a window newly
+// arms - notably including the automatic re-arm right after a round
+// resolves, so a fully auto-ready table never sits idle waiting on clicks
+// nobody needs to make.
+export function registerOpenHandler(handler: (gameId: string) => Promise<void>): void {
+  onOpen = handler;
 }
 
 export function scheduleTimeout(gameId: string): void {
@@ -49,5 +59,6 @@ export async function startReadyWindow(gameId: string): Promise<void> {
 
   await pool.query(`UPDATE game SET round_ready_started_at = NOW() WHERE id = $1`, [gameId]);
   scheduleTimeout(gameId);
+  await onOpen?.(gameId);
   await broadcastGame(gameId);
 }
