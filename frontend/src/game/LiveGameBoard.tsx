@@ -60,7 +60,13 @@ export function LiveGameBoard() {
   const [animatedSlots, setAnimatedSlots] = useState<Record<string, (number | null)[]> | null>(null);
   const [audioMuted, setAudioMuted] = useState(() => window.localStorage.getItem(AUDIO_MUTED_STORAGE_KEY) !== 'false');
   const [audioUnavailable, setAudioUnavailable] = useState(false);
-  const [revealExpired, setRevealExpired] = useState(false);
+  const [revealUntil, setRevealUntil] = useState<number | null>(null);
+  const [lastResolvedSong, setLastResolvedSong] = useState<{
+    roundId: string;
+    songArtist: string | null;
+    songTitle: string | null;
+    songYear: number | null;
+  } | null>(null);
   const [restarting, setRestarting] = useState(false);
   const [tieModalDismissed, setTieModalDismissed] = useState(false);
 
@@ -117,23 +123,41 @@ export function LiveGameBoard() {
   useEffect(() => {
     setPendingLocal(null);
     setGuessInput('');
-    setRevealExpired(false);
     setTieModalDismissed(false);
   }, [state?.currentRound?.roundId]);
 
-  // Holds the ring flipped to the reveal face for a few seconds once a
-  // round resolves, matching the prototype's 5s reveal (Playboard.tsx's
-  // enterReveal/commitReveal) - without this, the ring would flip straight
-  // to the "Bereit?" ready-prompt face the instant it resolves, since the
-  // round-ready window now arms itself automatically at that exact moment
-  // (see roundReadyWindow.ts) and roundReadyPhase becomes non-null too.
+  // Remembers the last resolved round's song - and holds the ring flipped
+  // to the reveal face for a fixed 5s once a round resolves, matching the
+  // prototype's 5s reveal (Playboard.tsx's enterReveal/commitReveal).
+  // Deliberately keyed on wall-clock time (revealUntil) rather than on
+  // state.currentRound.status === 'resolved': when every player has "auto
+  // bereit" locked in, the round-ready window arms and auto-starts the next
+  // round the instant this one resolves (see roundReadyWindow.ts /
+  // roundReady.ts's applyAutoReadyOnWindowOpen), so currentRound can already
+  // be the *next* round's 'countdown' by the time this broadcast arrives -
+  // gating on its status would skip the reveal (and the "Letzter Song" box)
+  // almost entirely instead of holding it for 5s.
   const roundStatusForReveal = state?.currentRound?.status;
   const roundIdForReveal = state?.currentRound?.roundId;
   useEffect(() => {
-    if (roundStatusForReveal !== 'resolved') return;
-    const id = window.setTimeout(() => setRevealExpired(true), 5000);
-    return () => window.clearTimeout(id);
-  }, [roundStatusForReveal, roundIdForReveal]);
+    if (roundStatusForReveal !== 'resolved' || !roundIdForReveal || !state) return;
+    const round = state.currentRound!;
+    setLastResolvedSong((prev) =>
+      prev?.roundId === roundIdForReveal
+        ? prev
+        : { roundId: roundIdForReveal, songArtist: round.songArtist, songTitle: round.songTitle, songYear: round.songYear },
+    );
+    setRevealUntil((prev) => (prev !== null ? prev : Date.now() + 5000));
+  }, [roundStatusForReveal, roundIdForReveal, state]);
+
+  // Once the 5s reveal window has actually elapsed, clear it so a later
+  // round can arm its own - comparing against `now` (below) instead of a
+  // setTimeout keyed on roundId, since roundId keeps changing under an
+  // auto-ready table well before 5s are up.
+  useEffect(() => {
+    if (revealUntil === null || now < revealUntil) return;
+    setRevealUntil(null);
+  }, [revealUntil, now]);
 
   // Ticks while any timed phase is on screen, so rings/clocks animate
   // smoothly between the (infrequent) real state updates from the server.
@@ -142,11 +166,12 @@ export function LiveGameBoard() {
     const active =
       state?.roundReadyPhase?.startedAt ||
       (roundStatus && ['countdown', 'playing'].includes(roundStatus)) ||
-      state?.status === 'finished';
+      state?.status === 'finished' ||
+      revealUntil !== null;
     if (!active) return;
     const id = window.setInterval(() => setNow(Date.now()), 200);
     return () => window.clearInterval(id);
-  }, [state?.roundReadyPhase?.startedAt, roundStatus, state?.status]);
+  }, [state?.roundReadyPhase?.startedAt, roundStatus, state?.status, revealUntil]);
 
   // The winner screen's own auto-close countdown - navigates everyone back
   // to the lobby if nobody rematches within the server's window (mirrors
@@ -538,12 +563,14 @@ export function LiveGameBoard() {
 
   if (!dealt) {
     phaseLabel = 'Karten werden verteilt…';
-  } else if (round?.status === 'resolved' && !revealExpired) {
-    // Checked before readyPhase on purpose: the ready window now arms
-    // itself automatically the instant a round resolves (see
-    // roundReadyWindow.ts), so roundReadyPhase is already non-null here
-    // too - without this ordering the ring would flip straight to the
-    // "Bereit?" prompt and the reveal would never actually be seen.
+  } else if (revealUntil !== null && now < revealUntil) {
+    // Checked before readyPhase (and even before a next round that may
+    // already be under way, see the revealUntil effect above) on purpose:
+    // the ready window now arms itself automatically the instant a round
+    // resolves (see roundReadyWindow.ts), so roundReadyPhase is already
+    // non-null here too - without this ordering the ring would flip
+    // straight to the "Bereit?" prompt and the reveal would never actually
+    // be seen for its full 5s, especially at a fully auto-ready table.
     flipped = true;
     phaseLabel = 'Auflösung';
     if (readyPhase) {
@@ -796,7 +823,7 @@ export function LiveGameBoard() {
               progress={progress}
               frontState={frontState}
               flipped={flipped}
-              revealSong={round?.status === 'resolved' ? { artist: round.songArtist ?? '', title: round.songTitle ?? '', year: round.songYear ?? 0 } : null}
+              revealSong={lastResolvedSong ? { artist: lastResolvedSong.songArtist ?? '', title: lastResolvedSong.songTitle ?? '', year: lastResolvedSong.songYear ?? 0 } : null}
               onClick={canReadyNow ? () => handleSetReady(true) : () => undefined}
               wrapRef={(el) => (ringWrapRef.current = el)}
             />
@@ -806,7 +833,7 @@ export function LiveGameBoard() {
           <div className="pb-status-card">
             <div className="pb-status-row">
               <span>Letzter Song</span>
-              <b>{round?.status === 'resolved' ? `${round.songArtist} – ${round.songTitle} (${round.songYear})` : '—'}</b>
+              <b>{lastResolvedSong ? `${lastResolvedSong.songArtist} – ${lastResolvedSong.songTitle} (${lastResolvedSong.songYear})` : '—'}</b>
             </div>
             <div className="pb-status-row">
               <span>Deine Token</span>

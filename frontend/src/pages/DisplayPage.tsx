@@ -45,6 +45,13 @@ export function DisplayPage() {
   const [notFound, setNotFound] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const [audioMuted, setAudioMuted] = useState(false);
+  const [revealUntil, setRevealUntil] = useState<number | null>(null);
+  const [lastResolvedSong, setLastResolvedSong] = useState<{
+    roundId: string;
+    songArtist: string | null;
+    songTitle: string | null;
+    songYear: number | null;
+  } | null>(null);
 
   const socketRef = useRef<Socket | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -141,6 +148,29 @@ export function DisplayPage() {
     }
   }, [roundStatus, roundId]);
 
+  // Remembers the last resolved round's song, and holds the ring flipped to
+  // the reveal face for a fixed 5s once a round resolves - keyed on
+  // wall-clock time rather than round.status === 'resolved', since a fully
+  // auto-ready table (see roundReadyWindow.ts) auto-starts the next round
+  // the instant this one resolves, so `round` can already be the next
+  // round's 'countdown' by the time this broadcast arrives - gating on its
+  // status would skip the reveal (and the "Letzter Song" box) almost
+  // entirely instead of holding it for 5s. Mirrors LiveGameBoard.tsx.
+  useEffect(() => {
+    if (roundStatus !== 'resolved' || !roundId || !round) return;
+    setLastResolvedSong((prev) =>
+      prev?.roundId === roundId
+        ? prev
+        : { roundId, songArtist: round.songArtist, songTitle: round.songTitle, songYear: round.songYear },
+    );
+    setRevealUntil((prev) => (prev !== null ? prev : Date.now() + 5000));
+  }, [roundStatus, roundId, round]);
+
+  useEffect(() => {
+    if (revealUntil === null || now < revealUntil) return;
+    setRevealUntil(null);
+  }, [revealUntil, now]);
+
   const maxScore = useMemo(() => Math.max(0, ...(state?.players.map((p) => p.timeline.length) ?? [0])), [state]);
   const rankMap = useMemo(() => {
     const map: Record<string, number> = {};
@@ -201,7 +231,7 @@ export function DisplayPage() {
   let flipped = false;
   let phaseLabel = 'Bereit für nächste Runde';
 
-  if (round?.status === 'resolved') {
+  if (revealUntil !== null && now < revealUntil) {
     flipped = true;
     phaseLabel = 'Auflösung';
   } else if (state.roundReadyPhase) {
@@ -358,8 +388,8 @@ export function DisplayPage() {
               frontState={frontState}
               flipped={flipped}
               revealSong={
-                round?.status === 'resolved'
-                  ? { artist: round.songArtist ?? '', title: round.songTitle ?? '', year: round.songYear ?? 0 }
+                lastResolvedSong
+                  ? { artist: lastResolvedSong.songArtist ?? '', title: lastResolvedSong.songTitle ?? '', year: lastResolvedSong.songYear ?? 0 }
                   : null
               }
               onClick={() => undefined}
@@ -368,7 +398,7 @@ export function DisplayPage() {
           <div className="pb-status-card">
             <div className="pb-status-row">
               <span>Letzter Song</span>
-              <b>{round?.status === 'resolved' ? `${round.songArtist} – ${round.songTitle} (${round.songYear})` : '—'}</b>
+              <b>{lastResolvedSong ? `${lastResolvedSong.songArtist} – ${lastResolvedSong.songTitle} (${lastResolvedSong.songYear})` : '—'}</b>
             </div>
             <div className="pb-status-row">
               <span>Karten</span>
