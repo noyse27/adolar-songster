@@ -4,6 +4,15 @@ import { pool } from '../../src/db/pool';
 import { syncAllAdolarPlaylists } from '../../src/services/adolarSync';
 import { authHeader, createUserDirect, markSeatReadyDirect, uniqueSuffix } from '../helpers/testUtils';
 
+// adolar_playlist isn't in globalSetup's TRUNCATE list (it has no FK back
+// to song_ref, so CASCADE doesn't reach it) - this file is the only one
+// that writes to it, but its own tests still need a clean slate between
+// them since availability now hinges on catalog rows left over from an
+// earlier test in this file, not a live Adolar call.
+async function clearPlaylistCatalog() {
+  await pool.query(`TRUNCATE TABLE adolar_playlist`);
+}
+
 const app = createApp();
 
 const ADOLAR_PLAYLIST_ID = 42;
@@ -80,10 +89,11 @@ async function createTwoPlayerTableWithPlaylist(sourcePlaylistId: number | null)
 describe('Adolar integration (Adolar_Songster_Adolar_Integration_Konzept section 4)', () => {
   const originalEnv = { ...process.env };
 
-  beforeEach(() => {
+  beforeEach(async () => {
     process.env.ADOLAR_BASE_URL = 'http://adolar.example';
     process.env.ADOLAR_API_TOKEN = 'test-token';
     process.env.ADOLAR_CLIENT_VERSION = '0.1.0-test';
+    await clearPlaylistCatalog();
   });
 
   afterEach(() => {
@@ -96,7 +106,9 @@ describe('Adolar integration (Adolar_Songster_Adolar_Integration_Konzept section
   });
 
   it('rejects table creation with an unavailable sourcePlaylistId', async () => {
-    mockAdolar({ playlistIds: [] });
+    // Availability is checked against the local catalog now (see
+    // adolarPlaylistCatalog.ts), not a live Adolar call - an id that was
+    // never synced is simply not there, same end result as before.
     const owner = await createUserDirect({});
 
     const response = await request(app)
@@ -124,6 +136,9 @@ describe('Adolar integration (Adolar_Songster_Adolar_Integration_Konzept section
 
   it('creates a table with an available sourcePlaylistId', async () => {
     mockAdolar();
+    // Table creation checks the local catalog, so the playlist has to be
+    // synced first - a live-only mock is no longer enough by itself.
+    await syncAllAdolarPlaylists();
     const { tableResponse } = await createTwoPlayerTableWithPlaylist(ADOLAR_PLAYLIST_ID);
 
     expect(tableResponse.status).toBe(201);
@@ -132,6 +147,7 @@ describe('Adolar integration (Adolar_Songster_Adolar_Integration_Konzept section
 
   it('draws a scoped 50-song batch at session start and confines round selection to it', async () => {
     mockAdolar();
+    await syncAllAdolarPlaylists();
     const { owner, other, tableResponse } = await createTwoPlayerTableWithPlaylist(ADOLAR_PLAYLIST_ID);
     const tableId = tableResponse.body.tableId;
 
@@ -192,6 +208,7 @@ describe('Adolar integration (Adolar_Songster_Adolar_Integration_Konzept section
 
   it('rejects starting the table if the playlist became unavailable since creation', async () => {
     mockAdolar();
+    await syncAllAdolarPlaylists();
     const { owner, other, tableResponse } = await createTwoPlayerTableWithPlaylist(ADOLAR_PLAYLIST_ID);
     const tableId = tableResponse.body.tableId;
 
@@ -201,8 +218,12 @@ describe('Adolar integration (Adolar_Songster_Adolar_Integration_Konzept section
       .send({ joinAs: 'player' });
 
     // Simulate the playlist being disabled/deleted on the Adolar side
-    // between table creation and session start.
+    // between table creation and session start - and, since availability is
+    // local-only now (see adolarPlaylistCatalog.ts), a sync actually
+    // running before the next check is what applies that removal locally;
+    // an admin/scheduled sync would do the same in production.
     mockAdolar({ playlistIds: [] });
+    await syncAllAdolarPlaylists();
 
     await markSeatReadyDirect(tableId, owner.id);
     await markSeatReadyDirect(tableId, other.id);

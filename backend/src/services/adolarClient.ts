@@ -72,6 +72,16 @@ async function config(): Promise<{ baseUrl: string; token: string; clientVersion
   };
 }
 
+// Config-only check (no network call) so table creation/session start
+// (tables.ts, tableStart.ts) can tell "Adolar was never configured" apart
+// from "configured, but this playlist isn't in the local catalog" without
+// making a live request on every table action - see adolarPlaylistCatalog.ts.
+export async function isAdolarConfigured(): Promise<boolean> {
+  const baseUrl = (await getSetting('adolar.base_url')) ?? process.env.ADOLAR_BASE_URL;
+  const token = (await getSetting('adolar.api_token')) ?? process.env.ADOLAR_API_TOKEN;
+  return Boolean(baseUrl && token);
+}
+
 async function rawAdolarFetch(baseUrl: string, token: string, clientVersion: string, path: string): Promise<Response> {
   let response: Response;
   try {
@@ -121,11 +131,6 @@ export async function listPlaylists(): Promise<AdolarPlaylist[]> {
   const response = await adolarFetch('/api/songster/playlists');
   const data = (await response.json()) as { playlists: AdolarPlaylist[] };
   return data.playlists;
-}
-
-export async function isPlaylistAvailable(playlistId: number): Promise<boolean> {
-  const playlists = await listPlaylists();
-  return playlists.some((playlist) => playlist.id === playlistId);
 }
 
 export async function fetchPlaylistTracksPage(

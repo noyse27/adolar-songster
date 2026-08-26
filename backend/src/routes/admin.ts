@@ -4,6 +4,7 @@ import { pool } from '../db/pool';
 import { requireAdmin, requireAuth } from '../middleware/auth';
 import { getSetting } from '../services/systemSettings';
 import { getSyncState, triggerBackgroundSync } from '../services/adolarSync';
+import { listCatalogedPlaylists } from '../services/adolarPlaylistCatalog';
 import { ADMIN_INACTIVE_MS } from '../services/tableActivity';
 
 export const adminRouter = Router();
@@ -248,24 +249,74 @@ adminRouter.post('/songs', async (req, res) => {
   });
 });
 
+// Feeds the playlist dropdown in the admin Song-Pool search (AdminPage.tsx's
+// SongsSection). Reads the local catalog (kept current by
+// syncAllAdolarPlaylists) instead of calling Adolar live - see
+// adolarPlaylistCatalog.ts. Track counts come from the locally synced pool
+// too, since that's what GET /songs below actually searches.
+adminRouter.get('/adolar-playlists', async (_req, res) => {
+  const playlists = await listCatalogedPlaylists();
+
+  const counts = await pool.query(
+    `SELECT playlist_id, COUNT(*)::int AS track_count FROM adolar_playlist_track GROUP BY playlist_id`,
+  );
+  const countByPlaylist = new Map<number, number>(counts.rows.map((row) => [row.playlist_id, row.track_count]));
+
+  res.status(200).json({
+    playlists: playlists.map((p) => ({
+      playlistId: p.id,
+      name: p.name,
+      trackCount: countByPlaylist.get(p.id) ?? 0,
+    })),
+  });
+});
+
 // ?q= scopes the search to the backend instead of the admin page fetching
 // every song_ref row (a real library is ~8000 tracks) just to filter/slice
-// it client-side - see AdminPage.tsx's SongsSection.
+// it client-side - see AdminPage.tsx's SongsSection. ?playlistId= further
+// scopes to one Adolar playlist via adolar_playlist_track; without it, no
+// query returns the 20 most recently added songs, and a query without a
+// playlist searches the whole pool (used by the Playlist-Suche section's
+// InlineTrackCorrection, which has no playlist context of its own).
 adminRouter.get('/songs', async (req, res) => {
   const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
-  const limit = 50;
-  const result = q
-    ? await pool.query(
-        `SELECT id, source, title, artist, year_value, duration_sec, is_valid, year_override
-         FROM song_ref WHERE title ILIKE $1 OR artist ILIKE $1
-         ORDER BY title LIMIT $2`,
-        [`%${q}%`, limit],
-      )
-    : await pool.query(
-        `SELECT id, source, title, artist, year_value, duration_sec, is_valid, year_override
-         FROM song_ref ORDER BY created_at DESC LIMIT $1`,
-        [limit],
-      );
+  const playlistIdRaw = typeof req.query.playlistId === 'string' ? req.query.playlistId.trim() : '';
+  const playlistId = playlistIdRaw ? Number(playlistIdRaw) : null;
+  const limit = q ? 50 : 20;
+
+  let result;
+  if (playlistId !== null) {
+    result = q
+      ? await pool.query(
+          `SELECT sr.id, sr.source, sr.title, sr.artist, sr.year_value, sr.duration_sec, sr.is_valid, sr.year_override
+           FROM song_ref sr
+           JOIN adolar_playlist_track apt ON apt.song_ref_id = sr.id
+           WHERE apt.playlist_id = $1 AND (sr.title ILIKE $2 OR sr.artist ILIKE $2)
+           ORDER BY sr.title LIMIT $3`,
+          [playlistId, `%${q}%`, limit],
+        )
+      : await pool.query(
+          `SELECT sr.id, sr.source, sr.title, sr.artist, sr.year_value, sr.duration_sec, sr.is_valid, sr.year_override
+           FROM song_ref sr
+           JOIN adolar_playlist_track apt ON apt.song_ref_id = sr.id
+           WHERE apt.playlist_id = $1
+           ORDER BY sr.title LIMIT $2`,
+          [playlistId, limit],
+        );
+  } else {
+    result = q
+      ? await pool.query(
+          `SELECT id, source, title, artist, year_value, duration_sec, is_valid, year_override
+           FROM song_ref WHERE title ILIKE $1 OR artist ILIKE $1
+           ORDER BY title LIMIT $2`,
+          [`%${q}%`, limit],
+        )
+      : await pool.query(
+          `SELECT id, source, title, artist, year_value, duration_sec, is_valid, year_override
+           FROM song_ref ORDER BY created_at DESC LIMIT $1`,
+          [limit],
+        );
+  }
 
   res.status(200).json({
     songs: result.rows.map((row) => ({

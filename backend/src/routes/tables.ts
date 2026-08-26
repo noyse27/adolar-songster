@@ -5,7 +5,8 @@ import { AuthenticatedRequest, requireAuth } from '../middleware/auth';
 import { evaluateOwnerHandover } from '../services/tableHandover';
 import { computeYearRange, generateStartBlocks } from '../services/timeline';
 import { applyEarlyLeavePenalty } from '../services/matchOutcome';
-import { AdolarClientError, isPlaylistAvailable } from '../services/adolarClient';
+import { isAdolarConfigured } from '../services/adolarClient';
+import { isPlaylistCataloged } from '../services/adolarPlaylistCatalog';
 import { startTableGame } from '../services/tableStart';
 import { restartTable } from '../services/tableRestart';
 import { fetchLobbyTables, loadTableDetail, loadTablePreview } from '../services/tableQueries';
@@ -100,23 +101,22 @@ tablesRouter.post('/tables', requireAuth, async (req: AuthenticatedRequest, res)
 
   // Section 4.2: checked at table creation so an unavailable playlist is a
   // clear error to the table admin right away instead of a later failure
-  // at session start.
+  // at session start. Local-only (the adolar_playlist catalog, kept current
+  // by syncAllAdolarPlaylists) - Adolar itself is only ever contacted live
+  // during that sync and for actual track streaming, never on this request
+  // path.
   if (sourcePlaylistId !== null) {
-    try {
-      const available = await isPlaylistAvailable(sourcePlaylistId);
-      if (!available) {
-        res.status(409).json({
-          error: 'ADOLAR_PLAYLIST_UNAVAILABLE',
-          message: 'the selected Adolar playlist is not available',
-        });
-        return;
-      }
-    } catch (err) {
-      if (err instanceof AdolarClientError) {
-        res.status(502).json({ error: err.code, message: err.message });
-        return;
-      }
-      throw err;
+    if (!(await isAdolarConfigured())) {
+      res.status(502).json({ error: 'NOT_CONFIGURED', message: 'Adolar is not configured' });
+      return;
+    }
+    const available = await isPlaylistCataloged(sourcePlaylistId);
+    if (!available) {
+      res.status(409).json({
+        error: 'ADOLAR_PLAYLIST_UNAVAILABLE',
+        message: 'the selected Adolar playlist is not available',
+      });
+      return;
     }
   }
 

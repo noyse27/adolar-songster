@@ -1,6 +1,7 @@
 import { pool } from '../db/pool';
 import { computeYearRange, generateStartBlocks } from './timeline';
-import { AdolarClientError, isPlaylistAvailable } from './adolarClient';
+import { isAdolarConfigured } from './adolarClient';
+import { isPlaylistCataloged } from './adolarPlaylistCatalog';
 import { loadAdolarBatch } from './adolarBatch';
 import { RoundEngineError } from './errors';
 
@@ -64,26 +65,38 @@ export async function startTableGame(tableId: string): Promise<TableStartOutcome
     // Section 4.3: the fixed 50-song batch is drawn once, here, at session
     // start - re-checking availability rather than trusting the check done
     // at table creation, since the playlist could have been deactivated on
-    // the Adolar side in the meantime.
+    // the Adolar side in the meantime. Both checks are local-only (the
+    // adolar_playlist catalog, kept current by syncAllAdolarPlaylists) -
+    // Adolar itself is only ever contacted live during that sync and for
+    // actual track streaming, never on this request path. That means a
+    // playlist removed on the Adolar side is only caught here once the next
+    // sync has run and dropped it from the catalog, not the instant it
+    // disappears upstream.
     let adolarBatchSongRefIds: string[] | null = null;
     if (table.source_playlist_id !== null) {
+      if (!(await isAdolarConfigured())) {
+        await client.query('ROLLBACK');
+        return {
+          ok: false,
+          status: 502,
+          code: 'NOT_CONFIGURED',
+          message: 'Adolar is not configured',
+        };
+      }
+      const available = await isPlaylistCataloged(table.source_playlist_id);
+      if (!available) {
+        await client.query('ROLLBACK');
+        return {
+          ok: false,
+          status: 409,
+          code: 'ADOLAR_PLAYLIST_UNAVAILABLE',
+          message: 'the selected Adolar playlist is no longer available',
+        };
+      }
       try {
-        const available = await isPlaylistAvailable(table.source_playlist_id);
-        if (!available) {
-          await client.query('ROLLBACK');
-          return {
-            ok: false,
-            status: 409,
-            code: 'ADOLAR_PLAYLIST_UNAVAILABLE',
-            message: 'the selected Adolar playlist is no longer available',
-          };
-        }
         adolarBatchSongRefIds = await loadAdolarBatch(client, table.source_playlist_id);
       } catch (err) {
         await client.query('ROLLBACK');
-        if (err instanceof AdolarClientError) {
-          return { ok: false, status: 502, code: err.code, message: err.message };
-        }
         if (err instanceof RoundEngineError) {
           return { ok: false, status: 409, code: err.code, message: err.message };
         }

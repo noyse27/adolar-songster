@@ -15,19 +15,31 @@ describe('adolarClient (Adolar_Songster_Adolar_Integration_Konzept section 3.4)'
   it('throws NOT_CONFIGURED when ADOLAR_BASE_URL or ADOLAR_API_TOKEN is missing', async () => {
     delete process.env.ADOLAR_BASE_URL;
     delete process.env.ADOLAR_API_TOKEN;
-    const { isPlaylistAvailable, AdolarClientError } = freshClient();
+    const { listPlaylists, AdolarClientError } = freshClient();
 
-    await expect(isPlaylistAvailable(1)).rejects.toMatchObject({
+    await expect(listPlaylists()).rejects.toMatchObject({
       code: 'NOT_CONFIGURED',
     });
-    await expect(isPlaylistAvailable(1)).rejects.toBeInstanceOf(AdolarClientError);
+    await expect(listPlaylists()).rejects.toBeInstanceOf(AdolarClientError);
+  });
+
+  it('isAdolarConfigured reflects whether both env vars are set, without any network call', async () => {
+    delete process.env.ADOLAR_BASE_URL;
+    delete process.env.ADOLAR_API_TOKEN;
+    const { isAdolarConfigured } = freshClient();
+    await expect(isAdolarConfigured()).resolves.toBe(false);
+
+    process.env.ADOLAR_BASE_URL = 'http://adolar.example';
+    process.env.ADOLAR_API_TOKEN = 'test-token';
+    const { isAdolarConfigured: isAdolarConfiguredAgain } = freshClient();
+    await expect(isAdolarConfiguredAgain()).resolves.toBe(true);
   });
 
   it('sends the Bearer token and X-Adolar-Client-Version header', async () => {
     process.env.ADOLAR_BASE_URL = 'http://adolar.example';
     process.env.ADOLAR_API_TOKEN = 'test-token';
     process.env.ADOLAR_CLIENT_VERSION = '9.9.9';
-    const { isPlaylistAvailable } = freshClient();
+    const { listPlaylists } = freshClient();
 
     const fetchMock = jest.fn().mockResolvedValue({
       ok: true,
@@ -35,7 +47,7 @@ describe('adolarClient (Adolar_Songster_Adolar_Integration_Konzept section 3.4)'
     });
     global.fetch = fetchMock as unknown as typeof fetch;
 
-    await isPlaylistAvailable(1);
+    await listPlaylists();
 
     expect(fetchMock).toHaveBeenCalledWith(
       'http://adolar.example/api/songster/playlists',
@@ -48,38 +60,37 @@ describe('adolarClient (Adolar_Songster_Adolar_Integration_Konzept section 3.4)'
     );
   });
 
-  it('isPlaylistAvailable returns true only if the id is in the playlists list', async () => {
+  it('listPlaylists returns the parsed playlist list', async () => {
     process.env.ADOLAR_BASE_URL = 'http://adolar.example';
     process.env.ADOLAR_API_TOKEN = 'test-token';
-    const { isPlaylistAvailable } = freshClient();
+    const { listPlaylists } = freshClient();
 
     global.fetch = jest.fn().mockResolvedValue({
       ok: true,
       json: async () => ({ playlists: [{ id: 7, name: 'X', description: '' }] }),
     }) as unknown as typeof fetch;
 
-    await expect(isPlaylistAvailable(7)).resolves.toBe(true);
-    await expect(isPlaylistAvailable(8)).resolves.toBe(false);
+    await expect(listPlaylists()).resolves.toEqual([{ id: 7, name: 'X', description: '' }]);
   });
 
   it('throws REQUEST_FAILED on a non-2xx response', async () => {
     process.env.ADOLAR_BASE_URL = 'http://adolar.example';
     process.env.ADOLAR_API_TOKEN = 'test-token';
-    const { isPlaylistAvailable } = freshClient();
+    const { listPlaylists } = freshClient();
 
     global.fetch = jest.fn().mockResolvedValue({ ok: false, status: 403 }) as unknown as typeof fetch;
 
-    await expect(isPlaylistAvailable(1)).rejects.toMatchObject({ code: 'REQUEST_FAILED' });
+    await expect(listPlaylists()).rejects.toMatchObject({ code: 'REQUEST_FAILED' });
   });
 
   it('throws REQUEST_FAILED when the network call itself rejects', async () => {
     process.env.ADOLAR_BASE_URL = 'http://adolar.example';
     process.env.ADOLAR_API_TOKEN = 'test-token';
-    const { isPlaylistAvailable } = freshClient();
+    const { listPlaylists } = freshClient();
 
     global.fetch = jest.fn().mockRejectedValue(new Error('ECONNREFUSED')) as unknown as typeof fetch;
 
-    await expect(isPlaylistAvailable(1)).rejects.toMatchObject({ code: 'REQUEST_FAILED' });
+    await expect(listPlaylists()).rejects.toMatchObject({ code: 'REQUEST_FAILED' });
   });
 
   it('fetchPlaylistTracksPage requests the given limit/offset and returns the parsed page', async () => {
