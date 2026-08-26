@@ -2,6 +2,7 @@ import { pool } from '../db/pool';
 import { RoundEngineError } from './errors';
 import { startRoundAuto } from './roundEngine';
 import { broadcastGame } from '../realtime/broadcast';
+import { AUTO_READY_GRACE_MS } from './roundConfig';
 import {
   clearScheduledTimeout,
   registerExpiryHandler,
@@ -147,9 +148,14 @@ export async function setAutoReady(gameId: string, userId: string, autoReady: bo
 
 // Registered as roundReadyWindow.ts's open-handler: fires the instant a
 // window newly arms (including the automatic re-arm right after a round
-// resolves), before anyone has had the chance to click anything - locks in
-// anyone with auto-ready set, immediately, so a fully auto-ready table
-// keeps playing back-to-back without ever actually sitting in the window.
+// resolves). Locks in anyone with auto-ready set - so their ready-check
+// shows immediately, same as a manual click - but the round is only
+// allowed to actually *start* off the back of that once AUTO_READY_GRACE_MS
+// has passed (see scheduleAutoReadyStart below): auto-ready automates the
+// ready click only, never the reveal/announcement the window just opened
+// on top of. A manual ready click from a non-auto player can still complete
+// the group and start the round earlier, same as before - only the
+// auto-ready path itself is held back.
 async function applyAutoReadyOnWindowOpen(gameId: string): Promise<void> {
   const gameResult = await pool.query(`SELECT table_id, status FROM game WHERE id = $1`, [gameId]);
   if (gameResult.rowCount === 0 || gameResult.rows[0].status !== 'active') return;
@@ -168,7 +174,23 @@ async function applyAutoReadyOnWindowOpen(gameId: string): Promise<void> {
     await markReady(gameId, row.user_id as string, true);
   }
 
-  await checkAllReadyAndMaybeStart(gameId, tableId);
+  scheduleAutoReadyStart(gameId, tableId);
+}
+
+const pendingAutoReadyStarts = new Map<string, NodeJS.Timeout>();
+
+function scheduleAutoReadyStart(gameId: string, tableId: string): void {
+  const existing = pendingAutoReadyStarts.get(gameId);
+  if (existing) clearTimeout(existing);
+  const timer = setTimeout(() => {
+    pendingAutoReadyStarts.delete(gameId);
+    checkAllReadyAndMaybeStart(gameId, tableId)
+      .then((started) => (started ? undefined : broadcastGame(gameId)))
+      .catch((err) => {
+        console.error('failed to auto-start round after auto-ready grace period', err);
+      });
+  }, AUTO_READY_GRACE_MS);
+  pendingAutoReadyStarts.set(gameId, timer);
 }
 
 async function clearReadyState(gameId: string): Promise<void> {

@@ -5,7 +5,7 @@ import { useAuth } from '../auth/AuthContext';
 import { apiFetch, ApiError, API_BASE_URL } from '../api';
 import { getSocket } from '../realtime/socket';
 import { fetchGameState, setRoundReady, setAutoReady, submitPositionGuess, submitBonusGuess, claimToken, submitTokenGuess, restartTable } from './gameApi';
-import { GameState } from './types';
+import { CurrentRoundState, GameState } from './types';
 import { buildGameSummaryPdf } from './gameSummaryPdf';
 import { embedTimeline, boxIndexToPackedIndex, packedIndexToBoxIndex, SLOT_COUNT } from './timelineSlots';
 import { PlayerRow } from '../playboard/PlayerRow';
@@ -28,6 +28,11 @@ import { useWakeLock } from '../hooks/useWakeLock';
 
 const TOKEN_WINDOW_MS = 10000; // display-only estimate; the server is authoritative on the actual timeout.
 const AUDIO_MUTED_STORAGE_KEY = 'adolar-songster:audio-muted';
+// Matches the backend's AUTO_READY_GRACE_MS (roundConfig.ts): how long any
+// reveal (Auflösung, Stichrunde-Regel) stays on screen before an
+// all-auto-ready table is allowed to move on. Auto-ready only automates the
+// ready click, never these reveals - see roundReady.ts.
+const REVEAL_MS = 5000;
 
 function clamp01(x: number): number {
   return Math.min(1, Math.max(0, x));
@@ -61,12 +66,11 @@ export function LiveGameBoard() {
   const [audioMuted, setAudioMuted] = useState(() => window.localStorage.getItem(AUDIO_MUTED_STORAGE_KEY) !== 'false');
   const [audioUnavailable, setAudioUnavailable] = useState(false);
   const [revealUntil, setRevealUntil] = useState<number | null>(null);
-  const [lastResolvedSong, setLastResolvedSong] = useState<{
-    roundId: string;
-    songArtist: string | null;
-    songTitle: string | null;
-    songYear: number | null;
-  } | null>(null);
+  // Full snapshot of the last round that resolved, not just its song -
+  // GameState.currentRound can already be the *next* round (or gone
+  // entirely once the match ends) by the time a reveal needs to render, see
+  // the revealUntil effect below.
+  const [lastResolvedRound, setLastResolvedRound] = useState<CurrentRoundState | null>(null);
   const [restarting, setRestarting] = useState(false);
   const [tieModalDismissed, setTieModalDismissed] = useState(false);
 
@@ -142,12 +146,8 @@ export function LiveGameBoard() {
   useEffect(() => {
     if (roundStatusForReveal !== 'resolved' || !roundIdForReveal || !state) return;
     const round = state.currentRound!;
-    setLastResolvedSong((prev) =>
-      prev?.roundId === roundIdForReveal
-        ? prev
-        : { roundId: roundIdForReveal, songArtist: round.songArtist, songTitle: round.songTitle, songYear: round.songYear },
-    );
-    setRevealUntil((prev) => (prev !== null ? prev : Date.now() + 5000));
+    setLastResolvedRound((prev) => (prev?.roundId === roundIdForReveal ? prev : round));
+    setRevealUntil((prev) => (prev !== null ? prev : Date.now() + REVEAL_MS));
   }, [roundStatusForReveal, roundIdForReveal, state]);
 
   // Once the 5s reveal window has actually elapsed, clear it so a later
@@ -460,10 +460,16 @@ export function LiveGameBoard() {
     try {
       if (round.mode === 'bonus') {
         await submitBonusGuess(gameId, round.roundId, auth.accessToken, year);
+        // Deliberately not cleared here: a Stichrunde guess is a one-shot
+        // exact-year attempt with no other on-screen record of what was
+        // typed, so the field keeps showing it - grayed out once
+        // exactYearAttemptedUserIds includes you turns guessActive false
+        // below - until the round resolves or the roundId-keyed reset
+        // effect clears it for the next one.
       } else {
         await submitTokenGuess(gameId, round.roundId, auth.accessToken, year);
+        setGuessInput('');
       }
-      setGuessInput('');
     } catch {
       setError('Jahr konnte nicht übermittelt werden.');
     }
@@ -604,12 +610,33 @@ export function LiveGameBoard() {
     } else if (round.status === 'playing') {
       const elapsed = now - new Date(round.startedAt).getTime() - round.countdownMs;
       const remaining = Math.max(0, round.windowMs - elapsed);
-      ringMark = '♪';
-      ringLabel = 'läuft';
-      progress = clamp01(elapsed / round.windowMs);
-      frontState = 'pb-playing';
-      deckCaption = `${Math.ceil(remaining / 1000)}s verbleibend`;
-      phaseLabel = 'Songfenster offen';
+      // A Stichrunde's guess window (windowMs) outlasts its own song
+      // (songPlaybackMs) by a fixed grace period (BONUS_WINDOW_MS -
+      // BONUS_SONG_DURATION_MS, ~10s) - see roundConfig.ts. Once the music
+      // has actually stopped, this needs to read as its own "Beeil dich!"
+      // countdown ticking the grace period down to zero, not as a
+      // continuation of the same song-progress ring counting down the full
+      // (song + grace) window - a shared counter across two different
+      // phases reads as one long countdown that mysteriously doesn't line
+      // up with when the music stopped.
+      const hurryUp = round.mode === 'bonus' && elapsed >= round.songPlaybackMs;
+      if (hurryUp) {
+        const graceMs = Math.max(1, round.windowMs - round.songPlaybackMs);
+        const graceElapsed = elapsed - round.songPlaybackMs;
+        ringMark = String(Math.ceil(remaining / 1000) || 1);
+        ringLabel = 'Beeil dich!';
+        progress = clamp01(graceElapsed / graceMs);
+        frontState = 'pb-counting';
+        deckCaption = `Noch ${Math.ceil(remaining / 1000)}s zum Tippen`;
+        phaseLabel = 'Letzte Chance zu tippen';
+      } else {
+        ringMark = '♪';
+        ringLabel = 'läuft';
+        progress = clamp01(elapsed / round.windowMs);
+        frontState = 'pb-playing';
+        deckCaption = `${Math.ceil(remaining / 1000)}s verbleibend`;
+        phaseLabel = 'Songfenster offen';
+      }
     } else if (round.status === 'token_solo' || round.status === 'token_others') {
       ringMark = '!!';
       ringLabel = round.status === 'token_solo' ? 'Solo-Versuch' : 'Deine Chance';
@@ -707,13 +734,15 @@ export function LiveGameBoard() {
             let pendingResult: PendingResult = null;
             if (!dealt) {
               slots = animatedSlots?.[p.userId] ?? nullSlots();
-            } else if (round?.status === 'resolved' && round.mode === 'normal') {
+            } else if (revealUntil !== null && now < revealUntil && lastResolvedRound?.mode === 'normal') {
               // Server-truth reveal for *every* player, not just yourself -
               // everyone's guessed position is shown colored red/green for
-              // the few seconds the round stays 'resolved', matching the
-              // approved prototype (playboard/PlayerRow.tsx's
-              // pendingSlot/pendingResult tile).
-              const mine = round.results.find((r) => r.userId === p.userId);
+              // the full reveal window, matching the approved prototype
+              // (playboard/PlayerRow.tsx's pendingSlot/pendingResult tile).
+              // Gated on revealUntil (see above), not round.status ===
+              // 'resolved' directly - an all-auto-ready table can already be
+              // several statuses further along by the time this renders.
+              const mine = lastResolvedRound.results.find((r) => r.userId === p.userId);
               if (mine?.submitted && mine.guessedIndex !== null) {
                 if (mine.correct) {
                   // The card is already inserted into p.timeline at exactly
@@ -823,7 +852,7 @@ export function LiveGameBoard() {
               progress={progress}
               frontState={frontState}
               flipped={flipped}
-              revealSong={lastResolvedSong ? { artist: lastResolvedSong.songArtist ?? '', title: lastResolvedSong.songTitle ?? '', year: lastResolvedSong.songYear ?? 0 } : null}
+              revealSong={lastResolvedRound ? { artist: lastResolvedRound.songArtist ?? '', title: lastResolvedRound.songTitle ?? '', year: lastResolvedRound.songYear ?? 0 } : null}
               onClick={canReadyNow ? () => handleSetReady(true) : () => undefined}
               wrapRef={(el) => (ringWrapRef.current = el)}
             />
@@ -833,7 +862,7 @@ export function LiveGameBoard() {
           <div className="pb-status-card">
             <div className="pb-status-row">
               <span>Letzter Song</span>
-              <b>{lastResolvedSong ? `${lastResolvedSong.songArtist} – ${lastResolvedSong.songTitle} (${lastResolvedSong.songYear})` : '—'}</b>
+              <b>{lastResolvedRound ? `${lastResolvedRound.songArtist} – ${lastResolvedRound.songTitle} (${lastResolvedRound.songYear})` : '—'}</b>
             </div>
             <div className="pb-status-row">
               <span>Deine Token</span>
@@ -851,7 +880,12 @@ export function LiveGameBoard() {
       <HelpModal open={helpOpen} onClose={() => setHelpOpen(false)} />
 
       <div
-        className={`pb-modal-overlay${isTieBreakPending && !tieModalDismissed ? ' pb-open' : ''}`}
+        // Also waits for revealUntil to clear: a Stichsong nobody guessed
+        // stays tied and re-opens this exact same rule announcement for the
+        // next one (see roundEngine.ts's resolveBonusRound) - without this,
+        // it would stack directly on top of the "Stichrunde: Auflösung"
+        // panel above instead of following it.
+        className={`pb-modal-overlay${isTieBreakPending && !tieModalDismissed && revealUntil === null ? ' pb-open' : ''}`}
         onClick={(e) => e.target === e.currentTarget && handleTieBreakAcknowledge()}
       >
         <div className="pb-modal">
@@ -871,7 +905,45 @@ export function LiveGameBoard() {
         </div>
       </div>
 
+      {revealUntil !== null && now < revealUntil && lastResolvedRound?.mode === 'bonus' && (
+        <div className="pb-modal-overlay pb-open">
+          <div className="pb-modal">
+            <h3>🎯 Stichrunde: Auflösung</h3>
+            <p>
+              Der Song erschien <b>{lastResolvedRound.songYear}</b>.
+            </p>
+            {lastResolvedRound.results.some((r) => r.submitted) ? (
+              <ol className="pb-winner-standings">
+                {[...lastResolvedRound.results]
+                  .filter((r) => r.submitted)
+                  .sort(
+                    (a, b) =>
+                      Math.abs((a.guessedYear ?? 0) - (lastResolvedRound.songYear ?? 0)) -
+                      Math.abs((b.guessedYear ?? 0) - (lastResolvedRound.songYear ?? 0)),
+                  )
+                  .map((r) => {
+                    const player = state.players.find((p) => p.userId === r.userId);
+                    const won = r.userId === state.winnerUserId;
+                    return (
+                      <li key={r.userId} className={`pb-winner-row${won ? ' pb-winner-you' : ''}`}>
+                        <span className="pb-winner-row-name">
+                          {player?.username ?? '?'}
+                          {won ? ' 👑' : ''}
+                        </span>
+                        <span className="pb-winner-row-cards">{r.guessedYear ?? '—'}</span>
+                      </li>
+                    );
+                  })}
+              </ol>
+            ) : (
+              <p>Niemand hat getippt — es gibt einen neuen Stichsong.</p>
+            )}
+          </div>
+        </div>
+      )}
+
       {state.status === 'finished' &&
+        revealUntil === null &&
         (() => {
           const winner = state.players.find((p) => p.userId === state.winnerUserId);
           const standings = [...state.players].sort((a, b) => b.timeline.length - a.timeline.length);

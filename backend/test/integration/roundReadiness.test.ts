@@ -7,6 +7,7 @@ import { authHeader, createUserDirect, markSeatReadyDirect, uniqueSuffix } from 
 process.env.ROUND_COUNTDOWN_MS = '150';
 process.env.ROUND_SONG_DURATION_MS = '400';
 process.env.ROUND_READY_WINDOW_MS = '200';
+process.env.AUTO_READY_GRACE_MS = '150';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { createApp } = require('../../src/app');
@@ -169,12 +170,16 @@ describe('"Auto bereit" (round_ready_pref)', () => {
 
     // "other" is the only one who actually clicks ready - this arms the
     // window, which should immediately auto-ready the owner too (no 30s
-    // wait, no second click) and start the round with both participating.
+    // wait, no second click). The round itself only starts once
+    // AUTO_READY_GRACE_MS has passed (150ms here) - auto-ready automates
+    // the ready click, not the reveal the window opened on top of.
     const otherReady = await request(app)
       .post(`/api/v1/games/${gameId}/ready`)
       .set(authHeader(other.id, 'user'))
       .send({ ready: true });
     expect(otherReady.status).toBe(200);
+
+    await wait(250); // past AUTO_READY_GRACE_MS=150
 
     const stateAfterOtherReady = await request(app)
       .get(`/api/v1/games/${gameId}/state`)

@@ -33,3 +33,14 @@ export const BONUS_WINDOW_MS = Number(process.env.BONUS_WINDOW_MS ?? 35000);
 // first (table_seat.ready gates that one) opens with this same ready
 // window before auto-starting.
 export const ROUND_READY_WINDOW_MS = Number(process.env.ROUND_READY_WINDOW_MS ?? 30000);
+
+// "Auto bereit" (roundReady.ts's setAutoReady/applyAutoReadyOnWindowOpen)
+// automates exactly one thing: the ready click itself. It must NOT also
+// skip whatever the ready window just opened on top of - the Auflösung
+// reveal of the round that just resolved, or (at 10 cards each) the
+// Stichrunde rule announcement - so a fully auto-ready table still holds
+// on that screen for a real, fixed amount of time before the next round
+// actually starts, exactly as if every player had read it and clicked
+// ready by hand. Manual ready-clicks are never delayed by this - a human
+// who clicks ready has, by definition, already seen the screen.
+export const AUTO_READY_GRACE_MS = Number(process.env.AUTO_READY_GRACE_MS ?? 5000);
