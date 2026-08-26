@@ -12,3 +12,6 @@ coverage/
 
 # Leftover git worktrees created by spawned background-agent tasks
 .claude/worktrees/
+
+# Lokale Screenshots
+screens/
