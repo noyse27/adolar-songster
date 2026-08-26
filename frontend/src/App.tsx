@@ -10,6 +10,7 @@ import { ProfilePage } from './pages/ProfilePage';
 import { AdminPage } from './pages/AdminPage';
 import { InvitesPage } from './pages/InvitesPage';
 import { LobbyPage } from './pages/LobbyPage';
+import { PlaylistsPage } from './pages/PlaylistsPage';
 import { CreateTablePage } from './pages/CreateTablePage';
 import { TableRoomPage } from './pages/TableRoomPage';
 import { DisplayPage } from './pages/DisplayPage';
@@ -32,6 +33,7 @@ export function App() {
         <Route path="/admin" element={<AdminPage />} />
         <Route path="/einladungen" element={<InvitesPage />} />
         <Route path="/lobby" element={<LobbyPage />} />
+        <Route path="/playlists" element={<PlaylistsPage />} />
         <Route path="/tisch/neu" element={<CreateTablePage />} />
         <Route path="/tisch/:tableId" element={<TableRoomPage />} />
         <Route path="/spiel/:gameId" element={<LiveGameBoard />} />
