@@ -12,6 +12,23 @@ import {
 
 const ACTIVE_ROUND_STATUSES = ['countdown', 'playing', 'token_solo', 'token_others'];
 
+// scheduleAutoReadyStart/clearPendingAutoReadyStart below: a manual ready
+// click can still complete the group and start the round immediately (see
+// checkAllReadyAndMaybeStart) even while an auto-ready grace timer from
+// applyAutoReadyOnWindowOpen is still pending for the same window - without
+// cancelling it here, that timer fires later regardless, re-running its own
+// (harmless but wasted) DB round-trip against whatever's using that gameId
+// by then.
+const pendingAutoReadyStarts = new Map<string, NodeJS.Timeout>();
+
+function clearPendingAutoReadyStart(gameId: string): void {
+  const existing = pendingAutoReadyStarts.get(gameId);
+  if (existing) {
+    clearTimeout(existing);
+    pendingAutoReadyStarts.delete(gameId);
+  }
+}
+
 // The timer itself (and the "arm the window" logic shared with
 // roundEngine.ts's automatic post-resolve trigger) lives in
 // roundReadyWindow.ts to avoid a circular import - see that module's
@@ -55,6 +72,7 @@ async function checkAllReadyAndMaybeStart(gameId: string, tableId: string): Prom
 
   if (allReady) {
     clearScheduledTimeout(gameId);
+    clearPendingAutoReadyStart(gameId);
     await clearReadyState(gameId);
     await startRoundAuto(gameId, []);
   }
@@ -177,11 +195,8 @@ async function applyAutoReadyOnWindowOpen(gameId: string): Promise<void> {
   scheduleAutoReadyStart(gameId, tableId);
 }
 
-const pendingAutoReadyStarts = new Map<string, NodeJS.Timeout>();
-
 function scheduleAutoReadyStart(gameId: string, tableId: string): void {
-  const existing = pendingAutoReadyStarts.get(gameId);
-  if (existing) clearTimeout(existing);
+  clearPendingAutoReadyStart(gameId);
   const timer = setTimeout(() => {
     pendingAutoReadyStarts.delete(gameId);
     checkAllReadyAndMaybeStart(gameId, tableId)
