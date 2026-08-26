@@ -356,3 +356,26 @@ Server -> Client:
 6. Tie-Break Token-Race: Serverzeit, bei <=50ms Gleichstand Zufall.
 7. Ein Song darf pro Partie nur einmal gespielt werden.
 8. Ueber mehrere "Neue Partie"-Laeufe derselben Tischsession sind Wiederholungen erst nach kompletter Playlist-Ausschoepfung erlaubt; danach erfolgt Songpool-Reset.
+# Ergänzung 2026-08-26: Spielerkommunikation
+
+Die verbindliche Detailquelle einschließlich Lieferstatus und Phasenmatrix ist
+`Adolar_Songster_Spielerkommunikation_Whatsnew_Quelle_v1_20260826.md`.
+
+## Kommunikations-REST
+
+- `GET|POST /communications/lobby/messages`: angemeldeter Lobby-Kanal.
+- `GET|POST /tables/{tableId}/messages`: nur mit aktivem Spieler- oder
+  Zuschauersitz am Tisch.
+- POST-Body `{ "body": string }`, getrimmt 1–500 Zeichen.
+- Verlauf: maximal 50 Nachrichten, höchstens 30 Minuten alt.
+- Absenderlimit: 12 Nachrichten/Minute; bei Überschreitung `429
+  CHAT_RATE_LIMITED`.
+
+## Kommunikations-WebSocket
+
+- `chat:message`: Server-Broadcast einer gespeicherten Nachricht in den
+  Lobby- oder Tischraum.
+- `game:reaction`: bidirektionaler Eventname. Client sendet `{ gameId,
+  reactionId }`; Server prüft aktiven Spielersitz, Phasenkatalog und
+  1-Sekunden-Cooldown und sendet das normalisierte Ereignis in den Spielraum.
+- Display-Tokens und Zuschauer können Reaktionen empfangen, aber nicht senden.

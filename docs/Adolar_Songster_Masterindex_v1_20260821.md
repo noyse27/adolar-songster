@@ -100,6 +100,15 @@ Sie verweist auf alle relevanten Dokumente, die fuer Umsetzung, Uebergabe und Ab
 - Verwendung: Direkt verwendbare Textquelle für den adolar-whatsnew-Skill
   bzw. zum unveränderten Weitergeben an neue Spieler.
 
+## 3.14 Spielerkommunikation / What’s-new-Quelle
+- Datei: Adolar_Songster_Spielerkommunikation_Whatsnew_Quelle_v1_20260826.md
+- Inhalt: Lieferstatus, Nutzerverhalten, Spielphasenmatrix, REST-/Socket-
+  Verträge, Datenschutz, Tests, Restrisiken und freigegebener Kerntext für
+  Lobby-/Tischchat und Playboard-Schnellreaktionen.
+- Verwendung: Verbindliche Quelle für Review, Deployment und spätere
+  What’s-new-Erstellung. Abschnitt 1 trennt ausdrücklich „implementiert auf
+  Feature-Branch“ von „gemergt/deployed“.
+
 ## 4. Bildmaterial
 - songster_home.png
 - songster_playboard.png
@@ -135,3 +144,6 @@ Danach pruefen:
   v0.2.0-beta.
 - 2026-08-25: Hostmodus-Anleitung fuer Einsteiger ergaenzt (Abschnitt
   3.13) - fertige Endnutzer-Anleitung zum Hostmodus-Feature.
+- 2026-08-26: Spielerkommunikations-/What’s-new-Quelle ergänzt (Abschnitt
+  3.14) - Lobby-/Tischchat und phasenabhängige Playboard-Reaktionen auf
+  `codex/feature-player-communication` dokumentiert; Merge/Deployment offen.

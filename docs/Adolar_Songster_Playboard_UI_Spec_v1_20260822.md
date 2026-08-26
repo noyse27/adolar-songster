@@ -262,3 +262,19 @@ dealing → idle ⇄ waiting → countdown → playing → reveal → idle (naec
 - `countdown`: alle (bzw. alle bereiten) Spieler bereit, 3s bis Songstart.
 - `playing`: 25s-Songfenster, Platzierung/Schieben/Token möglich.
 - `reveal`: 5s Auflösung (Ring-Rückseite + grün/rot-Feedback je Zeile).
+
+## 10. Ergänzung 2026-08-26: phasenabhängige Schnellreaktionen
+
+Diese Ergänzung gehört zum Feature-Branch
+`codex/feature-player-communication`; Merge und Deployment sind zum Stand
+2026-08-26 noch offen. Die vollständige Phasenmatrix und technische Quelle
+steht in
+`Adolar_Songster_Spielerkommunikation_Whatsnew_Quelle_v1_20260826.md`.
+
+- Freier Tischchat wird während der Partie nicht im Playboard fortgeführt.
+- Aktive Spieler erhalten eine kompakte Reaktionsleiste unter den
+  Spielerzeilen. Während Song/Countdown wird die Auswahl auf dezente
+  Reaktionen begrenzt.
+- Empfangene Reaktionen erscheinen 3,5 Sekunden als Blase am Avatar.
+- Der Hostbildschirm zeigt alle Blasen, sendet aber selbst keine Reaktionen.
+- Die Funktion verändert weder Rundenstatus noch Timer oder Audio.

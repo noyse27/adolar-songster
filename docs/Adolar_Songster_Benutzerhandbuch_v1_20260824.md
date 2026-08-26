@@ -53,6 +53,10 @@ Karten hat, gewinnt. Zugang ausschließlich per Einladungscode - kein
 - "Neuen Tisch erstellen" führt zu Abschnitt 5.
 - Live-Aktualisierung per WebSocket, sobald sich an einem Tisch etwas
   ändert.
+- **Feature-Branch Spielerkommunikation (noch nicht deployed):** Unter der
+  Tischliste steht ein Live-Chat für alle angemeldeten Nutzer. Er zeigt
+  maximal 50 Nachrichten aus den letzten 30 Minuten; eine Nachricht darf
+  höchstens 500 Zeichen lang sein.
 
 ## 5. Tisch erstellen (`/tisch/neu`)
 
@@ -92,6 +96,10 @@ Der/die Erstellende wird automatisch als erste(r) Spieler(in) gesetzt.
 - **Verlassen**: vorzeitiges Verlassen während einer laufenden Partie kann
   Karma kosten (siehe Abschnitt 8), außer man kehrt innerhalb von 90
   Sekunden zurück.
+- **Feature-Branch Spielerkommunikation (noch nicht deployed):** Nach dem
+  Beitritt steht Spielern und Zuschauern ein eigener Tisch-Chat zur
+  Verfügung. Nutzer ohne aktiven Sitz können ihn weder lesen noch
+  beschreiben.
 
 ## 7. Das Spiel
 
@@ -117,6 +125,11 @@ Der/die Erstellende wird automatisch als erste(r) Spieler(in) gesetzt.
   einem neuen Song.
 - **Sieg**: wer zuerst 10 korrekt platzierte Karten hat, gewinnt die
   Partie.
+- **Feature-Branch Spielerkommunikation (noch nicht deployed):** Im
+  Playboard gibt es statt freiem Text kurze, von der Spielphase abhängige
+  Reaktionen. Sie erscheinen 3,5 Sekunden am Avatar und auch auf dem
+  gemeinsamen Hostdisplay. Zuschauer und Displaygeräte können sie nur
+  empfangen.
 
 ## 8. Punkte & Karma
 
