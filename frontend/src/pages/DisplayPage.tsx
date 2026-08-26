@@ -12,7 +12,7 @@ import { placeAt } from '../playboard/gameLogic';
 import { PlayerRow } from '../playboard/PlayerRow';
 import { CenterControl } from '../playboard/CenterControl';
 import { PendingResult, PlayerState, TokenState } from '../playboard/types';
-import { GameReactionEvent, reactionDefinition } from '../game/reactions';
+import { GameReactionEvent, ReactionConfig } from '../game/reactions';
 
 interface DisplayTableDetail {
   tableId: string;
@@ -105,6 +105,9 @@ export function DisplayPage() {
     const reactionTimers = reactionTimersRef.current;
     socket.emit('game:join-room', gameId);
     const onGameUpdate = (payload: GameState) => setState(payload);
+    const onConfigUpdate = (payload: { reactions: ReactionConfig }) => {
+      setState((current) => current ? { ...current, reactionConfig: payload.reactions } : current);
+    };
     const onReaction = (reaction: GameReactionEvent) => {
       if (reaction.gameId !== gameId) return;
       setReactionsByUser((current) => ({ ...current, [reaction.userId]: reaction }));
@@ -123,9 +126,11 @@ export function DisplayPage() {
     };
     socket.on('game:update', onGameUpdate);
     socket.on('game:reaction', onReaction);
+    socket.on('communication:config-updated', onConfigUpdate);
     return () => {
       socket.off('game:update', onGameUpdate);
       socket.off('game:reaction', onReaction);
+      socket.off('communication:config-updated', onConfigUpdate);
       socket.emit('game:leave-room', gameId);
       for (const timer of reactionTimers.values()) window.clearTimeout(timer);
       reactionTimers.clear();
@@ -403,11 +408,9 @@ export function DisplayPage() {
                 guessValue=""
                 guessActive={false}
                 guessWrongValue={null}
-                reaction={(() => {
-                  const event = reactionsByUser[p.userId];
-                  const definition = event ? reactionDefinition(event.reactionId) : undefined;
-                  return definition ? { emoji: definition.emoji, label: definition.label } : undefined;
-                })()}
+                reaction={reactionsByUser[p.userId]
+                  ? { emoji: reactionsByUser[p.userId].symbol, label: reactionsByUser[p.userId].label }
+                  : undefined}
               />
             );
           })}

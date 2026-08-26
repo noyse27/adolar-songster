@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { communicationPhase, REACTIONS } from './reactions';
+import { communicationPhase, ReactionConfig } from './reactions';
 import { GameState } from './types';
+
+const emptyReactions: ReactionConfig = {
+  waiting: [], countdown: [], playing: [], token: [], resolved: [], finished: [],
+};
 
 function state(overrides: Partial<GameState> = {}): GameState {
   return {
@@ -16,6 +20,7 @@ function state(overrides: Partial<GameState> = {}): GameState {
     roundReadyPhase: null,
     autoReadyUserIds: [],
     displayAnchorPresent: false,
+    reactionConfig: emptyReactions,
     ...overrides,
   };
 }
@@ -26,10 +31,7 @@ describe('Playboard reactions', () => {
     expect(communicationPhase(state({ status: 'finished' }))).toBe('finished');
   });
 
-  it('offers quiet choices while a song is active', () => {
-    const activeIds = REACTIONS.filter((reaction) => reaction.phases.includes('active')).map((reaction) => reaction.id);
-    expect(activeIds).toEqual(['like', 'think', 'technical']);
-    expect(activeIds).not.toContain('laugh');
-    expect(activeIds).not.toContain('hello');
+  it('keeps six independently configurable reaction phases', () => {
+    expect(Object.keys(emptyReactions)).toEqual(['waiting', 'countdown', 'playing', 'token', 'resolved', 'finished']);
   });
 });

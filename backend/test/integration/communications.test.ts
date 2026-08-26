@@ -10,6 +10,46 @@ afterAll(async () => {
 });
 
 describe('player communication', () => {
+  it('lets only admins configure filtering, emoticons and phase reactions', async () => {
+    const admin = await createUserDirect({ role: 'admin' });
+    const user = await createUserDirect({});
+    const initial = await request(app)
+      .get('/api/v1/admin/communication-settings')
+      .set(authHeader(admin.id, 'admin'));
+    expect(initial.status).toBe(200);
+    expect(initial.body.catalog.some((asset: { id: string }) => asset.id === 'dance')).toBe(true);
+    expect(initial.body.reactions.waiting.length).toBeLessThanOrEqual(8);
+
+    const forbidden = await request(app)
+      .get('/api/v1/admin/communication-settings')
+      .set(authHeader(user.id, 'user'));
+    expect(forbidden.status).toBe(403);
+
+    const configured = await request(app)
+      .put('/api/v1/admin/communication-settings')
+      .set(authHeader(admin.id, 'admin'))
+      .send({
+        textChat: { autoConvertEmoticons: true, blockedWords: ['Mist'] },
+        reactions: initial.body.reactions,
+      });
+    expect(configured.status).toBe(200);
+
+    const message = await request(app)
+      .post('/api/v1/communications/lobby/messages')
+      .set(authHeader(user.id, 'user'))
+      .send({ body: 'So ein Mist :D' });
+    expect(message.status).toBe(201);
+    expect(message.body.message.body).toBe('So ein *piep* 😄');
+
+    await request(app)
+      .put('/api/v1/admin/communication-settings')
+      .set(authHeader(admin.id, 'admin'))
+      .send({
+        textChat: { autoConvertEmoticons: false, blockedWords: [] },
+        reactions: initial.body.defaultReactions,
+      });
+  });
+
   it('stores and returns lobby messages without exposing markup as a separate field', async () => {
     const sender = await createUserDirect({});
     const body = '<img src=x onerror=alert(1)> Hallo';

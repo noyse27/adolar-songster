@@ -3,6 +3,13 @@ import crypto from 'crypto';
 import { pool } from '../db/pool';
 import { requireAdmin, requireAuth } from '../middleware/auth';
 import { getSetting } from '../services/systemSettings';
+import {
+  loadCommunicationSettings,
+  normalizeBlockedWords,
+  saveCommunicationSettings,
+  validateReactionConfig,
+} from '../services/communication';
+import { broadcastReactionConfig } from '../realtime/broadcast';
 import { getSyncState, triggerBackgroundSync } from '../services/adolarSync';
 import { listCatalogedPlaylists, listPlaylistsForAdmin, updatePlaylistOverrides } from '../services/adolarPlaylistCatalog';
 import { ADMIN_INACTIVE_MS } from '../services/tableActivity';
@@ -39,6 +46,27 @@ adminRouter.post('/adolar-sync', async (_req, res) => {
 
 adminRouter.get('/adolar-sync/status', async (_req, res) => {
   res.status(200).json(getSyncState());
+});
+
+adminRouter.get('/communication-settings', async (_req, res) => {
+  res.status(200).json(await loadCommunicationSettings());
+});
+
+adminRouter.put('/communication-settings', async (req, res) => {
+  const textChat = req.body?.textChat;
+  const blockedWords = normalizeBlockedWords(textChat?.blockedWords);
+  const reactions = validateReactionConfig(req.body?.reactions);
+  if (typeof textChat?.autoConvertEmoticons !== 'boolean' || !blockedWords || !reactions) {
+    res.status(400).json({ error: 'invalid communication settings' });
+    return;
+  }
+
+  await saveCommunicationSettings({
+    textChat: { autoConvertEmoticons: textChat.autoConvertEmoticons, blockedWords },
+    reactions,
+  });
+  broadcastReactionConfig(reactions);
+  res.status(200).json({ textChat: { autoConvertEmoticons: textChat.autoConvertEmoticons, blockedWords }, reactions });
 });
 
 // Backs the admin user-management screen: the mutation endpoints below

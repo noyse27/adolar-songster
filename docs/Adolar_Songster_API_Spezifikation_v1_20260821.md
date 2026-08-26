@@ -370,6 +370,14 @@ Die verbindliche Detailquelle einschließlich Lieferstatus und Phasenmatrix ist
 - Verlauf: maximal 50 Nachrichten, höchstens 30 Minuten alt.
 - Absenderlimit: 12 Nachrichten/Minute; bei Überschreitung `429
   CHAT_RATE_LIMITED`.
+- Vor dem Speichern wendet der Server die Admin-Konfiguration an: vollständige
+  Wort-/Phrasentreffer werden durch `*piep*` ersetzt und bekannte Emoticons werden
+  optional in Unicode-Emojis konvertiert.
+- `GET /admin/communication-settings`: liefert Admins `textChat`, die sechs
+  Reaktionslisten, den kuratierten Katalog und die Standardbelegung.
+- `PUT /admin/communication-settings`: ersetzt die Textchat- und
+  Reaktionseinstellungen atomar. Pro Phase sind höchstens acht unterschiedliche
+  Katalog-IDs mit Beschriftungen von 1–24 Zeichen zulässig.
 
 ## Kommunikations-WebSocket
 
@@ -377,5 +385,11 @@ Die verbindliche Detailquelle einschließlich Lieferstatus und Phasenmatrix ist
   Lobby- oder Tischraum.
 - `game:reaction`: bidirektionaler Eventname. Client sendet `{ gameId,
   reactionId }`; Server prüft aktiven Spielersitz, Phasenkatalog und
-  1-Sekunden-Cooldown und sendet das normalisierte Ereignis in den Spielraum.
+  1-Sekunden-Cooldown und sendet das normalisierte Ereignis einschließlich
+  `phase`, `symbol`, `label` und `kind` in den Spielraum.
+- Kommunikationsphasen: `waiting`, `countdown`, `playing`, `token`,
+  `resolved`, `finished`.
+- `communication:config-updated`: Server verteilt nach einem Admin-Update die
+  öffentlichen Reaktionslisten an alle verbundenen Clients. Gesperrte Wörter sind
+  nicht Teil dieses Ereignisses.
 - Display-Tokens und Zuschauer können Reaktionen empfangen, aber nicht senden.

@@ -266,8 +266,8 @@ dealing → idle ⇄ waiting → countdown → playing → reveal → idle (naec
 ## 10. Ergänzung 2026-08-26: phasenabhängige Schnellreaktionen
 
 Diese Ergänzung gehört zum Feature-Branch
-`codex/feature-player-communication`; Merge und Deployment sind zum Stand
-2026-08-26 noch offen. Die vollständige Phasenmatrix und technische Quelle
+`codex/feature-player-communication`; der Merge ist zum Stand 2026-08-26
+noch offen. Die vollständige Phasenmatrix und technische Quelle
 steht in
 `Adolar_Songster_Spielerkommunikation_Whatsnew_Quelle_v1_20260826.md`.
 
@@ -275,6 +275,11 @@ steht in
 - Aktive Spieler erhalten eine kompakte Reaktionsleiste unter den
   Spielerzeilen. Während Song/Countdown wird die Auswahl auf dezente
   Reaktionen begrenzt.
+- Die sechs Kommunikationsphasen sind `waiting`, `countdown`, `playing`,
+  `token`, `resolved` und `finished`. Ihre Belegung wird im Adminbereich
+  konfiguriert; pro Phase sind maximal acht eindeutige Katalogmotive möglich.
+- Änderungen an der Reaktionsbelegung werden live an bereits geöffnete
+  Playboards und Hostdisplays verteilt.
 - Empfangene Reaktionen erscheinen 3,5 Sekunden als Blase am Avatar.
 - Der Hostbildschirm zeigt alle Blasen, sendet aber selbst keine Reaktionen.
 - Die Funktion verändert weder Rundenstatus noch Timer oder Audio.

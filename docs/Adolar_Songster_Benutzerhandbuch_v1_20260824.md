@@ -53,7 +53,7 @@ Karten hat, gewinnt. Zugang ausschließlich per Einladungscode - kein
 - "Neuen Tisch erstellen" führt zu Abschnitt 5.
 - Live-Aktualisierung per WebSocket, sobald sich an einem Tisch etwas
   ändert.
-- **Feature-Branch Spielerkommunikation (noch nicht deployed):** Unter der
+- **Feature-Branch Spielerkommunikation:** Unter der
   Tischliste steht ein Live-Chat für alle angemeldeten Nutzer. Er zeigt
   maximal 50 Nachrichten aus den letzten 30 Minuten; eine Nachricht darf
   höchstens 500 Zeichen lang sein.
@@ -96,7 +96,7 @@ Der/die Erstellende wird automatisch als erste(r) Spieler(in) gesetzt.
 - **Verlassen**: vorzeitiges Verlassen während einer laufenden Partie kann
   Karma kosten (siehe Abschnitt 8), außer man kehrt innerhalb von 90
   Sekunden zurück.
-- **Feature-Branch Spielerkommunikation (noch nicht deployed):** Nach dem
+- **Feature-Branch Spielerkommunikation:** Nach dem
   Beitritt steht Spielern und Zuschauern ein eigener Tisch-Chat zur
   Verfügung. Nutzer ohne aktiven Sitz können ihn weder lesen noch
   beschreiben.
@@ -125,7 +125,7 @@ Der/die Erstellende wird automatisch als erste(r) Spieler(in) gesetzt.
   einem neuen Song.
 - **Sieg**: wer zuerst 10 korrekt platzierte Karten hat, gewinnt die
   Partie.
-- **Feature-Branch Spielerkommunikation (noch nicht deployed):** Im
+- **Feature-Branch Spielerkommunikation:** Im
   Playboard gibt es statt freiem Text kurze, von der Spielphase abhängige
   Reaktionen. Sie erscheinen 3,5 Sekunden am Avatar und auch auf dem
   gemeinsamen Hostdisplay. Zuschauer und Displaygeräte können sie nur
@@ -202,6 +202,17 @@ Der PDF-Export enthält:
 - **Musikquelle**: Adolar-Server-Adresse/Token konfigurieren, Sync-Status
   ("zuletzt synchronisiert"), manueller Sync-Anstoß (läuft asynchron im
   Hintergrund, kein Blockieren der Oberfläche).
+- **Chateinstellungen – Textchat**: automatische Umwandlung bekannter
+  Text-Smileys wie `:)`, `:D`, `;)`, `:(` und `<3` ein-/ausschalten und mit
+  Live-Vorschau prüfen. Der kommaseparierte Wortfilter ersetzt vollständige,
+  groß-/kleinschreibungsunabhängige Treffer serverseitig durch `*piep*`.
+- **Chateinstellungen – Playboard-Reaktionen**: einen von sechs Spielzuständen
+  auswählen, die aktuelle Reihenfolge prüfen oder ändern und Einträge über das X
+  entfernen. Aus 20 kuratierten Motiven – einschließlich **„Elvis tanzt“** –
+  lassen sich pro Zustand höchstens acht eindeutige Emoji-/Text-Kombinationen
+  hinzufügen. Vor dem Hinzufügen kann die Beschriftung angepasst werden; für jeden
+  Zustand kann die Standardbelegung wiederhergestellt werden. Speichern verteilt
+  die Reaktionsauswahl live an laufende Playboards und Hostdisplays.
 - **Einladungen**: wie Abschnitt 11, hier für alle Nutzer einsehbar/
   verwaltbar.
 - **Song-Pool**: Suche über Titel/Interpret (statt kompletter Listenabruf),

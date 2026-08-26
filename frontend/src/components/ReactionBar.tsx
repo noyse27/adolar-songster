@@ -1,25 +1,27 @@
-import { CommunicationPhase, REACTIONS, ReactionId } from '../game/reactions';
+import { ConfiguredReaction, ReactionPhase } from '../game/reactions';
 
 interface ReactionBarProps {
-  phase: CommunicationPhase;
+  phase: ReactionPhase;
+  reactions: ConfiguredReaction[];
   sending: boolean;
-  onReact: (reactionId: ReactionId) => void;
+  onReact: (reactionId: string) => void;
 }
 
-const PHASE_HINT: Record<CommunicationPhase, string> = {
+const PHASE_HINT: Record<ReactionPhase, string> = {
   waiting: 'Zwischen den Runden',
   countdown: 'Countdown – kurz und ruhig',
-  active: 'Song läuft – nur dezente Reaktionen',
+  playing: 'Song läuft',
+  token: 'Buzzer-/Tokenphase',
+  resolved: 'Auflösung',
   finished: 'Partie beendet',
 };
 
-export function ReactionBar({ phase, sending, onReact }: ReactionBarProps) {
-  const available = REACTIONS.filter((reaction) => reaction.phases.includes(phase));
+export function ReactionBar({ phase, reactions, sending, onReact }: ReactionBarProps) {
   return (
     <div className="pb-reaction-bar" aria-label="Schnellreaktionen">
       <span className="pb-reaction-hint">{PHASE_HINT[phase]}</span>
       <div className="pb-reaction-actions">
-        {available.map((reaction) => (
+        {reactions.map((reaction) => (
           <button
             key={reaction.id}
             type="button"
@@ -29,7 +31,7 @@ export function ReactionBar({ phase, sending, onReact }: ReactionBarProps) {
             aria-label={reaction.label}
             onClick={() => onReact(reaction.id)}
           >
-            <span aria-hidden="true">{reaction.emoji}</span>
+            <span aria-hidden="true">{reaction.symbol}</span>
             <small>{reaction.label}</small>
           </button>
         ))}

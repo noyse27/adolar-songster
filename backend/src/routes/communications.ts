@@ -6,6 +6,7 @@ import {
   createChatMessage,
   listChatMessages,
   normalizeChatBody,
+  prepareChatBody,
 } from '../services/communication';
 import { loadActiveSeat } from '../services/tableAuthorization';
 
@@ -51,7 +52,12 @@ async function createAndSend(
     return;
   }
 
-  const result = await createChatMessage(scope, tableId, req.userId as string, body);
+  const preparedBody = normalizeChatBody(await prepareChatBody(body));
+  if (!preparedBody) {
+    res.status(400).json({ error: `filtered body must contain between 1 and ${CHAT_MAX_LENGTH} characters` });
+    return;
+  }
+  const result = await createChatMessage(scope, tableId, req.userId as string, preparedBody);
   if (!result.ok) {
     res.setHeader('Retry-After', result.retryAfterSeconds);
     res.status(429).json({ error: 'CHAT_RATE_LIMITED', retryAfterSeconds: result.retryAfterSeconds });

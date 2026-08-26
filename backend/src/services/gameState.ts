@@ -3,6 +3,7 @@ import { fetchTimeline } from './timeline';
 import { BONUS_SONG_DURATION_MS, ROUND_READY_WINDOW_MS, TOKENS_PER_PLAYER } from './roundConfig';
 import { AUTO_CLOSE_MS } from './tableRestart';
 import { RANK_SCORE_SQL } from './rankScore';
+import { loadReactionConfig, ReactionConfig } from './communication';
 
 export interface GamePlayerState {
   userId: string;
@@ -98,6 +99,7 @@ export interface GameState {
   // switches to showing only their own row and muting itself once a shared
   // screen is doing the showing/playing for everyone.
   displayAnchorPresent: boolean;
+  reactionConfig: ReactionConfig;
 }
 
 export async function loadGameState(
@@ -285,5 +287,6 @@ export async function loadGameState(
     roundReadyPhase,
     autoReadyUserIds: autoReadyResult.rows.map((r) => r.user_id),
     displayAnchorPresent: game.display_anchor_present,
+    reactionConfig: await loadReactionConfig(),
   };
 }

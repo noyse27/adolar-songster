@@ -7,7 +7,7 @@ import { pool } from '../db/pool';
 import { setIO, tableRoom, lobbyRoom, gameRoom } from './io';
 import { broadcastGame } from './broadcast';
 import { loadActiveSeat, authorizeDisplayGame, authorizeGameViewer } from '../services/tableAuthorization';
-import { isReactionAllowed, isReactionId, loadCommunicationPhase } from '../services/communication';
+import { isReactionAssetId, loadConfiguredReaction, loadReactionPhase } from '../services/communication';
 
 type RoomJoinAck = (result: { ok: boolean; error?: string }) => void;
 type ReactionAck = (result: { ok: boolean; error?: string }) => void;
@@ -180,7 +180,7 @@ export function createSocketServer(httpServer: HttpServer): Server {
           return;
         }
         const { gameId, reactionId } = payload as { gameId?: unknown; reactionId?: unknown };
-        if (typeof gameId !== 'string' || !isReactionId(reactionId)) {
+        if (typeof gameId !== 'string' || !isReactionAssetId(reactionId)) {
           ack?.({ ok: false, error: 'invalid payload' });
           return;
         }
@@ -201,8 +201,9 @@ export function createSocketServer(httpServer: HttpServer): Server {
           ack?.({ ok: false, error: 'reaction rate limited' });
           return;
         }
-        const phase = await loadCommunicationPhase(gameId);
-        if (!phase || !isReactionAllowed(reactionId, phase)) {
+        const phase = await loadReactionPhase(gameId);
+        const configuredReaction = phase ? await loadConfiguredReaction(phase, reactionId) : null;
+        if (!phase || !configuredReaction) {
           ack?.({ ok: false, error: 'reaction not available in this phase' });
           return;
         }
@@ -221,6 +222,9 @@ export function createSocketServer(httpServer: HttpServer): Server {
           username,
           reactionId,
           phase,
+          symbol: configuredReaction.symbol,
+          label: configuredReaction.label,
+          kind: configuredReaction.kind,
           sentAt: new Date(now).toISOString(),
         });
         ack?.({ ok: true });

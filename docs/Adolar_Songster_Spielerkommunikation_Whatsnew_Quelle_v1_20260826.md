@@ -15,7 +15,10 @@ Zweck: Verbindliche Übergabequelle für Entwicklung, Review, Release und eine s
 | Tisch-Chat | auf Feature-Branch implementiert |
 | Playboard-Schnellreaktionen | auf Feature-Branch implementiert |
 | Anzeige der Reaktionen im Hostmodus | auf Feature-Branch implementiert |
-| Datenbankmigration | implementiert und gegen leere Testdatenbank geprüft |
+| Adminbereich „Chateinstellungen“ | auf Feature-Branch implementiert |
+| Emoticon-Konvertierung und Wortfilter | auf Feature-Branch implementiert |
+| Administrierbarer Reaktionskatalog | auf Feature-Branch implementiert |
+| Datenbankmigrationen | implementiert und gegen separate Testdatenbank geprüft |
 | Unit-/Integrationsprüfung | grün |
 | Review/Merge nach `main` | **noch offen** |
 | Deployment in die laufende Instanz | **noch offen** |
@@ -57,6 +60,26 @@ Update vorbereitet“ oder „auf dem Feature-Branch implementiert“.
 - Reaktionen werden nicht in PostgreSQL gespeichert.
 - Pro Socket ist höchstens eine Reaktion pro Sekunde zulässig.
 
+### 2.4 Administration
+
+- Im Adminbereich öffnet der Abschnitt **Chateinstellungen** eine Oberfläche mit
+  getrennten Reitern für **Textchat** und **Playboard-Reaktionen**.
+- Die optionale Emoticon-Konvertierung ersetzt serverseitig unter anderem `:)`,
+  `:D`, `;)`, `:(` und `<3` durch Unicode-Emojis. Eine Live-Vorschau im
+  Adminbereich zeigt das Ergebnis vor dem Speichern.
+- Der Wortfilter nimmt bis zu 100 kommaseparierte Wörter oder Phrasen mit je maximal
+  40 Zeichen auf. Treffer werden ohne Beachtung der Groß-/Kleinschreibung als
+  vollständige Wörter bzw. Phrasen durch `*piep*` ersetzt.
+- Für jeden der sechs Spielzustände wählt ein Admin bis zu acht Reaktionen aus einem
+  kuratierten Katalog. Ein Motiv darf pro Zustand nur einmal vorkommen; Beschriftungen
+  sind frei anpassbar (1–24 Zeichen), Einträge können entfernt und sortiert werden.
+- Der Katalog enthält 20 sichere, codeeigene Unicode-Motive einschließlich der
+  Sticker-Option **„Elvis tanzt“** (`🕺`). Freie HTML-, URL- oder Bild-Uploads sind
+  absichtlich nicht möglich.
+- Nach dem Speichern wird die neue Reaktionskonfiguration per Socket.IO live an
+  Playboards und Hostdisplays verteilt. Die Wortfilterliste bleibt dabei ausschließlich
+  im geschützten Admin-/Serverkontext.
+
 ## 3. Spielphasen und Reaktionskatalog
 
 „Phase“ bezeichnet in diesem Abschnitt ausschließlich den aktuellen Spielzustand,
@@ -67,11 +90,15 @@ Kommunikationszustand ab.
 |---|---|---|
 | `waiting` | Noch keine Runde, letzte Runde `resolved` oder Bereit-Fenster | 👋 Hallo, 👍 Stark, 😂 Lustig, 🎯 Guter Tipp, ⚠️ Technikproblem |
 | `countdown` | Runde hat Status `countdown` | 👍 Stark, 🤔 Keine Ahnung, ⚠️ Technikproblem |
-| `active` | `playing`, `token_solo` oder `token_others` | 👍 Stark, 🤔 Keine Ahnung, ⚠️ Technikproblem |
+| `playing` | Runde hat Status `playing` | 👍 Stark, 🤔 Keine Ahnung, ⚠️ Technikproblem |
+| `token` | `token_solo` oder `token_others` | 👍 Stark, 🤔 Keine Ahnung, ⚠️ Technikproblem |
+| `resolved` | letzte Runde hat Status `resolved` | 👍 Stark, 😂 Lustig, 🎯 Guter Tipp, ⚠️ Technikproblem |
 | `finished` | Partie hat Status `finished` | 👍 Stark, 😂 Lustig, 🎯 Guter Tipp, ⚠️ Technikproblem |
 
-Der Server prüft diese Matrix erneut. Ein manipulierter Client kann daher weder freie
-Emoji-/HTML-Payloads noch eine in der aktuellen Phase gesperrte Reaktion verteilen.
+Die Tabelle zeigt die ausgelieferten Standardwerte. Maßgeblich ist nach einer
+Adminänderung die gespeicherte Konfiguration. Der Server prüft sie bei jedem Ereignis
+erneut. Ein manipulierter Client kann daher weder freie Emoji-/HTML-Payloads noch eine
+in der aktuellen Phase gesperrte Reaktion verteilen.
 
 ## 4. Technische Architektur
 
@@ -90,6 +117,8 @@ REST-Verträge:
 | `POST` | `/api/v1/communications/lobby/messages` | angemeldet |
 | `GET` | `/api/v1/tables/:tableId/messages` | aktiver Tischsitz |
 | `POST` | `/api/v1/tables/:tableId/messages` | aktiver Tischsitz |
+| `GET` | `/api/v1/admin/communication-settings` | Admin |
+| `PUT` | `/api/v1/admin/communication-settings` | Admin |
 
 POST-Body:
 
@@ -138,8 +167,11 @@ Server → berechtigter Spielraum:
   "gameId": "uuid",
   "userId": "uuid",
   "username": "Name",
-  "reactionId": "hello|like|laugh|think|target|technical",
-  "phase": "waiting|countdown|active|finished",
+  "reactionId": "Katalog-ID",
+  "phase": "waiting|countdown|playing|token|resolved|finished",
+  "symbol": "👍",
+  "label": "Stark",
+  "kind": "emoji|sticker",
   "sentAt": "ISO-8601"
 }
 ```
@@ -148,9 +180,21 @@ Der Server prüft dabei Spielzugehörigkeit, Sitztyp `player`, Reaktionskatalog,
 Spielphase und Cooldown. Ein Display-Token besitzt keine Nutzeridentität und kann
 deshalb nur empfangen.
 
+Nach einem erfolgreichen Admin-Update verteilt der Server zusätzlich:
+
+```text
+communication:config-updated { reactions }
+```
+
+Der aktuelle Reaktionskatalog ist außerdem Teil des regulären Spielzustands, damit
+neu verbundene oder neu geladene Clients ohne separates Adminrecht konsistent starten.
+
 ## 5. Datenmodell und Aufbewahrung
 
-Migration: `backend/migrations/1757664000000_player-communication.js`
+Migrationen:
+
+- `backend/migrations/1757664000000_player-communication.js`
+- `backend/migrations/1757750400000_communication-admin-settings.js`
 
 Die Tabelle `chat_message` enthält Kanaltyp, optionale Tisch-ID, Absender, Text,
 Zeitstempel und ein vorbereitetes `deleted_at`. Constraints erzwingen:
@@ -163,6 +207,12 @@ Zeitstempel und ein vorbereitetes `deleted_at`. Constraints erzwingen:
 Ein Job löscht alle fünf Minuten Nachrichten, die älter als 30 Minuten sind. Die
 Leseabfrage blendet abgelaufene Nachrichten unabhängig vom Job bereits aus.
 
+Die Tabelle `playboard_reaction` speichert Phase, Katalog-ID, Beschriftung und
+Sortierreihenfolge. Datenbank-Constraints sichern sechs gültige Phasen, maximal acht
+Positionen sowie eindeutige Motive und Positionen pro Phase. Die beiden Textchatwerte
+werden unter `communication.chat.*` in `system_setting` gehalten. Das Speichern aller
+Kommunikationseinstellungen erfolgt in einer gemeinsamen Transaktion.
+
 ## 6. Sicherheits- und Datenschutzentscheidungen
 
 - React rendert Nachrichten als Text, nicht als HTML. Eingesendetes Markup wird
@@ -170,6 +220,10 @@ Leseabfrage blendet abgelaufene Nachrichten unabhängig vom Job bereits aus.
 - Tischberechtigungen werden bei jedem Lese- und Schreibzugriff neu aus der DB geladen.
 - Reaktionsberechtigungen werden bei jedem Socket-Ereignis neu geprüft; bloßer Besitz
   einer `gameId` genügt nicht.
+- Wortfilter und Emoticon-Konvertierung erfolgen vor dem Speichern serverseitig und
+  können daher nicht durch einen veränderten Browser umgangen werden.
+- Reaktionsmotive stammen ausschließlich aus dem kuratierten Serverkatalog; ein
+  Admin-Request kann keine beliebigen Symbole, URLs oder Markup einschleusen.
 - Chatdaten sind kurzlebig; Reaktionen sind vollständig flüchtig.
 - Die globale API-Begrenzung bleibt aktiv, zusätzlich gilt das Absenderlimit im Chat.
 - Noch nicht umgesetzt sind Nutzerblockierung, Melden, Moderationsansicht und manuelles
@@ -179,14 +233,15 @@ Leseabfrage blendet abgelaufene Nachrichten unabhängig vom Job bereits aus.
 
 | Bereich | Wesentliche Dateien |
 |---|---|
-| Migration/Datenmodell | `backend/migrations/1757664000000_player-communication.js` |
-| Chat-/Phasenlogik | `backend/src/services/communication.ts` |
-| REST | `backend/src/routes/communications.ts`, `backend/src/app.ts` |
+| Migration/Datenmodell | `backend/migrations/1757664000000_player-communication.js`, `backend/migrations/1757750400000_communication-admin-settings.js` |
+| Chat-/Phasen-/Konfigurationslogik | `backend/src/services/communication.ts` |
+| REST | `backend/src/routes/communications.ts`, `backend/src/routes/admin.ts`, `backend/src/app.ts` |
 | Echtzeit | `backend/src/realtime/socketServer.ts`, `backend/src/realtime/broadcast.ts` |
 | Aufräumjob | `backend/src/services/scheduler.ts`, `backend/src/index.ts` |
 | Chat UI | `frontend/src/components/ChatPanel.tsx`, `frontend/src/pages/LobbyPage.tsx`, `frontend/src/pages/TableRoomPage.tsx` |
 | Reaktions-UI | `frontend/src/components/ReactionBar.tsx`, `frontend/src/game/reactions.ts`, `frontend/src/game/LiveGameBoard.tsx` |
 | Hostmodus | `frontend/src/pages/DisplayPage.tsx` |
+| Admin UI | `frontend/src/pages/CommunicationSettingsSection.tsx`, `frontend/src/pages/AdminPage.tsx` |
 | Gestaltung | `frontend/src/pages/pages.css`, `frontend/src/playboard/Playboard.css` |
 
 ## 8. Prüfung und Abnahme
@@ -194,9 +249,9 @@ Leseabfrage blendet abgelaufene Nachrichten unabhängig vom Job bereits aus.
 Am 2026-08-26 ausgeführt:
 
 - Backend- und Frontend-Lint: erfolgreich, keine Warnungen nach Bereinigung.
-- Backend-Unit-Tests: 49/49 erfolgreich.
+- Backend-Unit-Tests: 51/51 erfolgreich.
 - Frontend-Unit-Tests: 3/3 erfolgreich.
-- Backend-Integrationstests: 105/105 erfolgreich auf separater Testdatenbank.
+- Backend-Integrationstests: 106/106 erfolgreich auf separater Testdatenbank.
 - Produktionsbuild beider Workspaces: erfolgreich.
 - Migration von leerer Datenbank bis einschließlich Spielerkommunikation: erfolgreich.
 
@@ -206,6 +261,8 @@ Feature-spezifisch geprüft werden unter anderem:
 - Lobby-Verlauf und 30-Minuten-Grenze;
 - Zugriff durch Tischspieler/Zuschauer und Ablehnung fremder Konten;
 - Reaktionskatalog und Spielphasen;
+- Adminberechtigung, Speichern und erneutes Laden der Kommunikationseinstellungen;
+- serverseitiger Wortfilter und Emoticon-Konvertierung;
 - Socket-Broadcast an Spielraum;
 - Ablehnung von Zuschauerreaktionen;
 - Socket-Cooldown.
@@ -219,7 +276,9 @@ Browserkonten plus optionales Hostdisplay, jeweils Desktop und Smartphone-Breite
 |---|---|
 | Belästigung im globalen Lobby-Chat | Zeichen-/Ratenlimit vorhanden; Melden/Blockieren bleibt Folgephase |
 | Gleichzeitige POSTs umgehen eventuell kurz das Absenderlimit | zusätzlich globale API-Grenze; bei größerer Nutzerzahl atomaren Limiter ergänzen |
-| Frontend-/Backend-Phasenmatrix driftet auseinander | gleiche Tests/Bezeichner vorhanden; bei Katalogänderung beide Seiten gemeinsam ändern |
+| Unpassender Wortfiltertreffer | Filter arbeitet nur auf vollständigen Wörtern/Phrasen; Admin sollte die Liste vor Freigabe mit Beispielen prüfen |
+| Reaktionskonfiguration wird parallel geändert | atomare Datenbanktransaktion; Oberfläche kennzeichnet ungespeicherte Änderungen, besitzt aber bewusst noch keine Versionskonfliktanzeige |
+| Frontend-/Backend-Phasenmatrix driftet auseinander | sechs gemeinsame Bezeichner und Tests vorhanden; Backend bleibt die Autorität beim Senden |
 | Reaktionen verdecken kleine Displays | kurze Dauer und responsive Buttons; manueller Mobiltest vor Merge empfohlen |
 | Bestehende Instanz kennt `chat_message` noch nicht | Deployment muss Migration vor Backendstart ausführen |
 
@@ -227,7 +286,9 @@ Browserkonten plus optionales Hostdisplay, jeweils Desktop und Smartphone-Breite
 
 > Neu in Songster: In der Lobby und am Tisch könnt ihr euch jetzt per Live-Chat
 > abstimmen. Während einer Partie bleibt das Playboard bewusst ruhig: Statt eines
-> Textchats stehen je nach Spielphase kurze Reaktionen bereit. Sie erscheinen direkt
+> Textchats stehen je nach Spielphase kurze, vom Admin konfigurierbare Reaktionen bereit.
+> Optional wandelt Songster bekannte Text-Smileys in Emojis um und ersetzt Wörter aus
+> dem serverweiten Wortfilter. Reaktionen erscheinen direkt
 > am Spieleravatar und auch auf dem gemeinsamen Hostdisplay. Chatnachrichten werden
 > automatisch nach 30 Minuten entfernt.
 
