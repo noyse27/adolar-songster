@@ -3,7 +3,7 @@ import { pool } from '../db/pool';
 import { AuthenticatedRequest, requireAuth } from '../middleware/auth';
 import { RoundEngineError } from '../services/errors';
 import { claimToken, startRound, submitBonusGuess, submitGuess, submitTokenGuess } from '../services/roundEngine';
-import { setRoundReady } from '../services/roundReady';
+import { setAutoReady, setRoundReady } from '../services/roundReady';
 import { loadGameState } from '../services/gameState';
 import { touchTableActivityForGame } from '../services/tableActivity';
 import { BONUS_WINDOW_MS, COUNTDOWN_MS, SONG_DURATION_MS } from '../services/roundConfig';
@@ -137,6 +137,24 @@ roundsRouter.post('/games/:gameId/ready', requireAuth, async (req: Authenticated
   }
   try {
     await setRoundReady(req.params.gameId, req.userId as string, ready);
+    await touchTableActivityForGame(req.params.gameId);
+    res.status(200).json({ accepted: true });
+  } catch (err) {
+    if (!handleEngineError(err, res)) throw err;
+  }
+});
+
+// "Auto bereit" lock (see roundReady.ts's setAutoReady): scoped to this
+// game only, toggled from the player's own avatar in the Playboard
+// (double-click), not a table-level admin setting.
+roundsRouter.post('/games/:gameId/ready/auto', requireAuth, async (req: AuthenticatedRequest, res) => {
+  const { autoReady } = req.body ?? {};
+  if (typeof autoReady !== 'boolean') {
+    res.status(400).json({ error: 'autoReady must be a boolean' });
+    return;
+  }
+  try {
+    await setAutoReady(req.params.gameId, req.userId as string, autoReady);
     await touchTableActivityForGame(req.params.gameId);
     res.status(200).json({ accepted: true });
   } catch (err) {

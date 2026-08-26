@@ -50,5 +50,6 @@ export interface GameState {
   players: GamePlayerState[];
   currentRound: CurrentRoundState | null;
   roundReadyPhase: RoundReadyPhase | null;
+  autoReadyUserIds: string[];
   displayAnchorPresent: boolean;
 }

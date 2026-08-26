@@ -327,6 +327,7 @@ export function DisplayPage() {
               songsterPoints: p.scorePoints,
               karma: p.karmaPoints,
               ready: state.roundReadyPhase?.readyUserIds.includes(p.userId) ?? false,
+              autoReady: state.autoReadyUserIds.includes(p.userId),
               sittingOut,
             };
 

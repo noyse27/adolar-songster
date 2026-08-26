@@ -24,6 +24,8 @@ export interface PlayerState {
   songsterPoints: number;
   karma: number;
   ready: boolean;
+  /** "Auto bereit" locked in for this match - see LiveGameBoard's avatar double-click. */
+  autoReady: boolean;
   sittingOut: boolean;
 }
 
