@@ -1,4 +1,5 @@
 // Mirrors backend/src/services/gameState.ts exactly - keep in sync.
+import type { ReactionConfig } from './reactions';
 
 export interface GamePlayerState {
   userId: string;
@@ -53,4 +54,5 @@ export interface GameState {
   roundReadyPhase: RoundReadyPhase | null;
   autoReadyUserIds: string[];
   displayAnchorPresent: boolean;
+  reactionConfig: ReactionConfig;
 }

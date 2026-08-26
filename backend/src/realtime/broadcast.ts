@@ -2,6 +2,7 @@ import { getIO, lobbyRoom, tableRoom, gameRoom } from './io';
 import { fetchLobbyTables, loadTableDetail } from '../services/tableQueries';
 import { loadGameState } from '../services/gameState';
 import { BONUS_WINDOW_MS, COUNTDOWN_MS, SONG_DURATION_MS } from '../services/roundConfig';
+import { ChatMessage, ReactionConfig } from '../services/communication';
 
 /** Re-broadcasts the whole public/open table list. Table counts are small
  * (private-group scale, see FR-013), so a full refetch+broadcast on every
@@ -35,4 +36,20 @@ export async function broadcastGame(gameId: string): Promise<void> {
   const state = await loadGameState(gameId, COUNTDOWN_MS, SONG_DURATION_MS, BONUS_WINDOW_MS);
   if (!state) return;
   io.to(gameRoom(gameId)).emit('game:update', state);
+}
+
+/** Chat is persisted through REST, then fanned out through the same rooms
+ * clients already authorize and subscribe to for lobby/table updates. */
+export function emitChatMessage(message: ChatMessage): void {
+  const io = getIO();
+  if (!io) return;
+  const room = message.scope === 'lobby' ? lobbyRoom() : tableRoom(message.tableId as string);
+  io.to(room).emit('chat:message', message);
+}
+
+/** Communication settings are non-secret except for the word-filter list,
+ * which is deliberately not part of this payload. Every connected player
+ * and display can switch its reaction bar without a page reload. */
+export function broadcastReactionConfig(reactions: ReactionConfig): void {
+  getIO()?.emit('communication:config-updated', { reactions });
 }

@@ -2,6 +2,7 @@ import cron from 'node-cron';
 import { syncAllAdolarPlaylists } from './adolarSync';
 import { deleteInactiveTables } from './tableCleanup';
 import { deleteExpiredPlaylists } from './playlistCleanup';
+import { deleteExpiredChatMessages } from './communication';
 
 // Once daily at 03:00 server time (low-traffic hour for a private-group
 // game) plus once immediately on boot, so a fresh deploy doesn't wait up
@@ -44,6 +45,16 @@ export function startPlaylistCleanupSchedule(): void {
   cron.schedule('0 4 * * *', () => {
     deleteExpiredPlaylists().catch((err) => {
       console.error('[playlist-cleanup] failed', err);
+    });
+  });
+}
+
+// Chat is intentionally ephemeral. Removing expired rows every five minutes
+// keeps the database aligned with the 30-minute history visible to users.
+export function startChatCleanupSchedule(): void {
+  cron.schedule('*/5 * * * *', () => {
+    deleteExpiredChatMessages().catch((err) => {
+      console.error('[chat-cleanup] failed', err);
     });
   });
 }

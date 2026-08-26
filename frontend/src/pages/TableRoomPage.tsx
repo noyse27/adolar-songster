@@ -5,6 +5,7 @@ import { useAuth } from '../auth/AuthContext';
 import { apiFetch, ApiError } from '../api';
 import { getSocket } from '../realtime/socket';
 import { QrCodeButton } from '../components/QrCodeButton';
+import { ChatPanel } from '../components/ChatPanel';
 
 interface Seat {
   userId: string;
@@ -432,6 +433,14 @@ export function TableRoomPage() {
                 </ul>
               </section>
             )}
+
+            <ChatPanel
+              title="Tisch-Chat"
+              scope="table"
+              tableId={table.tableId}
+              endpoint={`/tables/${table.tableId}/messages`}
+              hint="Nur für Spieler und Zuschauer an diesem Tisch."
+            />
 
             {table.state === 'open' && (() => {
               const allReady = players.length >= 2 && players.every((p) => p.ready);

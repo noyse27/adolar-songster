@@ -5,6 +5,7 @@ import { useAuth } from '../auth/AuthContext';
 import { apiFetch } from '../api';
 import { InvitesSection } from './InvitesSection';
 import { CollapsibleSection } from './CollapsibleSection';
+import { CommunicationSettingsSection } from './CommunicationSettingsSection';
 
 interface Song {
   songId: string;
@@ -65,6 +66,9 @@ export function AdminPage() {
 
         <CollapsibleSection title="Musikquelle">
           <MusicSourceSection token={token as string} />
+        </CollapsibleSection>
+        <CollapsibleSection title="Chateinstellungen">
+          <CommunicationSettingsSection token={token as string} />
         </CollapsibleSection>
         <CollapsibleSection title="Einladungen">
           <InvitesSection token={token as string} isAdmin collapsible />

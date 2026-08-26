@@ -28,6 +28,7 @@ interface PlayerRowProps {
   onGuessChange?: (value: string) => void;
   onGuessSubmit?: () => void;
   timelineRef?: (el: HTMLDivElement | null) => void;
+  reaction?: { emoji: string; label: string };
 }
 
 export function PlayerRow({
@@ -48,6 +49,7 @@ export function PlayerRow({
   onGuessChange,
   onGuessSubmit,
   timelineRef,
+  reaction,
 }: PlayerRowProps) {
   const clickTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
@@ -153,6 +155,12 @@ export function PlayerRow({
   return (
     <div className={rowClasses}>
       <div className="pb-player">
+        {reaction && (
+          <div className="pb-reaction-bubble" role="status" aria-label={`${p.name}: ${reaction.label}`}>
+            <span aria-hidden="true">{reaction.emoji}</span>
+            <small>{reaction.label}</small>
+          </div>
+        )}
         <div
           className={`pb-avatar-wrap${canReady ? '' : ' pb-static'}`}
           onClick={canReady ? handleAvatarClick : undefined}

@@ -40,6 +40,7 @@ module.exports = async () => {
   const pool = new Pool({ connectionString: process.env.DATABASE_URL });
   await pool.query(`
     TRUNCATE TABLE
+      chat_message,
       score_ledger, karma_ledger, timeline_card, token_usage, guess,
       session_song_history, round, game, song_ref, table_session,
       table_seat, game_table, invite_token, app_user,

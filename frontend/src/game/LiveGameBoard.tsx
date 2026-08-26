@@ -14,6 +14,8 @@ import { ExitModal, HelpModal } from '../playboard/Modals';
 import { PendingResult, PlayerState, TokenState } from '../playboard/types';
 import { karmaLeavePenalty, placeAt } from '../playboard/gameLogic';
 import { useWakeLock } from '../hooks/useWakeLock';
+import { ReactionBar } from '../components/ReactionBar';
+import { communicationPhase, GameReactionEvent, ReactionConfig } from './reactions';
 
 /*
  * Real-data counterpart of playboard/Playboard.tsx - reuses that prototype's
@@ -73,12 +75,15 @@ export function LiveGameBoard() {
   const [lastResolvedRound, setLastResolvedRound] = useState<CurrentRoundState | null>(null);
   const [restarting, setRestarting] = useState(false);
   const [tieModalDismissed, setTieModalDismissed] = useState(false);
+  const [reactionsByUser, setReactionsByUser] = useState<Record<string, GameReactionEvent>>({});
+  const [sendingReaction, setSendingReaction] = useState(false);
 
   const tokenPhaseStartRef = useRef<{ status: string; at: number } | null>(null);
   const timelineRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const ringWrapRef = useRef<HTMLDivElement | null>(null);
   const dealStartedRef = useRef(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const reactionTimersRef = useRef<Map<string, number>>(new Map());
 
   useEffect(() => {
     if (!auth || !gameId) return;
@@ -90,14 +95,51 @@ export function LiveGameBoard() {
       });
 
     const socket = getSocket(auth.accessToken);
+    const reactionTimers = reactionTimersRef.current;
     socket.emit('game:join-room', gameId);
     const onUpdate = (payload: GameState) => setState(payload);
+    const onConfigUpdate = (payload: { reactions: ReactionConfig }) => {
+      setState((current) => current ? { ...current, reactionConfig: payload.reactions } : current);
+    };
+    const onReaction = (reaction: GameReactionEvent) => {
+      if (reaction.gameId !== gameId) return;
+      setReactionsByUser((current) => ({ ...current, [reaction.userId]: reaction }));
+      const previousTimer = reactionTimers.get(reaction.userId);
+      if (previousTimer) window.clearTimeout(previousTimer);
+      const timer = window.setTimeout(() => {
+        setReactionsByUser((current) => {
+          if (current[reaction.userId]?.sentAt !== reaction.sentAt) return current;
+          const next = { ...current };
+          delete next[reaction.userId];
+          return next;
+        });
+        reactionTimers.delete(reaction.userId);
+      }, 3500);
+      reactionTimers.set(reaction.userId, timer);
+    };
     socket.on('game:update', onUpdate);
+    socket.on('game:reaction', onReaction);
+    socket.on('communication:config-updated', onConfigUpdate);
     return () => {
       socket.off('game:update', onUpdate);
+      socket.off('game:reaction', onReaction);
+      socket.off('communication:config-updated', onConfigUpdate);
       socket.emit('game:leave-room', gameId);
+      for (const timer of reactionTimers.values()) window.clearTimeout(timer);
+      reactionTimers.clear();
     };
   }, [auth, gameId]);
+
+  function handleReaction(reactionId: string) {
+    if (!auth || !gameId || sendingReaction) return;
+    setSendingReaction(true);
+    const socket = getSocket(auth.accessToken);
+    socket.emit('game:reaction', { gameId, reactionId }, (result: { ok: boolean; error?: string }) => {
+      setSendingReaction(false);
+      if (!result.ok && result.error !== 'reaction rate limited') setError('Reaktion konnte nicht gesendet werden.');
+    });
+    window.setTimeout(() => setSendingReaction(false), 1500);
+  }
 
   // Once a rematch resets the table back to 'open' (see the winner
   // screen's "Nochmal spielen"), this GameState object itself never
@@ -841,10 +883,20 @@ export function LiveGameBoard() {
                 timelineRef={(el) => {
                   if (el) timelineRefs.current.set(p.userId, el);
                 }}
+                reaction={reactionsByUser[p.userId]
+                  ? { emoji: reactionsByUser[p.userId].symbol, label: reactionsByUser[p.userId].label }
+                  : undefined}
               />
             );
           })}
         </div>
+
+        <ReactionBar
+          phase={communicationPhase(state)}
+          reactions={state.reactionConfig[communicationPhase(state)]}
+          sending={sendingReaction}
+          onReact={handleReaction}
+        />
 
         <div className="pb-hint">
           {compact && <>Punktestand und Mitspieler siehst du auf dem Anzeigegerät. </>}
@@ -997,6 +1049,8 @@ export function LiveGameBoard() {
                 <div className="pb-winner-eyebrow">Partie beendet</div>
                 <div className="pb-winner-name">{winner?.username ?? 'Unentschieden'} gewinnt!</div>
                 <div className="pb-winner-sub">Erste:r mit 10 richtig platzierten Karten.</div>
+
+                <ReactionBar phase="finished" reactions={state.reactionConfig.finished} sending={sendingReaction} onReact={handleReaction} />
 
                 <ol className="pb-winner-standings">
                   {standings.map((p, i) => (

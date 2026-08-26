@@ -4,6 +4,7 @@ import './pages.css';
 import { useAuth } from '../auth/AuthContext';
 import { apiFetch, ApiError } from '../api';
 import { getSocket } from '../realtime/socket';
+import { ChatPanel } from '../components/ChatPanel';
 
 interface LobbyTable {
   tableId: string;
@@ -157,6 +158,13 @@ export function LobbyPage() {
             </tbody>
           </table>
         </div>
+
+        <ChatPanel
+          title="Lobby-Chat"
+          scope="lobby"
+          endpoint="/communications/lobby/messages"
+          hint="Für alle angemeldeten Spieler in der öffentlichen Lobby."
+        />
       </div>
     </div>
   );

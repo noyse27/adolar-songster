@@ -6,9 +6,13 @@ import { verifyDisplayToken } from '../services/displayToken';
 import { pool } from '../db/pool';
 import { setIO, tableRoom, lobbyRoom, gameRoom } from './io';
 import { broadcastGame } from './broadcast';
-import { loadActiveSeat, authorizeDisplayGame } from '../services/tableAuthorization';
+import { loadActiveSeat, authorizeDisplayGame, authorizeGameViewer } from '../services/tableAuthorization';
+import { isReactionAssetId, loadConfiguredReaction, loadReactionPhase } from '../services/communication';
 
 type RoomJoinAck = (result: { ok: boolean; error?: string }) => void;
+type ReactionAck = (result: { ok: boolean; error?: string }) => void;
+
+const REACTION_COOLDOWN_MS = 1000;
 
 interface AuthedSocketData {
   userId: string;
@@ -118,6 +122,7 @@ export function createSocketServer(httpServer: HttpServer): Server {
   }
 
   io.on('connection', (socket: Socket) => {
+    let lastReactionAt = 0;
     // Lobby list and per-table detail are opt-in subscriptions rather than
     // every client always receiving both - a client deep in a game
     // shouldn't also get every public lobby table update. The lobby room
@@ -162,6 +167,68 @@ export function createSocketServer(httpServer: HttpServer): Server {
     });
     socket.on('game:leave-room', (gameId: unknown) => {
       if (typeof gameId === 'string') socket.leave(gameRoom(gameId));
+    });
+
+    // Reactions are deliberately ephemeral: validate sender, current game
+    // phase and a per-connection cooldown, then broadcast only to the
+    // authorized game room. A display token can receive these events after
+    // joining the room, but never has a userId and therefore cannot send.
+    socket.on('game:reaction', (payload: unknown, ack?: ReactionAck) => {
+      (async () => {
+        if (!payload || typeof payload !== 'object') {
+          ack?.({ ok: false, error: 'invalid payload' });
+          return;
+        }
+        const { gameId, reactionId } = payload as { gameId?: unknown; reactionId?: unknown };
+        if (typeof gameId !== 'string' || !isReactionAssetId(reactionId)) {
+          ack?.({ ok: false, error: 'invalid payload' });
+          return;
+        }
+
+        const userId = (socket.data as Partial<AuthedSocketData>).userId;
+        if (!userId) {
+          ack?.({ ok: false, error: 'forbidden' });
+          return;
+        }
+        const access = await authorizeGameViewer(gameId, userId);
+        if (!access || access.seatType !== 'player') {
+          ack?.({ ok: false, error: 'forbidden' });
+          return;
+        }
+
+        const now = Date.now();
+        if (now - lastReactionAt < REACTION_COOLDOWN_MS) {
+          ack?.({ ok: false, error: 'reaction rate limited' });
+          return;
+        }
+        const phase = await loadReactionPhase(gameId);
+        const configuredReaction = phase ? await loadConfiguredReaction(phase, reactionId) : null;
+        if (!phase || !configuredReaction) {
+          ack?.({ ok: false, error: 'reaction not available in this phase' });
+          return;
+        }
+
+        const userResult = await pool.query(`SELECT username FROM app_user WHERE id = $1`, [userId]);
+        const username = userResult.rows[0]?.username as string | undefined;
+        if (!username) {
+          ack?.({ ok: false, error: 'forbidden' });
+          return;
+        }
+
+        lastReactionAt = now;
+        io.to(gameRoom(gameId)).emit('game:reaction', {
+          gameId,
+          userId,
+          username,
+          reactionId,
+          phase,
+          symbol: configuredReaction.symbol,
+          label: configuredReaction.label,
+          kind: configuredReaction.kind,
+          sentAt: new Date(now).toISOString(),
+        });
+        ack?.({ ok: true });
+      })().catch(() => ack?.({ ok: false, error: 'internal error' }));
     });
 
     // Hostmodus: a display socket's mere presence is the whole signal

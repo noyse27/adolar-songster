@@ -12,6 +12,7 @@ import { placeAt } from '../playboard/gameLogic';
 import { PlayerRow } from '../playboard/PlayerRow';
 import { CenterControl } from '../playboard/CenterControl';
 import { PendingResult, PlayerState, TokenState } from '../playboard/types';
+import { GameReactionEvent, ReactionConfig } from '../game/reactions';
 
 interface DisplayTableDetail {
   tableId: string;
@@ -47,9 +48,11 @@ export function DisplayPage() {
   const [audioMuted, setAudioMuted] = useState(false);
   const [revealUntil, setRevealUntil] = useState<number | null>(null);
   const [lastResolvedRound, setLastResolvedRound] = useState<CurrentRoundState | null>(null);
+  const [reactionsByUser, setReactionsByUser] = useState<Record<string, GameReactionEvent>>({});
 
   const socketRef = useRef<Socket | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const reactionTimersRef = useRef<Map<string, number>>(new Map());
 
   // A dedicated socket, deliberately not the shared getSocket() singleton
   // from realtime/socket.ts - that one is keyed to a logged-in player's
@@ -99,12 +102,38 @@ export function DisplayPage() {
 
     const socket = socketRef.current;
     if (!socket) return;
+    const reactionTimers = reactionTimersRef.current;
     socket.emit('game:join-room', gameId);
     const onGameUpdate = (payload: GameState) => setState(payload);
+    const onConfigUpdate = (payload: { reactions: ReactionConfig }) => {
+      setState((current) => current ? { ...current, reactionConfig: payload.reactions } : current);
+    };
+    const onReaction = (reaction: GameReactionEvent) => {
+      if (reaction.gameId !== gameId) return;
+      setReactionsByUser((current) => ({ ...current, [reaction.userId]: reaction }));
+      const previousTimer = reactionTimers.get(reaction.userId);
+      if (previousTimer) window.clearTimeout(previousTimer);
+      const timer = window.setTimeout(() => {
+        setReactionsByUser((current) => {
+          if (current[reaction.userId]?.sentAt !== reaction.sentAt) return current;
+          const next = { ...current };
+          delete next[reaction.userId];
+          return next;
+        });
+        reactionTimers.delete(reaction.userId);
+      }, 3500);
+      reactionTimers.set(reaction.userId, timer);
+    };
     socket.on('game:update', onGameUpdate);
+    socket.on('game:reaction', onReaction);
+    socket.on('communication:config-updated', onConfigUpdate);
     return () => {
       socket.off('game:update', onGameUpdate);
+      socket.off('game:reaction', onReaction);
+      socket.off('communication:config-updated', onConfigUpdate);
       socket.emit('game:leave-room', gameId);
+      for (const timer of reactionTimers.values()) window.clearTimeout(timer);
+      reactionTimers.clear();
     };
   }, [token, gameId]);
 
@@ -379,6 +408,9 @@ export function DisplayPage() {
                 guessValue=""
                 guessActive={false}
                 guessWrongValue={null}
+                reaction={reactionsByUser[p.userId]
+                  ? { emoji: reactionsByUser[p.userId].symbol, label: reactionsByUser[p.userId].label }
+                  : undefined}
               />
             );
           })}

@@ -13,6 +13,7 @@ import { leaderboardRouter } from './routes/leaderboard';
 import { usersRouter } from './routes/users';
 import { adolarRouter } from './routes/adolar';
 import { songsRouter } from './routes/songs';
+import { communicationsRouter } from './routes/communications';
 import { apiLimiter, authLimiter } from './middleware/rateLimit';
 
 export function createApp(): Express {
@@ -48,6 +49,7 @@ export function createApp(): Express {
   app.use('/api/v1', usersRouter);
   app.use('/api/v1', adolarRouter);
   app.use('/api/v1', songsRouter);
+  app.use('/api/v1', communicationsRouter);
 
   // Last-resort net: without this, an error thrown/rejected anywhere in a
   // route handler (now forwarded here automatically by express-async-errors)
