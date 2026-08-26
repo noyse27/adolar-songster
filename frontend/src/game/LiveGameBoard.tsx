@@ -185,15 +185,29 @@ export function LiveGameBoard() {
   // Plays exactly while the song window is actually open. A token claim
   // (or the round otherwise moving on) stops it immediately - FR-032 and
   // real Hitster both stop the music the instant someone buzzes in.
+  //
+  // songPlaybackMs is normally equal to the round's full windowMs, so this
+  // timer fires right alongside the status change below and changes
+  // nothing. The one exception is the Stichrunde (bonus round): there the
+  // guess field stays open for a 10s grace period after the Stichsong
+  // itself has already finished playing (songPlaybackMs < windowMs), so
+  // the music needs to stop on its own timer instead of waiting for the
+  // round status to move on.
+  const songPlaybackMs = state?.currentRound?.songPlaybackMs;
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return;
     if (roundStatus === 'playing') {
       audio.currentTime = 0;
       audio.play().catch(() => setAudioUnavailable(true));
+      if (songPlaybackMs != null) {
+        const timeoutId = window.setTimeout(() => audio.pause(), songPlaybackMs);
+        return () => window.clearTimeout(timeoutId);
+      }
     } else {
       audio.pause();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roundStatus, roundId]);
 
   // The <audio> element's `muted` prop below keeps the DOM node itself in
@@ -817,9 +831,10 @@ export function LiveGameBoard() {
           <h3>🎯 Punktgleichheit! Jetzt Stichrunde</h3>
           <p>
             <b>{tiedLeaders.map((p) => p.username).join(', ')}</b> haben gleichzeitig {SLOT_COUNT} Karten erreicht.
-            Es gibt jetzt eine Stichrunde: alle Angetretenen hören denselben Song und tippen direkt das exakte
-            Erscheinungsjahr statt eine Position zu platzieren. Wer als Erste:r richtig liegt, gewinnt sofort die
-            ganze Partie — liegt niemand richtig, gibt es die nächste Stichrunde mit einem neuen Song.
+            Es gibt jetzt eine Stichrunde: alle Angetretenen hören denselben Song und tippen das Erscheinungsjahr
+            statt eine Position zu platzieren. Nach dem Song bleibt das Eingabefeld noch 10 Sekunden offen. Wer am
+            nächsten dran ist, gewinnt die ganze Partie — bei Gleichstand die schnellste Eingabe, ein exaktes Jahr
+            gewinnt sofort. Tippt niemand etwas ein, gibt es die nächste Stichrunde mit einem neuen Song.
           </p>
           <div className="pb-modal-actions">
             <button className="pb-modal-btn pb-primary" onClick={handleTieBreakAcknowledge}>

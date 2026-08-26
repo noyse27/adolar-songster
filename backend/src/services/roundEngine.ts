@@ -472,12 +472,12 @@ export async function submitBonusGuess(
     );
 
     if (correct) {
-      // First correct exact-year guess wins the Stichsong (and the whole
-      // match) outright - no reason to keep the song playing and make
-      // everyone wait out the rest of the window once someone's proven
-      // they know the year. Nobody's tied-at-10 timeline needs another
-      // card, so this goes straight to finishGame rather than through
-      // insertCardAndReindex.
+      // An exact year can never be beaten by a later, merely-closer guess,
+      // so the first exact guess wins the Stichsong (and the whole match)
+      // outright - no reason to keep the song playing and make everyone
+      // wait out the rest of the window once someone's proven they know
+      // the year. Nobody's tied-at-10 timeline needs another card, so this
+      // goes straight to finishGame rather than through insertCardAndReindex.
       await client.query(`UPDATE round SET status = 'resolved', ended_at = NOW() WHERE id = $1`, [roundId]);
       await finishGame(client, round.gameId, userId);
       await client.query('COMMIT');
@@ -486,6 +486,9 @@ export async function submitBonusGuess(
       return { correct: true };
     }
 
+    // Not exact - just record it and let the round keep running. Whether
+    // this guess ends up winning depends on how close everyone else gets,
+    // which can't be known until the window closes (see resolveBonusRound).
     await client.query('COMMIT');
     await broadcastGame(round.gameId);
     return { correct };
@@ -503,7 +506,7 @@ async function resolveBonusRound(roundId: string): Promise<void> {
     await client.query('BEGIN');
 
     const roundResult = await client.query(
-      `SELECT id, game_id, status, mode FROM round WHERE id = $1 FOR UPDATE`,
+      `SELECT id, game_id, song_id, status, mode FROM round WHERE id = $1 FOR UPDATE`,
       [roundId],
     );
     if (roundResult.rowCount === 0 || roundResult.rows[0].mode !== 'bonus' || roundResult.rows[0].status !== 'playing') {
@@ -512,29 +515,43 @@ async function resolveBonusRound(roundId: string): Promise<void> {
     }
     const round = roundResult.rows[0];
 
-    const correctGuessesResult = await client.query(
-      `SELECT id, user_id, submitted_at FROM guess
-       WHERE round_id = $1 AND guess_type = 'exact_year' AND is_correct = TRUE
+    const guessesResult = await client.query(
+      `SELECT id, user_id, value_number, submitted_at FROM guess
+       WHERE round_id = $1 AND guess_type = 'exact_year'
        ORDER BY submitted_at ASC`,
       [roundId],
     );
 
-    if ((correctGuessesResult.rowCount ?? 0) > 0) {
+    if ((guessesResult.rowCount ?? 0) > 0) {
+      const songResult = await client.query(`SELECT year_value FROM song_ref WHERE id = $1`, [
+        round.song_id,
+      ]);
+      const songYear = songResult.rows[0].year_value as number;
+
+      // Nobody has to be exact: whoever's guess is numerically closest to
+      // the real year wins the Stichsong. Ties on distance are broken by
+      // who submitted first (resolveClaimWinner's earliest-wins, near-
+      // simultaneous-random-tiebreak logic - the same rule already used
+      // for token claim races).
+      const distances = guessesResult.rows.map((row) => Math.abs((row.value_number as number) - songYear));
+      const minDistance = Math.min(...distances);
+      const closest = guessesResult.rows.filter((_, i) => distances[i] === minDistance);
+
       const winner = resolveClaimWinner(
-        correctGuessesResult.rows.map((row) => ({
+        closest.map((row) => ({
           id: row.id,
           claimedAtMs: new Date(row.submitted_at).getTime(),
         })),
       );
-      const winnerUserId = correctGuessesResult.rows.find((row) => row.id === winner.id).user_id;
+      const winnerUserId = closest.find((row) => row.id === winner.id).user_id;
 
       await client.query(`UPDATE round SET status = 'resolved', ended_at = NOW() WHERE id = $1`, [
         roundId,
       ]);
       await finishGame(client, round.game_id, winnerUserId);
     } else {
-      // Nobody guessed correctly - stays tied. The next POST .../rounds
-      // call will detect the tie again and draw another Stichsong.
+      // Nobody submitted a guess at all - stays tied. The next POST
+      // .../rounds call will detect the tie again and draw another Stichsong.
       await client.query(`UPDATE round SET status = 'resolved', ended_at = NOW() WHERE id = $1`, [
         roundId,
       ]);
