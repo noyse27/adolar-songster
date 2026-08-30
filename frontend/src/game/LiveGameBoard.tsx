@@ -97,6 +97,19 @@ export function LiveGameBoard() {
     const socket = getSocket(auth.accessToken);
     const reactionTimers = reactionTimersRef.current;
     socket.emit('game:join-room', gameId);
+    // A flaky connection (typical on a phone's WLAN) makes socket.io
+    // reconnect automatically, but that reconnect starts a brand-new server
+    // session with zero room memberships - the initial join-room emit above
+    // only fires once on mount. Without re-joining here, the client keeps
+    // looking "connected" while silently receiving no further game:update
+    // broadcasts at all, frozen on whatever state it had before the drop.
+    // Re-fetching state on top of the rejoin closes the gap for whatever
+    // happened while disconnected.
+    const onReconnect = () => {
+      socket.emit('game:join-room', gameId);
+      fetchGameState(gameId, auth.accessToken).then(setState).catch(() => undefined);
+    };
+    socket.on('connect', onReconnect);
     const onUpdate = (payload: GameState) => setState(payload);
     const onConfigUpdate = (payload: { reactions: ReactionConfig }) => {
       setState((current) => current ? { ...current, reactionConfig: payload.reactions } : current);
@@ -121,6 +134,7 @@ export function LiveGameBoard() {
     socket.on('game:reaction', onReaction);
     socket.on('communication:config-updated', onConfigUpdate);
     return () => {
+      socket.off('connect', onReconnect);
       socket.off('game:update', onUpdate);
       socket.off('game:reaction', onReaction);
       socket.off('communication:config-updated', onConfigUpdate);
@@ -151,11 +165,17 @@ export function LiveGameBoard() {
     if (!auth || !tableId) return;
     const socket = getSocket(auth.accessToken);
     socket.emit('table:join-room', tableId);
+    // Same reconnect gap as the game-room effect above: a dropped-and-
+    // restored socket needs to rejoin this room explicitly too, or a
+    // rematch-to-'open' broadcast that happens during the drop is missed.
+    const onReconnect = () => socket.emit('table:join-room', tableId);
+    socket.on('connect', onReconnect);
     const onTableUpdate = (payload: { state: string }) => {
       if (payload.state === 'open') navigate(`/tisch/${tableId}`);
     };
     socket.on('table:update', onTableUpdate);
     return () => {
+      socket.off('connect', onReconnect);
       socket.off('table:update', onTableUpdate);
       socket.emit('table:leave-room', tableId);
     };

@@ -127,9 +127,19 @@ export function TableRoomPage() {
     if (!auth || !tableId || !hasSeat) return;
     const socket = getSocket(auth.accessToken);
     socket.emit('table:join-room', tableId);
+    // A dropped-and-restored socket (e.g. a flaky WLAN) starts a brand-new
+    // server session with no room memberships - without rejoining on
+    // 'connect', this page would silently stop receiving table:update
+    // broadcasts until reloaded.
+    const onReconnect = () => {
+      socket.emit('table:join-room', tableId);
+      apiFetch<TableDetail>(`/tables/${tableId}`, { token: auth.accessToken }).then(setTable).catch(() => undefined);
+    };
+    socket.on('connect', onReconnect);
     const onUpdate = (payload: TableDetail) => setTable(payload);
     socket.on('table:update', onUpdate);
     return () => {
+      socket.off('connect', onReconnect);
       socket.off('table:update', onUpdate);
       socket.emit('table:leave-room', tableId);
     };
