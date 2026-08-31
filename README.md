@@ -1,29 +1,36 @@
 # Adolar Songster
 
-**Version: v0.5.0-beta** - privates Musik-Ratespiel fuer kleine Gruppen. Projektdokumentation siehe
+**Version: v0.5.1-beta** - privates Musik-Ratespiel fuer kleine Gruppen. Projektdokumentation siehe
 [docs/Adolar_Songster_Masterindex_v1_20260821.md](docs/Adolar_Songster_Masterindex_v1_20260821.md).
 
-## Neu in v0.5.0-beta
+## Neu in v0.5.1-beta
 
-- **Lobby-Chat:** angemeldete Nutzer koennen sich bereits vor dem Tischbeitritt
-  austauschen. Angezeigt werden maximal 50 Nachrichten aus den letzten 30 Minuten.
-- **Tisch-Chat:** eigener Kommunikationskanal fuer aktive Spieler und Zuschauer
-  eines Tisches.
-- **Playboard-Reaktionen:** kurze, phasenabhaengige Emoji-/Text-Reaktionen statt
-  freiem Chat waehrend der Partie. Sie erscheinen am Spieleravatar und auf dem
-  gemeinsamen Hostdisplay.
-- **Admin-Konfiguration:** Text-Smileys koennen serverseitig in Emojis umgewandelt
-  werden. Ein Wortfilter ersetzt konfigurierte Woerter und Phrasen durch `*piep*`.
-- **Frei belegbare Reaktionen:** sechs Spielzustaende mit jeweils bis zu acht
-  eindeutigen Motiven aus einem kuratierten Katalog, inklusive eigener
-  Beschriftung, Sortierung und Live-Aktualisierung geoeffneter Playboards.
-- **Rundenstabilitaet:** Auto-bereit startet nur noch den vorgesehenen
-  Bereit-Vorgang; Reveal-Timer, letzter Song und Stichrunden-Regelmodale wurden
-  gegen konkurrierende Timer abgesichert.
+- **Browser-/Host-App-Modus:** ein Hostbildschirm kann jetzt ueber `/host`
+  im Browser oder ueber die Android-/Fire-TV-Host-App gestartet werden.
+- **QR-Autorisierung fuer Hostgeraete:** der Host zeigt QR-Code und Kurzcode;
+  ein angemeldeter Songster-Nutzer bestaetigt das Geraet und kann es danach
+  privaten Tischen als Anzeigegeraet zuweisen.
+- **iPad-/Tablet-tauglicher Host:** fuer iPad, Laptop und normale Tablets wird
+  keine native App benoetigt; der Browser-Host nutzt dieselbe Mechanik wie die
+  Host-App.
+- **Profil-Trennung:** autorisierte Hostgeraete koennen im Profil getrennt
+  werden. Geschlossene oder getrennte Hostgeraete verlieren sofort ihre
+  Berechtigung.
+- **Playboard-Feinschliff:** Auto-bereit hat einen sichtbaren Repeat-Schalter
+  neben dem Lautsprecher, Doppeltipp auf das eigene Icon ist robuster, Android-
+  Textauswahl im Spielbereich wird unterdrueckt.
+- **Sync-Stabilitaet:** verspaetete Spielstand-Updates werden im Client und
+  Hostdisplay ignoriert, damit alte Aufloesungen nicht ueber einer neuen Runde
+  stehen bleiben.
+- **Playlist-Reihenfolge:** eine Playlist kann als Standardplaylist markiert
+  werden. Sie erscheint zuerst, danach folgen weitere Playlists alphabetisch;
+  lokale Playlist-Auswahl bleibt am Ende.
 
-Details zur Spielerkommunikation, API, Sicherheitsentscheidung und den
-Restrisiken stehen in
-[docs/Adolar_Songster_Spielerkommunikation_Whatsnew_Quelle_v1_20260826.md](docs/Adolar_Songster_Spielerkommunikation_Whatsnew_Quelle_v1_20260826.md).
+Hostmodus-Anleitung:
+[docs/Adolar_Songster_Hostmodus_Anleitung_v1_20260825.md](docs/Adolar_Songster_Hostmodus_Anleitung_v1_20260825.md).
+
+Technisches Host-App-/Browser-Konzept:
+[docs/Adolar_Songster_FireTV_Host_App_MVP_v1_20260831.md](docs/Adolar_Songster_FireTV_Host_App_MVP_v1_20260831.md).
 
 ## Quickstart (Docker)
 

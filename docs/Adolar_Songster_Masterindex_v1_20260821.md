@@ -94,9 +94,9 @@ Sie verweist auf alle relevanten Dokumente, die fuer Umsetzung, Uebergabe und Ab
 - Datei: Adolar_Songster_Hostmodus_Anleitung_v1_20260825.md
 - Inhalt: Bereits im fertigen Endnutzer-Ton geschriebene Schritt-für-
   Schritt-Anleitung für den Hostmodus (gemeinsamer Bildschirm + eigenes
-  Handy pro Spieler), inklusive Registrierung mit Einladungscode - nicht
-  aus dem Code abgeleitet wie das Benutzerhandbuch, sondern die
-  Endtext-Quelle selbst.
+  Handy pro Spieler), inklusive Registrierung mit Einladungscode und
+  aktueller Browser-/Host-App-Autorisierung per QR-Code - nicht aus dem Code
+  abgeleitet wie das Benutzerhandbuch, sondern die Endtext-Quelle selbst.
 - Verwendung: Direkt verwendbare Textquelle für den adolar-whatsnew-Skill
   bzw. zum unveränderten Weitergeben an neue Spieler.
 
@@ -156,3 +156,6 @@ Danach pruefen:
   PR #32 erfolgt, Produktionsdeployment bleibt offen.
 - 2026-08-26: Release `v0.5.0-beta` vorbereitet; README, Benutzerhandbuch und
   Spielerkommunikationsstatus auf den gemergten Stand aktualisiert.
+- 2026-08-31: Hostmodus-Anleitung auf die aktuelle Browser-/Host-App-Mechanik
+  aktualisiert: Hostgerät unter `/host` bzw. `/host-app` per QR-Code
+  autorisieren, danach privaten Tisch mit aktivem Hostgerät verbinden.
