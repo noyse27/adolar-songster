@@ -13,6 +13,7 @@ import { PlayerRow } from '../playboard/PlayerRow';
 import { CenterControl } from '../playboard/CenterControl';
 import { PendingResult, PlayerState, TokenState } from '../playboard/types';
 import { GameReactionEvent, ReactionConfig } from '../game/reactions';
+import { keepNewestGameState } from '../game/stateOrdering';
 
 interface DisplayTableDetail {
   tableId: string;
@@ -117,10 +118,12 @@ export function DisplayPage({ displayToken }: { displayToken?: string }) {
     // on stale round state until manually reloaded.
     const onReconnect = () => {
       socket.emit('game:join-room', gameId);
-      apiFetch<GameState>(`/games/display/${token}/${gameId}`).then(setState).catch(() => undefined);
+      apiFetch<GameState>(`/games/display/${token}/${gameId}`)
+        .then((payload) => setState((current) => keepNewestGameState(current, payload)))
+        .catch(() => undefined);
     };
     socket.on('connect', onReconnect);
-    const onGameUpdate = (payload: GameState) => setState(payload);
+    const onGameUpdate = (payload: GameState) => setState((current) => keepNewestGameState(current, payload));
     const onConfigUpdate = (payload: { reactions: ReactionConfig }) => {
       setState((current) => current ? { ...current, reactionConfig: payload.reactions } : current);
     };
@@ -202,6 +205,13 @@ export function DisplayPage({ displayToken }: { displayToken?: string }) {
     setLastResolvedRound((prev) => (prev?.roundId === roundId ? prev : round));
     setRevealUntil((prev) => (prev !== null ? prev : Date.now() + 5000));
   }, [roundStatus, roundId, round]);
+
+  useEffect(() => {
+    if (revealUntil === null || !lastResolvedRound || round?.indexNo == null) return;
+    if (round.indexNo <= lastResolvedRound.indexNo) return;
+    if (round.status === 'countdown') return;
+    setRevealUntil(null);
+  }, [revealUntil, lastResolvedRound, round?.indexNo, round?.status]);
 
   useEffect(() => {
     if (revealUntil === null || now < revealUntil) return;

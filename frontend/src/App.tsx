@@ -24,7 +24,11 @@ import { LiveGameBoard } from './game/LiveGameBoard';
 // still open (see Playboard UI spec section 8).
 export function App() {
   const location = useLocation();
-  const hideFooter = location.pathname === '/host' || location.pathname === '/host-app' || location.pathname.startsWith('/display/');
+  const hideFooter =
+    location.pathname === '/host' ||
+    location.pathname === '/host-app' ||
+    location.pathname.startsWith('/display/') ||
+    location.pathname.startsWith('/spiel/');
 
   return (
     <>

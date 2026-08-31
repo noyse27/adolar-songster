@@ -52,6 +52,8 @@ export function PlayerRow({
   reaction,
 }: PlayerRowProps) {
   const clickTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const canAutoReady = Boolean(onToggleAutoReady);
+  const canUseAvatar = canReady || canAutoReady;
   useEffect(() => {
     return () => {
       if (clickTimer.current) clearTimeout(clickTimer.current);
@@ -59,7 +61,7 @@ export function PlayerRow({
   }, []);
 
   function handleAvatarClick() {
-    if (!canReady) return;
+    if (!canUseAvatar) return;
     if (clickTimer.current) {
       // Second click within the window - this is a double-click.
       clearTimeout(clickTimer.current);
@@ -69,6 +71,7 @@ export function PlayerRow({
     }
     clickTimer.current = setTimeout(() => {
       clickTimer.current = null;
+      if (!canReady) return;
       onToggleReady();
     }, DOUBLE_CLICK_MS);
   }
@@ -162,9 +165,15 @@ export function PlayerRow({
           </div>
         )}
         <div
-          className={`pb-avatar-wrap${canReady ? '' : ' pb-static'}`}
-          onClick={canReady ? handleAvatarClick : undefined}
-          title={canReady ? 'Klick: bereit. Doppelklick: Auto bereit (für diese Partie gelockt).' : undefined}
+          className={`pb-avatar-wrap${canUseAvatar ? '' : ' pb-static'}`}
+          onClick={canUseAvatar ? handleAvatarClick : undefined}
+          title={
+            canReady
+              ? 'Klick: bereit. Doppelklick: Auto bereit (für diese Partie gelockt).'
+              : canAutoReady
+                ? 'Doppelklick: Auto bereit (für diese Partie gelockt).'
+                : undefined
+          }
         >
           <div className="pb-avatar">{p.initials}</div>
           <div className={`pb-ready-badge${p.autoReady ? ' pb-ready-locked' : p.ready ? ' pb-ready' : ''}`}>
