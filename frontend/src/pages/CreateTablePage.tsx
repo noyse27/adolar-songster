@@ -8,6 +8,7 @@ interface AdolarPlaylist {
   id: number;
   name: string;
   description: string;
+  isDefaultPlaylist: boolean;
 }
 
 export function CreateTablePage() {

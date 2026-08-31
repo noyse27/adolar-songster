@@ -318,7 +318,8 @@ adminRouter.put('/playlist-catalog/:playlistId', async (req, res) => {
   }
   const displayNameRaw = typeof req.body?.displayName === 'string' ? req.body.displayName.trim() : '';
   const adminDescriptionRaw = typeof req.body?.adminDescription === 'string' ? req.body.adminDescription.trim() : '';
-  const ok = await updatePlaylistOverrides(playlistId, displayNameRaw || null, adminDescriptionRaw || null);
+  const isDefaultPlaylist = req.body?.isDefaultPlaylist === true;
+  const ok = await updatePlaylistOverrides(playlistId, displayNameRaw || null, adminDescriptionRaw || null, isDefaultPlaylist);
   if (!ok) {
     res.status(404).json({ error: 'playlist not found' });
     return;
