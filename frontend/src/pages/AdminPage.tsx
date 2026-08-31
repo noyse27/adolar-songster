@@ -424,6 +424,7 @@ interface PlaylistCatalogEntry {
   name: string;
   displayName: string | null;
   adminDescription: string | null;
+  isDefaultPlaylist: boolean;
 }
 
 // Lets an admin override how a playlist is shown to players: displayName
@@ -437,6 +438,7 @@ function PlaylistAdminSection({ token }: { token: string }) {
   const [playlistId, setPlaylistId] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [adminDescription, setAdminDescription] = useState('');
+  const [isDefaultPlaylist, setIsDefaultPlaylist] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -454,6 +456,7 @@ function PlaylistAdminSection({ token }: { token: string }) {
     const selected = playlists.find((p) => String(p.id) === id);
     setDisplayName(selected?.displayName ?? '');
     setAdminDescription(selected?.adminDescription ?? '');
+    setIsDefaultPlaylist(selected?.isDefaultPlaylist ?? false);
   }
 
   async function save() {
@@ -464,13 +467,15 @@ function PlaylistAdminSection({ token }: { token: string }) {
     try {
       await apiFetch(`/admin/playlist-catalog/${playlistId}`, {
         method: 'PUT',
-        body: { displayName, adminDescription },
+        body: { displayName, adminDescription, isDefaultPlaylist },
         token,
       });
       setPlaylists((prev) =>
         prev.map((p) =>
           String(p.id) === playlistId
-            ? { ...p, displayName: displayName || null, adminDescription: adminDescription || null }
+            ? { ...p, displayName: displayName || null, adminDescription: adminDescription || null, isDefaultPlaylist }
+            : isDefaultPlaylist
+              ? { ...p, isDefaultPlaylist: false }
             : p,
         ),
       );
@@ -512,6 +517,19 @@ function PlaylistAdminSection({ token }: { token: string }) {
                 setSaved(false);
               }}
             />
+          </div>
+          <div className="sh-field">
+            <label style={{ flexDirection: 'row', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <input
+                type="checkbox"
+                checked={isDefaultPlaylist}
+                onChange={(e) => {
+                  setIsDefaultPlaylist(e.target.checked);
+                  setSaved(false);
+                }}
+              />
+              Standardplaylist
+            </label>
           </div>
           <div className="sh-field">
             <label htmlFor="playlist-admin-description">Beschreibung</label>

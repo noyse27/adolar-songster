@@ -4,6 +4,7 @@ export interface AdolarPlaylistCatalogEntry {
   id: number;
   name: string;
   description: string | null;
+  isDefaultPlaylist: boolean;
 }
 
 // Local mirror of Adolar's playlist list (see the adolar-playlist-catalog
@@ -18,10 +19,16 @@ export interface AdolarPlaylistCatalogEntry {
 // way, without needing to know the override exists.
 export async function listCatalogedPlaylists(): Promise<AdolarPlaylistCatalogEntry[]> {
   const result = await pool.query(
-    `SELECT id, COALESCE(display_name, name) AS name, description
-     FROM adolar_playlist ORDER BY COALESCE(display_name, name)`,
+    `SELECT id, COALESCE(display_name, name) AS name, description, is_default_playlist
+     FROM adolar_playlist
+     ORDER BY is_default_playlist DESC, LOWER(COALESCE(display_name, name)) ASC, id ASC`,
   );
-  return result.rows.map((row) => ({ id: row.id, name: row.name, description: row.description }));
+  return result.rows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    description: row.description,
+    isDefaultPlaylist: row.is_default_playlist,
+  }));
 }
 
 export async function isPlaylistCataloged(playlistId: number): Promise<boolean> {
@@ -33,6 +40,7 @@ export interface PlaylistBrowseEntry {
   id: number;
   name: string;
   description: string | null;
+  isDefaultPlaylist: boolean;
 }
 
 // Feeds the "Songster PlayLists" lobby dialog - effective display name plus
@@ -40,10 +48,16 @@ export interface PlaylistBrowseEntry {
 // sync-owned and not meant for players).
 export async function listPlaylistsForBrowsing(): Promise<PlaylistBrowseEntry[]> {
   const result = await pool.query(
-    `SELECT id, COALESCE(display_name, name) AS name, admin_description AS description
-     FROM adolar_playlist ORDER BY COALESCE(display_name, name)`,
+    `SELECT id, COALESCE(display_name, name) AS name, admin_description AS description, is_default_playlist
+     FROM adolar_playlist
+     ORDER BY is_default_playlist DESC, LOWER(COALESCE(display_name, name)) ASC, id ASC`,
   );
-  return result.rows.map((row) => ({ id: row.id, name: row.name, description: row.description }));
+  return result.rows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    description: row.description,
+    isDefaultPlaylist: row.is_default_playlist,
+  }));
 }
 
 export interface AdolarPlaylistAdminEntry {
@@ -51,19 +65,23 @@ export interface AdolarPlaylistAdminEntry {
   name: string;
   displayName: string | null;
   adminDescription: string | null;
+  isDefaultPlaylist: boolean;
 }
 
 // Feeds the admin "Playlistadministration" dropdown - raw Adolar name plus
 // whatever override is currently set, so the form can show both.
 export async function listPlaylistsForAdmin(): Promise<AdolarPlaylistAdminEntry[]> {
   const result = await pool.query(
-    `SELECT id, name, display_name, admin_description FROM adolar_playlist ORDER BY name`,
+    `SELECT id, name, display_name, admin_description, is_default_playlist
+     FROM adolar_playlist
+     ORDER BY is_default_playlist DESC, LOWER(COALESCE(display_name, name)) ASC, id ASC`,
   );
   return result.rows.map((row) => ({
     id: row.id,
     name: row.name,
     displayName: row.display_name,
     adminDescription: row.admin_description,
+    isDefaultPlaylist: row.is_default_playlist,
   }));
 }
 
@@ -71,10 +89,28 @@ export async function updatePlaylistOverrides(
   playlistId: number,
   displayName: string | null,
   adminDescription: string | null,
+  isDefaultPlaylist: boolean,
 ): Promise<boolean> {
-  const result = await pool.query(
-    `UPDATE adolar_playlist SET display_name = $2, admin_description = $3 WHERE id = $1`,
-    [playlistId, displayName, adminDescription],
-  );
-  return (result.rowCount ?? 0) > 0;
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    if (isDefaultPlaylist) {
+      await client.query(`UPDATE adolar_playlist SET is_default_playlist = FALSE WHERE is_default_playlist IS TRUE AND id <> $1`, [
+        playlistId,
+      ]);
+    }
+    const result = await client.query(
+      `UPDATE adolar_playlist
+       SET display_name = $2, admin_description = $3, is_default_playlist = $4
+       WHERE id = $1`,
+      [playlistId, displayName, adminDescription, isDefaultPlaylist],
+    );
+    await client.query('COMMIT');
+    return (result.rowCount ?? 0) > 0;
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
 }
