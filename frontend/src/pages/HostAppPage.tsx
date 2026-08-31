@@ -1,4 +1,5 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
+import QRCode from 'qrcode';
 import './pages.css';
 import { API_BASE_URL } from '../api';
 import { DisplayPage } from './DisplayPage';
@@ -59,9 +60,11 @@ export function HostAppPage() {
   const [pairing, setPairing] = useState<Pairing | null>(() => readSavedPairing());
   const [device, setDevice] = useState<HostDeviceState | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [qrCodeUrl, setQrCodeUrl] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const apiBase = useMemo(() => `${serverUrl.replace(/\/$/, '')}${API_BASE_URL.startsWith('/') ? API_BASE_URL : `/${API_BASE_URL}`}`, [serverUrl]);
+  const authorizeUrl = pairing ? `${serverUrl.replace(/\/$/, '')}/host/authorize?code=${encodeURIComponent(pairing.pairingCode)}` : null;
 
   useEffect(() => {
     if (!pairing) return;
@@ -92,6 +95,24 @@ export function HostAppPage() {
       window.clearInterval(id);
     };
   }, [apiBase, pairing]);
+
+  useEffect(() => {
+    if (!authorizeUrl) {
+      setQrCodeUrl(null);
+      return;
+    }
+    let cancelled = false;
+    QRCode.toDataURL(authorizeUrl, { margin: 1, width: 280 })
+      .then((url) => {
+        if (!cancelled) setQrCodeUrl(url);
+      })
+      .catch(() => {
+        if (!cancelled) setQrCodeUrl(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [authorizeUrl]);
 
   async function handleCreatePairing(event: FormEvent) {
     event.preventDefault();
@@ -174,8 +195,13 @@ export function HostAppPage() {
         ) : (
           <>
             <p style={{ color: 'var(--sh-text-dim)', margin: '6px 0 18px' }}>
-              Öffne Songster auf deinem Handy und bestätige dieses Hostgerät mit dem Code:
+              Scanne den QR-Code mit deinem Handy und bestätige dieses Hostgerät:
             </p>
+            {qrCodeUrl && (
+              <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}>
+                <img src={qrCodeUrl} alt="Host-App verbinden" width={280} height={280} style={{ borderRadius: 8 }} />
+              </div>
+            )}
             <div
               style={{
                 fontFamily: 'var(--sh-font-display)',
@@ -187,6 +213,11 @@ export function HostAppPage() {
             >
               {pairing.pairingCode}
             </div>
+            {authorizeUrl && (
+              <p style={{ color: 'var(--sh-text-faint)', fontSize: 12, wordBreak: 'break-all', margin: '0 0 10px' }}>
+                {authorizeUrl}
+              </p>
+            )}
             <p style={{ color: 'var(--sh-text-faint)', fontSize: 13 }}>
               Danach kann der autorisierte Nutzer diese App beim Anlegen eines privaten Tischs als Anzeige auswählen.
             </p>
