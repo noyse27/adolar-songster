@@ -1,35 +1,36 @@
-# Adolar Songster - Fire-TV Host-App MVP
+# Adolar Songster - Browser-/Fire-TV-Host MVP
 
 Version: 1.0
 Stand: 2026-08-31
 
 ## Ziel
 
-Die Host-App ist ein reines Anzeigegerät für den Hostmodus. Sie hat keine
-Spielerfunktionen und keinen normalen Login. Ein eingeloggter Songster-Nutzer
-autorisiert die laufende App-Instanz temporär und kann sie danach beim Anlegen
-eines privaten Tischs als Hostdisplay auswählen.
+Der Host ist ein reines Anzeigegerät für den Hostmodus. Er kann als Browser-Tab
+auf iPad/Tablet/Laptop oder über die sideloadbare Fire-TV/Android-WebView-App
+laufen. Er hat keine Spielerfunktionen und keinen normalen Login. Ein
+eingeloggter Songster-Nutzer autorisiert die laufende Host-Instanz temporär und
+kann sie danach beim Anlegen eines privaten Tischs als Hostdisplay auswählen.
 
-## WebView-Route
+## Host-Routen
 
-Der MVP stellt die TV-taugliche Web-Oberfläche unter `/host-app` bereit. Eine
-sideloadbare Android-/Fire-TV-App muss im ersten Schritt nur eine Fullscreen
-WebView öffnen, diese Route laden und die eingegebene Songster-URL lokal
-speichern.
+Der browserfreundliche Einstieg liegt unter `/host`. Die Android-/Fire-TV-App
+lädt weiterhin `/host-app`; beide Routen verwenden denselben Hostmodus und
+erzeugen sofort ein Pairing auf der aktuellen Songster-Instanz.
 
 ## Ablauf
 
-1. Host-App öffnet `/host-app`.
-2. App fragt nach der Songster-URL.
-3. Backend erzeugt ein Pairing über `POST /api/v1/host-devices/pairings`.
-4. Host-App zeigt einen kurzen Code.
-5. Ein eingeloggter Nutzer gibt den Code im Profil ein.
+1. Hostgerät öffnet `/host` im Browser oder `/host-app` in der Android-App.
+2. Backend erzeugt ein Pairing über `POST /api/v1/host-devices/pairings`.
+3. Hostgerät zeigt QR-Code und Kurzcode.
+4. Ein Nutzer scannt den QR-Code. Falls nötig, meldet Songster ihn zuerst an
+   und führt danach zur Bestätigungsseite zurück.
+5. Der Nutzer bestätigt das Hostgerät.
 6. Backend bindet das Hostgerät an diesen Nutzer.
-7. Host-App pollt weiter und wartet auf eine Tischzuweisung.
+7. Hostgerät pollt weiter und wartet auf eine Tischzuweisung.
 8. Im privaten Tischraum kann der Owner ein aktives Hostgerät auswählen.
 9. Backend erzeugt einen gerätegebundenen Display-Token und sendet ihn an die
    Host-App.
-10. Host-App rendert denselben Displaymodus wie `/display/:token`.
+10. Hostgerät rendert denselben Displaymodus wie `/display/:token`.
 
 ## Sicherheitsregeln
 
@@ -38,13 +39,14 @@ speichern.
 - Host-App-Display-Tokens enthalten eine `hostDeviceId`.
 - Wird ein Hostgerät im Profil getrennt, werden seine Host-Sockets getrennt und
   der gerätegebundene Display-Token wird serverseitig abgelehnt.
-- Schließt die App sauber, sendet sie ein `DELETE` an das Backend.
+- Schließt die App oder der Browser-Host sauber, sendet er ein `DELETE` an das
+  Backend.
 - Kommt kein Heartbeat mehr, entfernt das Profil das Gerät nach kurzer
   Inaktivität aus der aktiven Liste.
 
 ## Native Fire-TV-Schale
 
-Für die APK genügt zunächst eine kleine Kotlin/Android-TV-App:
+Für die APK genügt zunächst eine kleine Android-TV-App:
 
 - Fullscreen Activity
 - WebView mit JavaScript, DOM Storage und Audio erlaubt

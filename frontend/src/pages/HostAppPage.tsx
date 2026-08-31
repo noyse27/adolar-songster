@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import QRCode from 'qrcode';
 import './pages.css';
 import { API_BASE_URL } from '../api';
@@ -56,7 +56,7 @@ async function hostFetch<T>(baseUrl: string, path: string, options: RequestInit 
 }
 
 export function HostAppPage() {
-  const [serverUrl, setServerUrl] = useState(() => window.localStorage.getItem(`${STORAGE_KEY}:server-url`) ?? window.location.origin);
+  const [serverUrl] = useState(() => window.location.origin);
   const [pairing, setPairing] = useState<Pairing | null>(() => readSavedPairing());
   const [device, setDevice] = useState<HostDeviceState | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -114,25 +114,27 @@ export function HostAppPage() {
     };
   }, [authorizeUrl]);
 
-  async function handleCreatePairing(event: FormEvent) {
-    event.preventDefault();
+  const handleCreatePairing = useCallback(async () => {
     setBusy(true);
     setError(null);
     try {
       const next = await hostFetch<Pairing>(apiBase, '/host-devices/pairings', {
         method: 'POST',
-        body: JSON.stringify({ label: 'Fire TV Host-App', installId: randomInstallId() }),
+        body: JSON.stringify({ label: 'Songster Host', installId: randomInstallId() }),
       });
-      window.localStorage.setItem(`${STORAGE_KEY}:server-url`, serverUrl.replace(/\/$/, ''));
       writeSavedPairing(next);
       setPairing(next);
       setDevice(null);
     } catch {
-      setError('Songster-URL konnte nicht erreicht werden.');
+      setError('Hostmodus konnte nicht gestartet werden.');
     } finally {
       setBusy(false);
     }
-  }
+  }, [apiBase]);
+
+  useEffect(() => {
+    if (!pairing && !busy && !error) handleCreatePairing();
+  }, [busy, error, handleCreatePairing, pairing]);
 
   async function handleDisconnect() {
     if (!pairing) return;
@@ -177,21 +179,16 @@ export function HostAppPage() {
         {error && <div className="sh-error" style={{ marginBottom: 14 }}>{error}</div>}
 
         {!pairing ? (
-          <form className="sh-form" onSubmit={handleCreatePairing}>
-            <div className="sh-field" style={{ textAlign: 'left' }}>
-              <label htmlFor="songster-url">Songster-URL</label>
-              <input
-                id="songster-url"
-                inputMode="url"
-                value={serverUrl}
-                onChange={(event) => setServerUrl(event.target.value)}
-                placeholder="https://songster.example.de"
-              />
-            </div>
-            <button className="sh-submit" disabled={busy}>
-              {busy ? 'Verbinde…' : 'Host-App koppeln'}
-            </button>
-          </form>
+          <>
+            <p style={{ color: 'var(--sh-text-dim)', margin: '6px 0 18px' }}>
+              {busy ? 'Hostmodus wird gestartet…' : 'Hostmodus konnte nicht automatisch starten.'}
+            </p>
+            {!busy && (
+              <button className="sh-submit" onClick={handleCreatePairing}>
+                Erneut versuchen
+              </button>
+            )}
+          </>
         ) : (
           <>
             <p style={{ color: 'var(--sh-text-dim)', margin: '6px 0 18px' }}>
