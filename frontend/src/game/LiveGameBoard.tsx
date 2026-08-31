@@ -16,6 +16,7 @@ import { karmaLeavePenalty, placeAt } from '../playboard/gameLogic';
 import { useWakeLock } from '../hooks/useWakeLock';
 import { ReactionBar } from '../components/ReactionBar';
 import { communicationPhase, GameReactionEvent, ReactionConfig } from './reactions';
+import { keepNewestGameState } from './stateOrdering';
 
 /*
  * Real-data counterpart of playboard/Playboard.tsx - reuses that prototype's
@@ -107,10 +108,12 @@ export function LiveGameBoard() {
     // happened while disconnected.
     const onReconnect = () => {
       socket.emit('game:join-room', gameId);
-      fetchGameState(gameId, auth.accessToken).then(setState).catch(() => undefined);
+      fetchGameState(gameId, auth.accessToken)
+        .then((payload) => setState((current) => keepNewestGameState(current, payload)))
+        .catch(() => undefined);
     };
     socket.on('connect', onReconnect);
-    const onUpdate = (payload: GameState) => setState(payload);
+    const onUpdate = (payload: GameState) => setState((current) => keepNewestGameState(current, payload));
     const onConfigUpdate = (payload: { reactions: ReactionConfig }) => {
       setState((current) => current ? { ...current, reactionConfig: payload.reactions } : current);
     };
@@ -205,12 +208,23 @@ export function LiveGameBoard() {
   // almost entirely instead of holding it for 5s.
   const roundStatusForReveal = state?.currentRound?.status;
   const roundIdForReveal = state?.currentRound?.roundId;
+  const roundIndexForReveal = state?.currentRound?.indexNo;
   useEffect(() => {
     if (roundStatusForReveal !== 'resolved' || !roundIdForReveal || !state) return;
     const round = state.currentRound!;
     setLastResolvedRound((prev) => (prev?.roundId === roundIdForReveal ? prev : round));
     setRevealUntil((prev) => (prev !== null ? prev : Date.now() + REVEAL_MS));
   }, [roundStatusForReveal, roundIdForReveal, state]);
+
+  // If a delayed or held reveal overlaps with the next round's actual song
+  // window, prefer the current round. Otherwise the old placement graphic
+  // can reappear while the host/display is already playing the next song.
+  useEffect(() => {
+    if (revealUntil === null || !lastResolvedRound || roundIndexForReveal == null) return;
+    if (roundIndexForReveal <= lastResolvedRound.indexNo) return;
+    if (roundStatusForReveal === 'countdown') return;
+    setRevealUntil(null);
+  }, [revealUntil, lastResolvedRound, roundIndexForReveal, roundStatusForReveal]);
 
   // Once the 5s reveal window has actually elapsed, clear it so a later
   // round can arm its own - comparing against `now` (below) instead of a
@@ -455,6 +469,7 @@ export function LiveGameBoard() {
   useWakeLock(Boolean(state) && state?.status !== 'finished');
 
   const you = state?.players.find((p) => p.userId === auth?.user.id) ?? null;
+  const currentUserAutoReady = Boolean(auth && state?.autoReadyUserIds.includes(auth.user.id));
   const maxScore = useMemo(() => Math.max(0, ...(state?.players.map((p) => p.timeline.length) ?? [0])), [state]);
   // Global skill rank (see backend/src/services/rankScore.ts), not a
   // per-table placement in this one match - same number as the profile
@@ -767,6 +782,15 @@ export function LiveGameBoard() {
             </button>
             <button className="pb-icon-btn" title="Kurzanleitung" aria-label="Kurzanleitung" onClick={() => setHelpOpen(true)}>
               ?
+            </button>
+            <button
+              className={`pb-icon-btn pb-auto-ready${currentUserAutoReady ? ' pb-active' : ''}`}
+              title={currentUserAutoReady ? 'Auto bereit ausschalten' : 'Auto bereit einschalten'}
+              aria-label="Auto bereit ein/aus"
+              disabled={!you}
+              onClick={handleToggleAutoReady}
+            >
+              &#8635;
             </button>
             <button
               className="pb-icon-btn"
