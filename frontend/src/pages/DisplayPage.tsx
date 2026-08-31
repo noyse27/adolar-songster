@@ -37,8 +37,9 @@ function clamp01(x: number): number {
  * audio for everyone at the table - every player's own phone stays muted
  * while a display anchor is connected (see LiveGameBoard's `compact` mode).
  */
-export function DisplayPage() {
-  const { token } = useParams<{ token: string }>();
+export function DisplayPage({ displayToken }: { displayToken?: string }) {
+  const { token: routeToken } = useParams<{ token: string }>();
+  const token = displayToken ?? routeToken;
 
   const [table, setTable] = useState<DisplayTableDetail | null>(null);
   const [state, setState] = useState<GameState | null>(null);
@@ -82,9 +83,16 @@ export function DisplayPage() {
     const socket = socketRef.current;
     if (!socket || !tableId) return;
     socket.emit('table:join-room', tableId);
+    // A dropped-and-restored socket (e.g. a flaky WLAN) starts a brand-new
+    // server session with no room memberships - without rejoining on
+    // 'connect', this display would silently stop receiving table:update
+    // broadcasts until the page is reloaded.
+    const onReconnect = () => socket.emit('table:join-room', tableId);
+    socket.on('connect', onReconnect);
     const onTableUpdate = (payload: DisplayTableDetail) => setTable(payload);
     socket.on('table:update', onTableUpdate);
     return () => {
+      socket.off('connect', onReconnect);
       socket.off('table:update', onTableUpdate);
       socket.emit('table:leave-room', tableId);
     };
@@ -104,6 +112,14 @@ export function DisplayPage() {
     if (!socket) return;
     const reactionTimers = reactionTimersRef.current;
     socket.emit('game:join-room', gameId);
+    // Same reconnect gap as the table-room effect above: rejoin the game
+    // room and refresh state after any reconnect, or this display freezes
+    // on stale round state until manually reloaded.
+    const onReconnect = () => {
+      socket.emit('game:join-room', gameId);
+      apiFetch<GameState>(`/games/display/${token}/${gameId}`).then(setState).catch(() => undefined);
+    };
+    socket.on('connect', onReconnect);
     const onGameUpdate = (payload: GameState) => setState(payload);
     const onConfigUpdate = (payload: { reactions: ReactionConfig }) => {
       setState((current) => current ? { ...current, reactionConfig: payload.reactions } : current);
@@ -128,6 +144,7 @@ export function DisplayPage() {
     socket.on('game:reaction', onReaction);
     socket.on('communication:config-updated', onConfigUpdate);
     return () => {
+      socket.off('connect', onReconnect);
       socket.off('game:update', onGameUpdate);
       socket.off('game:reaction', onReaction);
       socket.off('communication:config-updated', onConfigUpdate);

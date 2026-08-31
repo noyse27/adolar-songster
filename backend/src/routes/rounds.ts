@@ -8,6 +8,7 @@ import { loadGameState } from '../services/gameState';
 import { touchTableActivityForGame } from '../services/tableActivity';
 import { BONUS_WINDOW_MS, COUNTDOWN_MS, SONG_DURATION_MS } from '../services/roundConfig';
 import { verifyDisplayToken } from '../services/displayToken';
+import { isHostDisplayTokenActive } from '../services/hostDevices';
 import { authorizeGameViewer } from '../services/tableAuthorization';
 
 export const roundsRouter = Router();
@@ -109,7 +110,7 @@ roundsRouter.get('/games/:gameId/state', requireAuth, async (req: AuthenticatedR
 // a display token from one table can't be pointed at another table's game.
 roundsRouter.get('/games/display/:token/:gameId', async (req, res) => {
   const verified = verifyDisplayToken(req.params.token);
-  if (!verified) {
+  if (!verified || (verified.hostDeviceId && !(await isHostDisplayTokenActive(verified.hostDeviceId)))) {
     res.status(401).json({ error: 'invalid or expired display token' });
     return;
   }
