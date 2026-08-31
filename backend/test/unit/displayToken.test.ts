@@ -15,7 +15,12 @@ describe('displayToken', () => {
 
   it('round-trips a valid token back to its tableId', () => {
     const token = issueDisplayToken('table-abc');
-    expect(verifyDisplayToken(token)).toEqual({ tableId: 'table-abc' });
+    expect(verifyDisplayToken(token)).toEqual({ tableId: 'table-abc', hostDeviceId: null });
+  });
+
+  it('round-trips a host-device-bound display token', () => {
+    const token = issueDisplayToken('table-abc', 'device-123');
+    expect(verifyDisplayToken(token)).toEqual({ tableId: 'table-abc', hostDeviceId: 'device-123' });
   });
 
   it('rejects a garbage token', () => {

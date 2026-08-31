@@ -3,6 +3,7 @@ import { Server, Socket } from 'socket.io';
 import jwt from 'jsonwebtoken';
 import { JWT_SECRET } from '../middleware/auth';
 import { verifyDisplayToken } from '../services/displayToken';
+import { isHostDisplayTokenActive } from '../services/hostDevices';
 import { pool } from '../db/pool';
 import { setIO, tableRoom, lobbyRoom, gameRoom } from './io';
 import { broadcastGame } from './broadcast';
@@ -21,6 +22,7 @@ interface AuthedSocketData {
 
 interface DisplaySocketData {
   displayTableId: string;
+  hostDeviceId?: string;
 }
 
 async function setDisplayConnected(tableId: string, connected: boolean): Promise<void> {
@@ -59,8 +61,22 @@ export function createSocketServer(httpServer: HttpServer): Server {
     // out by) a real player's login on their own phone.
     const display = verifyDisplayToken(token);
     if (display) {
-      (socket.data as DisplaySocketData).displayTableId = display.tableId;
-      next();
+      if (!display.hostDeviceId) {
+        (socket.data as DisplaySocketData).displayTableId = display.tableId;
+        next();
+        return;
+      }
+      isHostDisplayTokenActive(display.hostDeviceId)
+        .then((active) => {
+          if (!active) {
+            next(new Error('invalid or expired token'));
+            return;
+          }
+          (socket.data as DisplaySocketData).displayTableId = display.tableId;
+          (socket.data as DisplaySocketData).hostDeviceId = display.hostDeviceId ?? undefined;
+          next();
+        })
+        .catch(() => next(new Error('invalid or expired token')));
       return;
     }
 

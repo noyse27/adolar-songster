@@ -13,18 +13,19 @@ const DISPLAY_TOKEN_TTL_SECONDS = 12 * 60 * 60;
 interface DisplayTokenPayload {
   kind: 'display';
   tableId: string;
+  hostDeviceId?: string;
 }
 
-export function issueDisplayToken(tableId: string): string {
-  const payload: DisplayTokenPayload = { kind: 'display', tableId };
+export function issueDisplayToken(tableId: string, hostDeviceId?: string): string {
+  const payload: DisplayTokenPayload = { kind: 'display', tableId, hostDeviceId };
   return jwt.sign(payload, JWT_SECRET, { expiresIn: DISPLAY_TOKEN_TTL_SECONDS });
 }
 
-export function verifyDisplayToken(token: string): { tableId: string } | null {
+export function verifyDisplayToken(token: string): { tableId: string; hostDeviceId: string | null } | null {
   try {
     const payload = jwt.verify(token, JWT_SECRET) as Partial<DisplayTokenPayload> & Record<string, unknown>;
     if (payload.kind !== 'display' || typeof payload.tableId !== 'string') return null;
-    return { tableId: payload.tableId };
+    return { tableId: payload.tableId, hostDeviceId: typeof payload.hostDeviceId === 'string' ? payload.hostDeviceId : null };
   } catch {
     return null;
   }

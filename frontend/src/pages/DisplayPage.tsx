@@ -37,8 +37,9 @@ function clamp01(x: number): number {
  * audio for everyone at the table - every player's own phone stays muted
  * while a display anchor is connected (see LiveGameBoard's `compact` mode).
  */
-export function DisplayPage() {
-  const { token } = useParams<{ token: string }>();
+export function DisplayPage({ displayToken }: { displayToken?: string }) {
+  const { token: routeToken } = useParams<{ token: string }>();
+  const token = displayToken ?? routeToken;
 
   const [table, setTable] = useState<DisplayTableDetail | null>(null);
   const [state, setState] = useState<GameState | null>(null);

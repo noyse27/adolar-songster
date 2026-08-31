@@ -52,6 +52,12 @@ interface TablePreview {
   minGamesPlayed: number | null;
 }
 
+interface HostDevice {
+  id: string;
+  label: string;
+  online: boolean;
+}
+
 // Mirrors services/tableActivity.ts's INACTIVITY_DELETE_MS/WARNING_MS -
 // keep in sync.
 const INACTIVITY_DELETE_MS = 60 * 60 * 1000;
@@ -78,6 +84,8 @@ export function TableRoomPage() {
   const [keepingAlive, setKeepingAlive] = useState(false);
   const [creatingDisplayLink, setCreatingDisplayLink] = useState(false);
   const [displayLink, setDisplayLink] = useState<string | null>(null);
+  const [hostDevices, setHostDevices] = useState<HostDevice[]>([]);
+  const [attachingHostDevice, setAttachingHostDevice] = useState<string | null>(null);
 
   useEffect(() => {
     const id = window.setInterval(() => setNow(Date.now()), 5000);
@@ -149,6 +157,13 @@ export function TableRoomPage() {
   const isOwner = table?.ownerUserId === auth?.user.id;
   const players = table?.seats.filter((s) => s.seatType === 'player') ?? [];
   const spectators = table?.seats.filter((s) => s.seatType === 'spectator') ?? [];
+
+  useEffect(() => {
+    if (!auth || !mySeat || !isOwner || table?.visibility !== 'private') return;
+    apiFetch<{ devices: HostDevice[] }>('/host-devices/available', { token: auth.accessToken })
+      .then((res) => setHostDevices(res.devices))
+      .catch(() => {});
+  }, [auth, mySeat, isOwner, table?.visibility]);
 
   // System-inactive-table cleanup (services/tableCleanup.ts): a table
   // nobody interacts with for an hour gets hard-deleted for performance
@@ -247,6 +262,24 @@ export function TableRoomPage() {
       setError('Anzeige-Link konnte nicht erzeugt werden.');
     } finally {
       setCreatingDisplayLink(false);
+    }
+  }
+
+  async function handleAttachHostDevice(deviceId: string) {
+    if (!auth || !tableId) return;
+    setAttachingHostDevice(deviceId);
+    setError(null);
+    try {
+      await apiFetch(`/tables/${tableId}/host-device`, {
+        method: 'POST',
+        body: { deviceId },
+        token: auth.accessToken,
+      });
+      setError(null);
+    } catch {
+      setError('Host-App konnte nicht an diesen Tisch gesetzt werden.');
+    } finally {
+      setAttachingHostDevice(null);
     }
   }
 
@@ -352,6 +385,21 @@ export function TableRoomPage() {
                 <div style={{ marginTop: 8 }}>
                   <QrCodeButton value={displayLink} label="Anzeige-QR-Code anzeigen" />
                 </div>
+              </div>
+            )}
+            {hostDevices.length > 0 && (
+              <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div style={{ fontSize: 13, color: 'var(--sh-text-faint)' }}>Oder direkt an eine verbundene Host-App senden:</div>
+                {hostDevices.map((device) => (
+                  <button
+                    key={device.id}
+                    className="admin-btn-sm"
+                    disabled={attachingHostDevice !== null}
+                    onClick={() => handleAttachHostDevice(device.id)}
+                  >
+                    {attachingHostDevice === device.id ? 'Sendet…' : `${device.label} verwenden`}
+                  </button>
+                ))}
               </div>
             )}
           </div>

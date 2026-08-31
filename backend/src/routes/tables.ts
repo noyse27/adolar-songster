@@ -13,6 +13,7 @@ import { fetchLobbyTables, loadTableDetail, loadTablePreview } from '../services
 import { broadcastLobby, broadcastTable } from '../realtime/broadcast';
 import { touchTableActivity } from '../services/tableActivity';
 import { issueDisplayToken, verifyDisplayToken } from '../services/displayToken';
+import { isHostDisplayTokenActive } from '../services/hostDevices';
 import { loadActiveSeat } from '../services/tableAuthorization';
 
 export const tablesRouter = Router();
@@ -201,7 +202,7 @@ tablesRouter.post('/tables/:tableId/display-link', requireAuth, async (req: Auth
 // device has no app_user login at all (see displayToken.ts).
 tablesRouter.get('/tables/display/:token', async (req, res) => {
   const verified = verifyDisplayToken(req.params.token);
-  if (!verified) {
+  if (!verified || (verified.hostDeviceId && !(await isHostDisplayTokenActive(verified.hostDeviceId)))) {
     res.status(401).json({ error: 'invalid or expired display token' });
     return;
   }

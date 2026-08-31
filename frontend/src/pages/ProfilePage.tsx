@@ -23,6 +23,15 @@ interface LeaderboardEntry {
   karmaPoints: number;
 }
 
+interface HostDevice {
+  id: string;
+  label: string;
+  online: boolean;
+  lastSeenAt: string | null;
+  currentTableId: string | null;
+  authorizedAt: string | null;
+}
+
 export function ProfilePage() {
   const { auth } = useAuth();
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -35,6 +44,11 @@ export function ProfilePage() {
   const [pwError, setPwError] = useState<string | null>(null);
   const [pwSuccess, setPwSuccess] = useState(false);
   const [pwSubmitting, setPwSubmitting] = useState(false);
+  const [hostDevices, setHostDevices] = useState<HostDevice[]>([]);
+  const [pairingCode, setPairingCode] = useState('');
+  const [hostError, setHostError] = useState<string | null>(null);
+  const [hostSuccess, setHostSuccess] = useState<string | null>(null);
+  const [hostSubmitting, setHostSubmitting] = useState(false);
 
   useEffect(() => {
     if (!auth) return;
@@ -47,7 +61,14 @@ export function ProfilePage() {
         setRank(idx >= 0 ? idx + 1 : null);
       })
       .catch(() => {});
+    loadHostDevices(auth.accessToken);
   }, [auth]);
+
+  async function loadHostDevices(token: string) {
+    apiFetch<{ devices: HostDevice[] }>('/users/me/host-devices', { token })
+      .then((res) => setHostDevices(res.devices))
+      .catch(() => {});
+  }
 
   async function handleChangePassword(event: FormEvent) {
     event.preventDefault();
@@ -76,6 +97,39 @@ export function ProfilePage() {
       }
     } finally {
       setPwSubmitting(false);
+    }
+  }
+
+  async function handleAuthorizeHostDevice(event: FormEvent) {
+    event.preventDefault();
+    if (!auth) return;
+    setHostSubmitting(true);
+    setHostError(null);
+    setHostSuccess(null);
+    try {
+      const result = await apiFetch<{ device: { label: string } }>('/host-devices/authorize', {
+        method: 'POST',
+        body: { pairingCode },
+        token: auth.accessToken,
+      });
+      setPairingCode('');
+      setHostSuccess(`${result.device.label} verbunden.`);
+      await loadHostDevices(auth.accessToken);
+    } catch {
+      setHostError('Code ist ungültig oder abgelaufen.');
+    } finally {
+      setHostSubmitting(false);
+    }
+  }
+
+  async function handleRevokeHostDevice(deviceId: string) {
+    if (!auth) return;
+    setHostError(null);
+    try {
+      await apiFetch(`/users/me/host-devices/${deviceId}`, { method: 'DELETE', token: auth.accessToken });
+      await loadHostDevices(auth.accessToken);
+    } catch {
+      setHostError('Hostgerät konnte nicht getrennt werden.');
     }
   }
 
@@ -133,6 +187,41 @@ export function ProfilePage() {
             </div>
           </div>
         )}
+
+        <h2 style={{ fontSize: 15 }}>Host-App</h2>
+        {hostError && <div className="sh-error" style={{ marginBottom: 14 }}>{hostError}</div>}
+        {hostSuccess && <div className="sh-info" style={{ marginBottom: 14 }}>{hostSuccess}</div>}
+        <form className="admin-inline-form" onSubmit={handleAuthorizeHostDevice}>
+          <input
+            aria-label="Host-App-Code"
+            placeholder="Fire-TV-Code"
+            value={pairingCode}
+            onChange={(e) => setPairingCode(e.target.value.toUpperCase())}
+          />
+          <button className="admin-btn-sm" disabled={hostSubmitting || pairingCode.trim().length < 4}>
+            {hostSubmitting ? 'Verbindet…' : 'Hostgerät verbinden'}
+          </button>
+        </form>
+        <div className="admin-section" style={{ marginBottom: 22 }}>
+          <h3>Verbundene Hostgeräte</h3>
+          {hostDevices.length === 0 ? (
+            <p style={{ fontSize: 13, color: 'var(--sh-text-faint)' }}>Noch keine Host-App verbunden.</p>
+          ) : (
+            <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {hostDevices.map((device) => (
+                <li key={device.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
+                  <span style={{ color: 'var(--sh-text-dim)' }}>
+                    <span className={`admin-pill${device.online ? '' : ' warn'}`}>{device.online ? 'online' : 'offline'}</span>{' '}
+                    {device.label}
+                  </span>
+                  <button className="admin-btn-sm" onClick={() => handleRevokeHostDevice(device.id)}>
+                    Trennen
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
 
         <h2 style={{ fontSize: 15 }}>Passwort ändern</h2>
         {pwError && <div className="sh-error" style={{ marginBottom: 14 }}>{pwError}</div>}
