@@ -334,6 +334,7 @@ export function TableRoomPage() {
     table && table.visibility === 'private' && table.joinCode
       ? `${window.location.origin}/tisch/${table.tableId}?code=${table.joinCode}`
       : null;
+  const browserHostLink = `${window.location.origin}/host`;
 
   return (
     <div className="app-shell">
@@ -372,12 +373,15 @@ export function TableRoomPage() {
           <div className="sh-info" style={{ marginBottom: 16 }}>
             <div style={{ fontWeight: 600, marginBottom: 6 }}>Hostmodus: Anzeigegerät</div>
             <p style={{ fontSize: 13, color: 'var(--sh-text-faint)', margin: '0 0 8px' }}>
-              Öffne diesen Link auf einem Fernseher/Tablet, das für alle sichtbar am Tisch steht - zeigt das volle
-              Playboard, ohne dass sich das Gerät einloggt oder einen Platz belegt.
+              Öffne <code>{browserHostLink}</code> auf Fernseher, iPad oder Tablet. Dort erscheint ein QR-Code zur
+              Bestätigung; danach kannst du das Gerät hier direkt als Hostanzeige verwenden.
             </p>
+            <div style={{ marginBottom: 10 }}>
+              <QrCodeButton value={browserHostLink} label="Browser-Host-QR anzeigen" />
+            </div>
             {!displayLink ? (
               <button className="admin-btn-sm" disabled={creatingDisplayLink} onClick={handleCreateDisplayLink}>
-                {creatingDisplayLink ? 'Erzeugt…' : 'Anzeigegerät verbinden'}
+                {creatingDisplayLink ? 'Erzeugt…' : 'Direkten Anzeige-Link erzeugen'}
               </button>
             ) : (
               <div style={{ wordBreak: 'break-all' }}>

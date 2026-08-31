@@ -1,4 +1,5 @@
 import { Route, Routes } from 'react-router-dom';
+import { useLocation } from 'react-router-dom';
 import { SetupWizard } from './components/SetupWizard';
 import { Footer } from './components/Footer';
 import { RootGate } from './pages/RootGate';
@@ -22,6 +23,9 @@ import { LiveGameBoard } from './game/LiveGameBoard';
 // rest of the app. Launching it as its own popup window on round-start is
 // still open (see Playboard UI spec section 8).
 export function App() {
+  const location = useLocation();
+  const hideFooter = location.pathname === '/host' || location.pathname === '/host-app' || location.pathname.startsWith('/display/');
+
   return (
     <>
       <Routes>
@@ -40,10 +44,11 @@ export function App() {
         <Route path="/tisch/:tableId" element={<TableRoomPage />} />
         <Route path="/spiel/:gameId" element={<LiveGameBoard />} />
         <Route path="/display/:token" element={<DisplayPage />} />
+        <Route path="/host" element={<HostAppPage />} />
         <Route path="/host-app" element={<HostAppPage />} />
         <Route path="/host/authorize" element={<HostAuthorizePage />} />
       </Routes>
-      <Footer />
+      {!hideFooter && <Footer />}
     </>
   );
 }
