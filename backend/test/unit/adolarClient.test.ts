@@ -93,6 +93,28 @@ describe('adolarClient (Adolar_Songster_Adolar_Integration_Konzept section 3.4)'
     await expect(listPlaylists()).rejects.toMatchObject({ code: 'REQUEST_FAILED' });
   });
 
+  it('rejects unsupported Adolar base URL schemes before fetching', async () => {
+    process.env.ADOLAR_BASE_URL = 'file:///etc/passwd';
+    process.env.ADOLAR_API_TOKEN = 'test-token';
+    const { listPlaylists } = freshClient();
+
+    global.fetch = jest.fn() as unknown as typeof fetch;
+
+    await expect(listPlaylists()).rejects.toMatchObject({ code: 'REQUEST_FAILED' });
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it('rejects Adolar base URLs with embedded credentials before fetching', async () => {
+    process.env.ADOLAR_BASE_URL = 'https://user:pass@adolar.example';
+    process.env.ADOLAR_API_TOKEN = 'test-token';
+    const { listPlaylists } = freshClient();
+
+    global.fetch = jest.fn() as unknown as typeof fetch;
+
+    await expect(listPlaylists()).rejects.toMatchObject({ code: 'REQUEST_FAILED' });
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
   it('fetchPlaylistTracksPage requests the given limit/offset and returns the parsed page', async () => {
     process.env.ADOLAR_BASE_URL = 'http://adolar.example';
     process.env.ADOLAR_API_TOKEN = 'test-token';

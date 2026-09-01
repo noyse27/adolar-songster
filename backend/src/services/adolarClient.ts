@@ -56,6 +56,32 @@ interface AdolarTracksPage {
   tracks: AdolarTrack[];
 }
 
+function normalizeAdolarBaseUrl(rawBaseUrl: string): string {
+  let url: URL;
+  try {
+    url = new URL(rawBaseUrl);
+  } catch {
+    throw new AdolarClientError('Adolar base URL is not a valid absolute URL', 'REQUEST_FAILED');
+  }
+  if (!['http:', 'https:'].includes(url.protocol) || !url.hostname || url.username || url.password) {
+    throw new AdolarClientError('Adolar base URL must be an http(s) URL without embedded credentials', 'REQUEST_FAILED');
+  }
+  while (url.pathname.endsWith('/') && url.pathname.length > 1) {
+    url.pathname = url.pathname.slice(0, -1);
+  }
+  url.search = '';
+  url.hash = '';
+  const normalized = url.toString();
+  return normalized.endsWith('/') ? normalized.slice(0, -1) : normalized;
+}
+
+function adolarUrl(baseUrl: string, path: string): string {
+  if (!path.startsWith('/api/songster/')) {
+    throw new AdolarClientError('Adolar request path is outside the songster API', 'REQUEST_FAILED');
+  }
+  return new URL(path, `${baseUrl}/`).toString();
+}
+
 async function config(): Promise<{ baseUrl: string; token: string; clientVersion: string }> {
   const baseUrl = (await getSetting('adolar.base_url')) ?? process.env.ADOLAR_BASE_URL;
   const token = (await getSetting('adolar.api_token')) ?? process.env.ADOLAR_API_TOKEN;
@@ -66,7 +92,7 @@ async function config(): Promise<{ baseUrl: string; token: string; clientVersion
     );
   }
   return {
-    baseUrl: baseUrl.replace(/\/+$/, ''),
+    baseUrl: normalizeAdolarBaseUrl(baseUrl),
     token,
     clientVersion: process.env.ADOLAR_CLIENT_VERSION ?? 'unknown',
   };
@@ -83,9 +109,10 @@ export async function isAdolarConfigured(): Promise<boolean> {
 }
 
 async function rawAdolarFetch(baseUrl: string, token: string, clientVersion: string, path: string): Promise<Response> {
+  const normalizedBaseUrl = normalizeAdolarBaseUrl(baseUrl);
   let response: Response;
   try {
-    response = await fetch(`${baseUrl.replace(/\/+$/, '')}${path}`, {
+    response = await fetch(adolarUrl(normalizedBaseUrl, path), {
       headers: {
         Authorization: `Bearer ${token}`,
         'X-Adolar-Client-Version': clientVersion,
@@ -93,7 +120,7 @@ async function rawAdolarFetch(baseUrl: string, token: string, clientVersion: str
     });
   } catch (err) {
     throw new AdolarClientError(
-      `failed to reach Adolar at ${baseUrl}: ${(err as Error).message}`,
+      `failed to reach Adolar at ${normalizedBaseUrl}: ${(err as Error).message}`,
       'REQUEST_FAILED',
     );
   }
@@ -158,7 +185,7 @@ export async function fetchTrackStreamResponse(trackId: number, rangeHeader?: st
   };
   if (rangeHeader) headers.Range = rangeHeader;
   try {
-    return await fetch(`${baseUrl}/api/songster/tracks/${trackId}/stream`, { headers });
+    return await fetch(adolarUrl(baseUrl, `/api/songster/tracks/${trackId}/stream`), { headers });
   } catch (err) {
     throw new AdolarClientError(`failed to reach Adolar at ${baseUrl}: ${(err as Error).message}`, 'REQUEST_FAILED');
   }
