@@ -7,6 +7,8 @@ COPY backend/package.json backend/package.json
 COPY frontend/package.json frontend/package.json
 RUN npm ci
 COPY frontend ./frontend
+ARG VITE_BETA_DEBUG_LOGGING=false
+ENV VITE_BETA_DEBUG_LOGGING=$VITE_BETA_DEBUG_LOGGING
 RUN npm run build --workspace frontend
 
 FROM nginx:1.27-alpine AS runtime

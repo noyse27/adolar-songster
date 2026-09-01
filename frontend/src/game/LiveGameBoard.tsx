@@ -17,6 +17,7 @@ import { useWakeLock } from '../hooks/useWakeLock';
 import { ReactionBar } from '../components/ReactionBar';
 import { communicationPhase, GameReactionEvent, ReactionConfig } from './reactions';
 import { keepNewestGameState } from './stateOrdering';
+import { describeAudioElement, flushClientDebugEvents, logClientEvent, snapshotClientDebugContext } from '../debugLogging';
 
 /*
  * Real-data counterpart of playboard/Playboard.tsx - reuses that prototype's
@@ -86,10 +87,50 @@ export function LiveGameBoard() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const reactionTimersRef = useRef<Map<string, number>>(new Map());
 
+  function debugRoundPayload(extra: Record<string, unknown> = {}): Record<string, unknown> {
+    return {
+      clientKind: 'player',
+      userId: auth?.user.id ?? null,
+      tableId: state?.tableId ?? null,
+      gameId: state?.gameId ?? gameId ?? null,
+      roundId: state?.currentRound?.roundId ?? null,
+      roundIndex: state?.currentRound?.indexNo ?? null,
+      roundStatus: state?.currentRound?.status ?? null,
+      displayAnchorPresent: state?.displayAnchorPresent ?? null,
+      audioMuted,
+      effectiveMuted: state?.displayAnchorPresent ? true : audioMuted,
+      ...extra,
+    };
+  }
+
   useEffect(() => {
     if (!auth || !gameId) return;
+    logClientEvent({
+      eventType: 'game_board_mount',
+      clientKind: 'player',
+      userId: auth.user.id,
+      gameId,
+      payload: debugRoundPayload(),
+    });
     fetchGameState(gameId, auth.accessToken)
-      .then(setState)
+      .then((payload) => {
+        logClientEvent({
+          eventType: 'game_state_initial_loaded',
+          clientKind: 'player',
+          userId: auth.user.id,
+          tableId: payload.tableId,
+          gameId: payload.gameId,
+          roundId: payload.currentRound?.roundId ?? null,
+          roundIndex: payload.currentRound?.indexNo ?? null,
+          payload: {
+            status: payload.currentRound?.status ?? null,
+            mode: payload.currentRound?.mode ?? null,
+            playerCount: payload.players.length,
+            displayAnchorPresent: payload.displayAnchorPresent,
+          },
+        });
+        setState(payload);
+      })
       .catch((err) => {
         if (err instanceof ApiError && err.status === 404) setNotFound(true);
         else setError('Spielstand konnte nicht geladen werden.');
@@ -107,13 +148,37 @@ export function LiveGameBoard() {
     // Re-fetching state on top of the rejoin closes the gap for whatever
     // happened while disconnected.
     const onReconnect = () => {
+      logClientEvent({
+        eventType: 'socket_game_rejoin_after_reconnect',
+        clientKind: 'player',
+        userId: auth.user.id,
+        gameId,
+        payload: debugRoundPayload({ socketId: socket.id }),
+      });
       socket.emit('game:join-room', gameId);
       fetchGameState(gameId, auth.accessToken)
         .then((payload) => setState((current) => keepNewestGameState(current, payload)))
         .catch(() => undefined);
     };
     socket.on('connect', onReconnect);
-    const onUpdate = (payload: GameState) => setState((current) => keepNewestGameState(current, payload));
+    const onUpdate = (payload: GameState) => {
+      logClientEvent({
+        eventType: 'game_update_received',
+        clientKind: 'player',
+        userId: auth.user.id,
+        tableId: payload.tableId,
+        gameId: payload.gameId,
+        roundId: payload.currentRound?.roundId ?? null,
+        roundIndex: payload.currentRound?.indexNo ?? null,
+        payload: {
+          status: payload.currentRound?.status ?? null,
+          mode: payload.currentRound?.mode ?? null,
+          playerCount: payload.players.length,
+          displayAnchorPresent: payload.displayAnchorPresent,
+        },
+      });
+      setState((current) => keepNewestGameState(current, payload));
+    };
     const onConfigUpdate = (payload: { reactions: ReactionConfig }) => {
       setState((current) => current ? { ...current, reactionConfig: payload.reactions } : current);
     };
@@ -145,6 +210,9 @@ export function LiveGameBoard() {
       for (const timer of reactionTimers.values()) window.clearTimeout(timer);
       reactionTimers.clear();
     };
+    // Debug payloads should describe the event at this subscription boundary,
+    // not resubscribe sockets on every incidental state/audio change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [auth, gameId]);
 
   function handleReaction(reactionId: string) {
@@ -193,6 +261,19 @@ export function LiveGameBoard() {
     setPendingLocal(null);
     setGuessInput('');
     setTieModalDismissed(false);
+    if (state?.currentRound?.roundId) {
+      logClientEvent({
+        eventType: 'round_seen',
+        clientKind: 'player',
+        userId: auth?.user.id ?? null,
+        tableId: state.tableId,
+        gameId: state.gameId,
+        roundId: state.currentRound.roundId,
+        roundIndex: state.currentRound.indexNo,
+        payload: debugRoundPayload(),
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state?.currentRound?.roundId]);
 
   // Remembers the last resolved round's song - and holds the ring flipped
@@ -305,10 +386,30 @@ export function LiveGameBoard() {
     if (!songStreamPath) {
       audio.removeAttribute('src');
       audio.load();
+      logClientEvent({
+        eventType: 'audio_source_cleared',
+        clientKind: 'player',
+        userId: auth?.user.id ?? null,
+        tableId: state?.tableId ?? null,
+        gameId,
+        roundId,
+        roundIndex: state?.currentRound?.indexNo ?? null,
+        payload: debugRoundPayload({ audio: describeAudioElement(audio) }),
+      });
       return;
     }
     audio.src = `${API_BASE_URL}${songStreamPath}`;
     audio.load();
+    logClientEvent({
+      eventType: 'audio_load_start',
+      clientKind: 'player',
+      userId: auth?.user.id ?? null,
+      tableId: state?.tableId ?? null,
+      gameId,
+      roundId,
+      roundIndex: state?.currentRound?.indexNo ?? null,
+      payload: debugRoundPayload({ songStreamPath, audio: describeAudioElement(audio) }),
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roundId]);
 
@@ -329,12 +430,61 @@ export function LiveGameBoard() {
     if (!audio) return;
     if (roundStatus === 'playing') {
       audio.currentTime = 0;
-      audio.play().catch(() => setAudioUnavailable(true));
+      logClientEvent({
+        eventType: 'audio_play_attempt',
+        clientKind: 'player',
+        userId: auth?.user.id ?? null,
+        tableId: state?.tableId ?? null,
+        gameId,
+        roundId,
+        roundIndex: state?.currentRound?.indexNo ?? null,
+        payload: debugRoundPayload({ songPlaybackMs, audio: describeAudioElement(audio) }),
+      });
+      audio
+        .play()
+        .then(() => {
+          logClientEvent({
+            eventType: 'audio_play_success',
+            clientKind: 'player',
+            userId: auth?.user.id ?? null,
+            tableId: state?.tableId ?? null,
+            gameId,
+            roundId,
+            roundIndex: state?.currentRound?.indexNo ?? null,
+            payload: debugRoundPayload({ audio: describeAudioElement(audio) }),
+          });
+        })
+        .catch((err) => {
+          setAudioUnavailable(true);
+          logClientEvent({
+            eventType: 'audio_play_rejected',
+            clientKind: 'player',
+            userId: auth?.user.id ?? null,
+            tableId: state?.tableId ?? null,
+            gameId,
+            roundId,
+            roundIndex: state?.currentRound?.indexNo ?? null,
+            payload: snapshotClientDebugContext(debugRoundPayload({ errorName: err.name, errorMessage: err.message, audio: describeAudioElement(audio) })),
+          });
+          void flushClientDebugEvents(true);
+        });
       if (songPlaybackMs != null) {
         const timeoutId = window.setTimeout(() => audio.pause(), songPlaybackMs);
         return () => window.clearTimeout(timeoutId);
       }
     } else {
+      if (!audio.paused) {
+        logClientEvent({
+          eventType: 'audio_pause_for_round_status',
+          clientKind: 'player',
+          userId: auth?.user.id ?? null,
+          tableId: state?.tableId ?? null,
+          gameId,
+          roundId,
+          roundIndex: state?.currentRound?.indexNo ?? null,
+          payload: debugRoundPayload({ audio: describeAudioElement(audio) }),
+        });
+      }
       audio.pause();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -344,7 +494,36 @@ export function LiveGameBoard() {
   // sync declaratively on every render - this just persists the choice.
   useEffect(() => {
     window.localStorage.setItem(AUDIO_MUTED_STORAGE_KEY, String(audioMuted));
+    logClientEvent({
+      eventType: 'audio_muted_changed',
+      clientKind: 'player',
+      userId: auth?.user.id ?? null,
+      tableId: state?.tableId ?? null,
+      gameId,
+      roundId: state?.currentRound?.roundId ?? null,
+      roundIndex: state?.currentRound?.indexNo ?? null,
+      payload: debugRoundPayload(),
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [audioMuted]);
+
+  useEffect(() => {
+    const onVisibilityChange = () => {
+      logClientEvent({
+        eventType: 'document_visibility_changed',
+        clientKind: 'player',
+        userId: auth?.user.id ?? null,
+        tableId: state?.tableId ?? null,
+        gameId,
+        roundId: state?.currentRound?.roundId ?? null,
+        roundIndex: state?.currentRound?.indexNo ?? null,
+        payload: debugRoundPayload({ visibilityState: document.visibilityState }),
+      });
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', onVisibilityChange);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [auth?.user.id, gameId, state?.tableId, state?.currentRound?.roundId, state?.currentRound?.indexNo, audioMuted]);
 
   // Best-effort local clock for the token_solo/token_others windows - the
   // server enforces the real timeout, this is display-only since GameState
@@ -825,7 +1004,54 @@ export function LiveGameBoard() {
           </div>
         </div>
 
-        <audio ref={audioRef} preload="auto" muted={effectiveMuted} onError={() => setAudioUnavailable(true)} />
+        <audio
+          ref={audioRef}
+          preload="auto"
+          muted={effectiveMuted}
+          onCanPlay={() => {
+            const audio = audioRef.current;
+            if (!audio) return;
+            logClientEvent({
+              eventType: 'audio_canplay',
+              clientKind: 'player',
+              userId: auth?.user.id ?? null,
+              tableId: state?.tableId ?? null,
+              gameId,
+              roundId: state?.currentRound?.roundId ?? null,
+              roundIndex: state?.currentRound?.indexNo ?? null,
+              payload: debugRoundPayload({ audio: describeAudioElement(audio) }),
+            });
+          }}
+          onWaiting={() => {
+            const audio = audioRef.current;
+            if (!audio) return;
+            logClientEvent({
+              eventType: 'audio_waiting',
+              clientKind: 'player',
+              userId: auth?.user.id ?? null,
+              tableId: state?.tableId ?? null,
+              gameId,
+              roundId: state?.currentRound?.roundId ?? null,
+              roundIndex: state?.currentRound?.indexNo ?? null,
+              payload: debugRoundPayload({ audio: describeAudioElement(audio) }),
+            });
+          }}
+          onError={() => {
+            const audio = audioRef.current;
+            setAudioUnavailable(true);
+            logClientEvent({
+              eventType: 'audio_error',
+              clientKind: 'player',
+              userId: auth?.user.id ?? null,
+              tableId: state?.tableId ?? null,
+              gameId,
+              roundId: state?.currentRound?.roundId ?? null,
+              roundIndex: state?.currentRound?.indexNo ?? null,
+              payload: snapshotClientDebugContext(debugRoundPayload({ audio: audio ? describeAudioElement(audio) : null })),
+            });
+            void flushClientDebugEvents(true);
+          }}
+        />
 
         {error && (
           <div className="sh-error" style={{ marginBottom: 4 }}>

@@ -14,6 +14,7 @@ import { CenterControl } from '../playboard/CenterControl';
 import { PendingResult, PlayerState, TokenState } from '../playboard/types';
 import { GameReactionEvent, ReactionConfig } from '../game/reactions';
 import { keepNewestGameState } from '../game/stateOrdering';
+import { describeAudioElement, flushClientDebugEvents, logClientEvent, snapshotClientDebugContext } from '../debugLogging';
 
 interface DisplayTableDetail {
   tableId: string;
@@ -56,6 +57,19 @@ export function DisplayPage({ displayToken }: { displayToken?: string }) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const reactionTimersRef = useRef<Map<string, number>>(new Map());
 
+  function debugRoundPayload(extra: Record<string, unknown> = {}): Record<string, unknown> {
+    return {
+      clientKind: 'display',
+      tableId: state?.tableId ?? table?.tableId ?? null,
+      gameId: state?.gameId ?? table?.latestGameId ?? null,
+      roundId: state?.currentRound?.roundId ?? null,
+      roundIndex: state?.currentRound?.indexNo ?? null,
+      roundStatus: state?.currentRound?.status ?? null,
+      audioMuted,
+      ...extra,
+    };
+  }
+
   // A dedicated socket, deliberately not the shared getSocket() singleton
   // from realtime/socket.ts - that one is keyed to a logged-in player's
   // token, and this page authenticates as a display, never a player.
@@ -63,16 +77,38 @@ export function DisplayPage({ displayToken }: { displayToken?: string }) {
     if (!token) return;
     const socket = io({ auth: { token }, transports: ['websocket', 'polling'] });
     socketRef.current = socket;
+    socket.on('connect', () => {
+      logClientEvent({ eventType: 'socket_connect', clientKind: 'display', payload: debugRoundPayload({ socketId: socket.id }) });
+    });
+    socket.on('disconnect', (reason) => {
+      logClientEvent({ eventType: 'socket_disconnect', clientKind: 'display', payload: debugRoundPayload({ reason }) });
+      void flushClientDebugEvents();
+    });
+    socket.on('connect_error', (err) => {
+      logClientEvent({ eventType: 'socket_connect_error', clientKind: 'display', payload: debugRoundPayload({ message: err.message }) });
+      void flushClientDebugEvents(true);
+    });
     return () => {
       socket.disconnect();
       socketRef.current = null;
     };
+    // Debug payloads should be captured at socket lifecycle boundaries, not
+    // recreate the display socket on every round/audio state change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
   useEffect(() => {
     if (!token) return;
     apiFetch<DisplayTableDetail>(`/tables/display/${token}`)
-      .then(setTable)
+      .then((payload) => {
+        logClientEvent({
+          eventType: 'display_table_loaded',
+          clientKind: 'display',
+          tableId: payload.tableId,
+          payload: { state: payload.state, latestGameId: payload.latestGameId },
+        });
+        setTable(payload);
+      })
       .catch((err) => {
         if (err instanceof ApiError && (err.status === 401 || err.status === 404)) setNotFound(true);
         else setError('Tisch konnte nicht geladen werden.');
@@ -88,15 +124,27 @@ export function DisplayPage({ displayToken }: { displayToken?: string }) {
     // server session with no room memberships - without rejoining on
     // 'connect', this display would silently stop receiving table:update
     // broadcasts until the page is reloaded.
-    const onReconnect = () => socket.emit('table:join-room', tableId);
+    const onReconnect = () => {
+      logClientEvent({ eventType: 'socket_table_rejoin_after_reconnect', clientKind: 'display', tableId, payload: debugRoundPayload({ socketId: socket.id }) });
+      socket.emit('table:join-room', tableId);
+    };
     socket.on('connect', onReconnect);
-    const onTableUpdate = (payload: DisplayTableDetail) => setTable(payload);
+    const onTableUpdate = (payload: DisplayTableDetail) => {
+      logClientEvent({
+        eventType: 'table_update_received',
+        clientKind: 'display',
+        tableId: payload.tableId,
+        payload: { state: payload.state, latestGameId: payload.latestGameId },
+      });
+      setTable(payload);
+    };
     socket.on('table:update', onTableUpdate);
     return () => {
       socket.off('connect', onReconnect);
       socket.off('table:update', onTableUpdate);
       socket.emit('table:leave-room', tableId);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tableId]);
 
   const gameId = table?.latestGameId ?? null;
@@ -106,7 +154,22 @@ export function DisplayPage({ displayToken }: { displayToken?: string }) {
       return;
     }
     apiFetch<GameState>(`/games/display/${token}/${gameId}`)
-      .then(setState)
+      .then((payload) => {
+        logClientEvent({
+          eventType: 'game_state_initial_loaded',
+          clientKind: 'display',
+          tableId: payload.tableId,
+          gameId: payload.gameId,
+          roundId: payload.currentRound?.roundId ?? null,
+          roundIndex: payload.currentRound?.indexNo ?? null,
+          payload: {
+            status: payload.currentRound?.status ?? null,
+            mode: payload.currentRound?.mode ?? null,
+            playerCount: payload.players.length,
+          },
+        });
+        setState(payload);
+      })
       .catch(() => setError('Spielstand konnte nicht geladen werden.'));
 
     const socket = socketRef.current;
@@ -117,13 +180,29 @@ export function DisplayPage({ displayToken }: { displayToken?: string }) {
     // room and refresh state after any reconnect, or this display freezes
     // on stale round state until manually reloaded.
     const onReconnect = () => {
+      logClientEvent({ eventType: 'socket_game_rejoin_after_reconnect', clientKind: 'display', tableId, gameId, payload: debugRoundPayload({ socketId: socket.id }) });
       socket.emit('game:join-room', gameId);
       apiFetch<GameState>(`/games/display/${token}/${gameId}`)
         .then((payload) => setState((current) => keepNewestGameState(current, payload)))
         .catch(() => undefined);
     };
     socket.on('connect', onReconnect);
-    const onGameUpdate = (payload: GameState) => setState((current) => keepNewestGameState(current, payload));
+    const onGameUpdate = (payload: GameState) => {
+      logClientEvent({
+        eventType: 'game_update_received',
+        clientKind: 'display',
+        tableId: payload.tableId,
+        gameId: payload.gameId,
+        roundId: payload.currentRound?.roundId ?? null,
+        roundIndex: payload.currentRound?.indexNo ?? null,
+        payload: {
+          status: payload.currentRound?.status ?? null,
+          mode: payload.currentRound?.mode ?? null,
+          playerCount: payload.players.length,
+        },
+      });
+      setState((current) => keepNewestGameState(current, payload));
+    };
     const onConfigUpdate = (payload: { reactions: ReactionConfig }) => {
       setState((current) => current ? { ...current, reactionConfig: payload.reactions } : current);
     };
@@ -155,6 +234,7 @@ export function DisplayPage({ displayToken }: { displayToken?: string }) {
       for (const timer of reactionTimers.values()) window.clearTimeout(timer);
       reactionTimers.clear();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, gameId]);
 
   useEffect(() => {
@@ -173,10 +253,28 @@ export function DisplayPage({ displayToken }: { displayToken?: string }) {
     if (!songStreamPath) {
       audio.removeAttribute('src');
       audio.load();
+      logClientEvent({
+        eventType: 'audio_source_cleared',
+        clientKind: 'display',
+        tableId: state?.tableId ?? table?.tableId ?? null,
+        gameId,
+        roundId,
+        roundIndex: round?.indexNo ?? null,
+        payload: debugRoundPayload({ audio: describeAudioElement(audio) }),
+      });
       return;
     }
     audio.src = `${API_BASE_URL}${songStreamPath}`;
     audio.load();
+    logClientEvent({
+      eventType: 'audio_load_start',
+      clientKind: 'display',
+      tableId: state?.tableId ?? table?.tableId ?? null,
+      gameId,
+      roundId,
+      roundIndex: round?.indexNo ?? null,
+      payload: debugRoundPayload({ songStreamPath, audio: describeAudioElement(audio) }),
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roundId]);
 
@@ -186,11 +284,69 @@ export function DisplayPage({ displayToken }: { displayToken?: string }) {
     if (!audio) return;
     if (roundStatus === 'playing') {
       audio.currentTime = 0;
-      audio.play().catch(() => undefined);
+      logClientEvent({
+        eventType: 'audio_play_attempt',
+        clientKind: 'display',
+        tableId: state?.tableId ?? table?.tableId ?? null,
+        gameId,
+        roundId,
+        roundIndex: round?.indexNo ?? null,
+        payload: debugRoundPayload({ audio: describeAudioElement(audio) }),
+      });
+      audio
+        .play()
+        .then(() => {
+          logClientEvent({
+            eventType: 'audio_play_success',
+            clientKind: 'display',
+            tableId: state?.tableId ?? table?.tableId ?? null,
+            gameId,
+            roundId,
+            roundIndex: round?.indexNo ?? null,
+            payload: debugRoundPayload({ audio: describeAudioElement(audio) }),
+          });
+        })
+        .catch((err) => {
+          logClientEvent({
+            eventType: 'audio_play_rejected',
+            clientKind: 'display',
+            tableId: state?.tableId ?? table?.tableId ?? null,
+            gameId,
+            roundId,
+            roundIndex: round?.indexNo ?? null,
+            payload: snapshotClientDebugContext(debugRoundPayload({ errorName: err.name, errorMessage: err.message, audio: describeAudioElement(audio) })),
+          });
+          void flushClientDebugEvents(true);
+        });
     } else {
+      if (!audio.paused) {
+        logClientEvent({
+          eventType: 'audio_pause_for_round_status',
+          clientKind: 'display',
+          tableId: state?.tableId ?? table?.tableId ?? null,
+          gameId,
+          roundId,
+          roundIndex: round?.indexNo ?? null,
+          payload: debugRoundPayload({ audio: describeAudioElement(audio) }),
+        });
+      }
       audio.pause();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roundStatus, roundId]);
+
+  useEffect(() => {
+    logClientEvent({
+      eventType: 'audio_muted_changed',
+      clientKind: 'display',
+      tableId: state?.tableId ?? table?.tableId ?? null,
+      gameId,
+      roundId: round?.roundId ?? null,
+      roundIndex: round?.indexNo ?? null,
+      payload: debugRoundPayload(),
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [audioMuted]);
 
   // Remembers the last resolved round's song, and holds the ring flipped to
   // the reveal face for a fixed 5s once a round resolves - keyed on
@@ -361,7 +517,50 @@ export function DisplayPage({ displayToken }: { displayToken?: string }) {
           </div>
         </div>
 
-        <audio ref={audioRef} preload="auto" muted={audioMuted} />
+        <audio
+          ref={audioRef}
+          preload="auto"
+          muted={audioMuted}
+          onCanPlay={() => {
+            const audio = audioRef.current;
+            if (!audio) return;
+            logClientEvent({
+              eventType: 'audio_canplay',
+              clientKind: 'display',
+              tableId: state?.tableId ?? table?.tableId ?? null,
+              gameId,
+              roundId: round?.roundId ?? null,
+              roundIndex: round?.indexNo ?? null,
+              payload: debugRoundPayload({ audio: describeAudioElement(audio) }),
+            });
+          }}
+          onWaiting={() => {
+            const audio = audioRef.current;
+            if (!audio) return;
+            logClientEvent({
+              eventType: 'audio_waiting',
+              clientKind: 'display',
+              tableId: state?.tableId ?? table?.tableId ?? null,
+              gameId,
+              roundId: round?.roundId ?? null,
+              roundIndex: round?.indexNo ?? null,
+              payload: debugRoundPayload({ audio: describeAudioElement(audio) }),
+            });
+          }}
+          onError={() => {
+            const audio = audioRef.current;
+            logClientEvent({
+              eventType: 'audio_error',
+              clientKind: 'display',
+              tableId: state?.tableId ?? table?.tableId ?? null,
+              gameId,
+              roundId: round?.roundId ?? null,
+              roundIndex: round?.indexNo ?? null,
+              payload: snapshotClientDebugContext(debugRoundPayload({ audio: audio ? describeAudioElement(audio) : null })),
+            });
+            void flushClientDebugEvents(true);
+          }}
+        />
 
         {error && (
           <div className="sh-error" style={{ marginBottom: 4 }}>

@@ -10,6 +10,8 @@ import { BONUS_WINDOW_MS, COUNTDOWN_MS, SONG_DURATION_MS } from '../services/rou
 import { verifyDisplayToken } from '../services/displayToken';
 import { isHostDisplayTokenActive } from '../services/hostDevices';
 import { authorizeGameViewer } from '../services/tableAuthorization';
+import { storeGameEvent } from '../services/debugLogging';
+import { RequestWithId } from '../middleware/requestId';
 
 export const roundsRouter = Router();
 
@@ -139,6 +141,13 @@ roundsRouter.post('/games/:gameId/ready', requireAuth, async (req: Authenticated
   try {
     await setRoundReady(req.params.gameId, req.userId as string, ready);
     await touchTableActivityForGame(req.params.gameId);
+    void storeGameEvent({
+      eventType: 'player_ready_changed',
+      gameId: req.params.gameId,
+      userId: req.userId as string,
+      requestId: (req as RequestWithId).requestId,
+      payload: { ready },
+    });
     res.status(200).json({ accepted: true });
   } catch (err) {
     if (!handleEngineError(err, res)) throw err;
@@ -157,6 +166,13 @@ roundsRouter.post('/games/:gameId/ready/auto', requireAuth, async (req: Authenti
   try {
     await setAutoReady(req.params.gameId, req.userId as string, autoReady);
     await touchTableActivityForGame(req.params.gameId);
+    void storeGameEvent({
+      eventType: 'player_auto_ready_changed',
+      gameId: req.params.gameId,
+      userId: req.userId as string,
+      requestId: (req as RequestWithId).requestId,
+      payload: { autoReady },
+    });
     res.status(200).json({ accepted: true });
   } catch (err) {
     if (!handleEngineError(err, res)) throw err;

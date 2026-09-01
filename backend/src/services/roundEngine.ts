@@ -8,6 +8,7 @@ import { resolveClaimWinner } from './tokenRace';
 import { broadcastGame } from '../realtime/broadcast';
 import { startReadyWindow } from './roundReadyWindow';
 import { scheduleAutoClose } from './tableRestart';
+import { storeGameEvent } from './debugLogging';
 import {
   BONUS_WINDOW_MS,
   COUNTDOWN_MS,
@@ -141,6 +142,19 @@ async function runStartRound(gameId: string, sitOutUserIds: string[], auth?: Sta
     );
 
     await client.query('COMMIT');
+    void storeGameEvent({
+      eventType: 'round_started',
+      tableId: game.table_id,
+      gameId,
+      roundId: round.id,
+      roundIndex: round.index_no,
+      payload: {
+        mode: isBonusRound ? 'bonus' : 'normal',
+        songId: song.id,
+        sitOutCount: sitOutUserIds.length,
+        sitOutUserIds,
+      },
+    });
     await broadcastGame(gameId);
 
     if (isBonusRound) {
@@ -184,7 +198,12 @@ function scheduleRoundTransitions(roundId: string, gameId: string): void {
   setTimeout(() => {
     pool
       .query(`UPDATE round SET status = 'playing' WHERE id = $1 AND status = 'countdown'`, [roundId])
-      .then(() => broadcastGame(gameId))
+      .then((result) => {
+        if ((result.rowCount ?? 0) > 0) {
+          void storeGameEvent({ eventType: 'round_playing', gameId, roundId });
+        }
+        return broadcastGame(gameId);
+      })
       .catch((err) => {
         console.error('failed to transition round to playing', err);
       });
@@ -201,7 +220,12 @@ function scheduleBonusRoundTransitions(roundId: string, gameId: string): void {
   setTimeout(() => {
     pool
       .query(`UPDATE round SET status = 'playing' WHERE id = $1 AND status = 'countdown'`, [roundId])
-      .then(() => broadcastGame(gameId))
+      .then((result) => {
+        if ((result.rowCount ?? 0) > 0) {
+          void storeGameEvent({ eventType: 'round_playing', gameId, roundId, payload: { mode: 'bonus' } });
+        }
+        return broadcastGame(gameId);
+      })
       .catch((err) => {
         console.error('failed to transition bonus round to playing', err);
       });
@@ -329,6 +353,14 @@ export async function submitGuess(
     );
 
     await client.query('COMMIT');
+    void storeGameEvent({
+      eventType: 'guess_submitted',
+      tableId: round.tableId,
+      gameId: round.gameId,
+      roundId,
+      userId,
+      payload: { guessType: 'position', index },
+    });
     return { accepted: true };
   } catch (err) {
     await client.query('ROLLBACK');
@@ -414,6 +446,20 @@ export async function resolveRound(
     await checkForGameEnd(client, round.game_id);
 
     await client.query('COMMIT');
+    void storeGameEvent({
+      eventType: 'round_resolved',
+      tableId,
+      gameId: round.game_id,
+      roundId,
+      payload: {
+        mode: 'normal',
+        songId: round.song_id,
+        songYear,
+        submittedCount: results.filter((r) => r.submitted).length,
+        correctCount: results.filter((r) => r.correct).length,
+        participantCount: participantsResult.rowCount ?? 0,
+      },
+    });
     await broadcastGame(round.game_id);
     // From round 2 onward, the next ready window opens automatically as
     // soon as this one resolves (no-ops if the match just ended) - keeps
@@ -481,6 +527,14 @@ export async function submitBonusGuess(
       await client.query(`UPDATE round SET status = 'resolved', ended_at = NOW() WHERE id = $1`, [roundId]);
       await finishGame(client, round.gameId, userId);
       await client.query('COMMIT');
+      void storeGameEvent({
+        eventType: 'bonus_guess_exact_match',
+        tableId: round.tableId,
+        gameId: round.gameId,
+        roundId,
+        userId,
+        payload: { year },
+      });
       await broadcastGame(round.gameId);
       await afterRoundResolved(round.gameId);
       return { correct: true };
@@ -490,6 +544,14 @@ export async function submitBonusGuess(
     // this guess ends up winning depends on how close everyone else gets,
     // which can't be known until the window closes (see resolveBonusRound).
     await client.query('COMMIT');
+    void storeGameEvent({
+      eventType: 'bonus_guess_submitted',
+      tableId: round.tableId,
+      gameId: round.gameId,
+      roundId,
+      userId,
+      payload: { year, correct },
+    });
     await broadcastGame(round.gameId);
     return { correct };
   } catch (err) {
@@ -549,6 +611,13 @@ async function resolveBonusRound(roundId: string): Promise<void> {
         roundId,
       ]);
       await finishGame(client, round.game_id, winnerUserId);
+      void storeGameEvent({
+        eventType: 'bonus_round_winner_selected',
+        gameId: round.game_id,
+        roundId,
+        userId: winnerUserId,
+        payload: { songYear, submittedCount: guessesResult.rowCount ?? 0 },
+      });
     } else {
       // Nobody submitted a guess at all - stays tied. The next POST
       // .../rounds call will detect the tie again and draw another Stichsong.
@@ -558,6 +627,12 @@ async function resolveBonusRound(roundId: string): Promise<void> {
     }
 
     await client.query('COMMIT');
+    void storeGameEvent({
+      eventType: 'round_resolved',
+      gameId: round.game_id,
+      roundId,
+      payload: { mode: 'bonus', submittedCount: guessesResult.rowCount ?? 0 },
+    });
     await broadcastGame(round.game_id);
     await afterRoundResolved(round.game_id);
   } catch (err) {
@@ -614,6 +689,14 @@ export async function claimToken(
     );
 
     await client.query('COMMIT');
+    void storeGameEvent({
+      eventType: 'token_claimed',
+      tableId: round.tableId,
+      gameId: round.gameId,
+      roundId,
+      userId,
+      payload: { isFirstClaim, graceMs: TOKEN_CLAIM_GRACE_MS },
+    });
     await broadcastGame(round.gameId);
 
     if (isFirstClaim) {
@@ -671,6 +754,13 @@ async function resolveClaimRace(roundId: string): Promise<void> {
     await client.query(`UPDATE round SET status = 'token_solo', mode = 'token' WHERE id = $1`, [roundId]);
 
     await client.query('COMMIT');
+    void storeGameEvent({
+      eventType: 'token_claim_race_resolved',
+      gameId: round.game_id,
+      roundId,
+      userId: claimsResult.rows.find((row) => row.id === winner.id)?.user_id ?? null,
+      payload: { claimCount: claimsResult.rowCount ?? 0, loserCount: loserIds.length },
+    });
     await broadcastGame(round.game_id);
 
     setTimeout(() => {
@@ -709,6 +799,12 @@ async function resolveSoloTimeout(roundId: string): Promise<void> {
     await client.query(`UPDATE round SET status = 'resolved', ended_at = NOW() WHERE id = $1`, [roundId]);
 
     await client.query('COMMIT');
+    void storeGameEvent({
+      eventType: 'round_resolved',
+      gameId: round.game_id,
+      roundId,
+      payload: { mode: 'token', reason: 'solo_timeout' },
+    });
     await broadcastGame(round.game_id);
     await afterRoundResolved(round.game_id);
   } catch (err) {
@@ -778,6 +874,14 @@ export async function submitTokenGuess(
         ]);
         await checkForGameEnd(client, round.gameId);
         await client.query('COMMIT');
+        void storeGameEvent({
+          eventType: 'token_guess_correct',
+          tableId: round.tableId,
+          gameId: round.gameId,
+          roundId,
+          userId,
+          payload: { phase: 'solo', year },
+        });
         await broadcastGame(round.gameId);
         await afterRoundResolved(round.gameId);
         return { correct: true };
@@ -786,6 +890,14 @@ export async function submitTokenGuess(
       // FR-034: a wrong solo guess opens a 10s window for opponents.
       await client.query(`UPDATE round SET status = 'token_others' WHERE id = $1`, [roundId]);
       await client.query('COMMIT');
+      void storeGameEvent({
+        eventType: 'token_guess_wrong',
+        tableId: round.tableId,
+        gameId: round.gameId,
+        roundId,
+        userId,
+        payload: { phase: 'solo', year },
+      });
       await broadcastGame(round.gameId);
 
       setTimeout(() => {
@@ -824,6 +936,14 @@ export async function submitTokenGuess(
     );
 
     await client.query('COMMIT');
+    void storeGameEvent({
+      eventType: 'token_guess_submitted',
+      tableId: round.tableId,
+      gameId: round.gameId,
+      roundId,
+      userId,
+      payload: { phase: 'others', year, correct },
+    });
     await broadcastGame(round.gameId);
     return { correct };
   } catch (err) {
@@ -886,6 +1006,12 @@ async function resolveOthersWindow(roundId: string): Promise<void> {
     await checkForGameEnd(client, round.game_id);
 
     await client.query('COMMIT');
+    void storeGameEvent({
+      eventType: 'round_resolved',
+      gameId: round.game_id,
+      roundId,
+      payload: { mode: 'token', reason: 'others_window_closed', correctGuessCount: correctGuessesResult.rowCount ?? 0 },
+    });
     await broadcastGame(round.game_id);
     await afterRoundResolved(round.game_id);
   } catch (err) {
