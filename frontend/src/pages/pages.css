@@ -194,6 +194,29 @@ select.admin-search-input option {
   background: var(--sh-panel); color: var(--adolar-white);
 }
 
+.playlist-suggestions {
+  display: flex; flex-direction: column; gap: 6px; margin: -8px 0 12px;
+}
+.playlist-suggestions button {
+  display: grid; grid-template-columns: minmax(180px, 1.4fr) minmax(0, 1fr); gap: 10px; align-items: center;
+  width: 100%; padding: 8px 10px; border: 1px solid var(--sh-panel-border); border-radius: 9px;
+  background: rgba(255,255,255,.035); color: var(--sh-text-dim); cursor: pointer; text-align: left;
+}
+.playlist-suggestions button:hover {
+  border-color: var(--adolar-cyan); background: rgba(49,213,255,.08); color: var(--adolar-white);
+}
+.playlist-suggestions code {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: var(--adolar-cyan); font-size: 12px;
+}
+.playlist-suggestions span {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: var(--sh-text-faint); font-size: 12px;
+}
+.playlist-suggestions-empty {
+  padding: 8px 10px; color: var(--sh-text-faint); font-size: 12px;
+}
+
 /* Ephemeral lobby/table chat */
 .chat-panel {
   margin-top: 22px; padding: 16px; border: 1px solid var(--sh-panel-border); border-radius: 16px;

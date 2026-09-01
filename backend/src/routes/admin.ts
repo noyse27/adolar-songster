@@ -458,6 +458,31 @@ adminRouter.get('/tables', async (_req, res) => {
 // per Playlist-ID. game_table/game koennen zu diesem Zeitpunkt schon hart
 // geloescht sein (siehe tableCleanup.ts) - table_id/table_name sind deshalb
 // als Snapshot in game_playlist selbst gespeichert, kein JOIN noetig.
+adminRouter.get('/playlists/search', async (req, res) => {
+  const prefix = typeof req.query.prefix === 'string' ? req.query.prefix.trim().toLowerCase() : '';
+  if (prefix.length < 3) {
+    res.status(200).json({ playlists: [] });
+    return;
+  }
+
+  const result = await pool.query(
+    `SELECT id, table_name, created_at, expires_at
+     FROM game_playlist
+     WHERE LOWER(id::text) LIKE $1
+     ORDER BY created_at DESC`,
+    [`${prefix}%`],
+  );
+
+  res.status(200).json({
+    playlists: result.rows.map((row) => ({
+      playlistId: row.id,
+      tableName: row.table_name,
+      createdAt: row.created_at,
+      expiresAt: row.expires_at,
+    })),
+  });
+});
+
 adminRouter.get('/playlists/:playlistId', async (req, res) => {
   const { playlistId } = req.params;
 

@@ -574,27 +574,71 @@ interface Playlist {
   tracks: PlaylistTrack[];
 }
 
+interface PlaylistSuggestion {
+  playlistId: string;
+  tableName: string;
+  createdAt: string;
+  expiresAt: string;
+}
+
 function PlaylistsSection({ token }: { token: string }) {
   const [playlistId, setPlaylistId] = useState('');
+  const [suggestions, setSuggestions] = useState<PlaylistSuggestion[]>([]);
   const [playlist, setPlaylist] = useState<Playlist | null>(null);
   const [loading, setLoading] = useState(false);
+  const [loadingSuggestions, setLoadingSuggestions] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [correctingTrackId, setCorrectingTrackId] = useState<string | null>(null);
 
-  async function search(event: FormEvent) {
-    event.preventDefault();
-    if (!playlistId.trim()) return;
+  useEffect(() => {
+    const prefix = playlistId.trim();
+    if (prefix.length < 3 || playlist?.playlistId === prefix) {
+      setSuggestions([]);
+      setLoadingSuggestions(false);
+      return;
+    }
+
+    let cancelled = false;
+    setLoadingSuggestions(true);
+    const id = setTimeout(() => {
+      apiFetch<{ playlists: PlaylistSuggestion[] }>(`/admin/playlists/search?prefix=${encodeURIComponent(prefix)}`, { token })
+        .then((r) => {
+          if (!cancelled) setSuggestions(r.playlists);
+        })
+        .catch(() => {
+          if (!cancelled) setSuggestions([]);
+        })
+        .finally(() => {
+          if (!cancelled) setLoadingSuggestions(false);
+        });
+    }, 200);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(id);
+    };
+  }, [playlistId, playlist?.playlistId, token]);
+
+  async function loadPlaylist(id: string) {
     setLoading(true);
     setError(null);
     setPlaylist(null);
     try {
-      const result = await apiFetch<Playlist>(`/admin/playlists/${playlistId.trim()}`, { token });
+      const result = await apiFetch<Playlist>(`/admin/playlists/${id}`, { token });
       setPlaylist(result);
+      setSuggestions([]);
     } catch {
       setError('Playlist nicht gefunden (falsche ID oder älter als 1 Woche).');
     } finally {
       setLoading(false);
     }
+  }
+
+  async function search(event: FormEvent) {
+    event.preventDefault();
+    const id = playlistId.trim();
+    if (!id) return;
+    await loadPlaylist(id);
   }
 
   async function correctTrack(track: PlaylistTrack, song: Song) {
@@ -611,6 +655,13 @@ function PlaylistsSection({ token }: { token: string }) {
     setCorrectingTrackId(null);
   }
 
+  function pickSuggestion(suggestion: PlaylistSuggestion) {
+    setPlaylistId(suggestion.playlistId);
+    setSuggestions([]);
+    setError(null);
+    void loadPlaylist(suggestion.playlistId);
+  }
+
   return (
     <>
       <p style={{ fontSize: 13, color: 'var(--sh-text-dim)', marginBottom: 12 }}>
@@ -622,12 +673,30 @@ function PlaylistsSection({ token }: { token: string }) {
           className="admin-search-input"
           placeholder="Playlist-ID einfügen…"
           value={playlistId}
-          onChange={(e) => setPlaylistId(e.target.value)}
+          onChange={(e) => {
+            setPlaylistId(e.target.value);
+            setPlaylist(null);
+            setError(null);
+          }}
         />
         <button className="admin-btn-sm" type="submit" disabled={loading}>
           {loading ? 'Suche…' : 'Suchen'}
         </button>
       </form>
+      {(loadingSuggestions || suggestions.length > 0) && (
+        <div className="playlist-suggestions">
+          {loadingSuggestions && suggestions.length === 0 && <div className="playlist-suggestions-empty">Suche passende IDs…</div>}
+          {suggestions.map((suggestion) => (
+            <button key={suggestion.playlistId} type="button" onClick={() => pickSuggestion(suggestion)}>
+              <code>{suggestion.playlistId}</code>
+              <span>
+                {suggestion.tableName} · {new Date(suggestion.createdAt).toLocaleString()} · läuft ab{' '}
+                {new Date(suggestion.expiresAt).toLocaleString()}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
       {error && <div className="sh-error" style={{ marginTop: 12 }}>{error}</div>}
       {playlist && (
         <div style={{ marginTop: 16 }}>
