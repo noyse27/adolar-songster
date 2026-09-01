@@ -119,4 +119,32 @@ describe('admin invite management', () => {
     expect(entry.creatorUsername).toBe(delegatedUser.username);
     expect(entry.registeredUsernames).toContain(registeredUser.username);
   });
+
+  it('suggests tracked game playlists by id prefix for admins', async () => {
+    const admin = await createUserDirect({ role: 'admin' });
+    await pool.query(
+      `INSERT INTO game_playlist (id, table_id, table_name, game_id)
+       VALUES
+         ('a1b2c3d4-0000-4000-8000-000000000001', gen_random_uuid(), 'Alpha Tisch', gen_random_uuid()),
+         ('a1b2c3d5-0000-4000-8000-000000000002', gen_random_uuid(), 'Beta Tisch', gen_random_uuid()),
+         ('b1b2c3d4-0000-4000-8000-000000000003', gen_random_uuid(), 'Gamma Tisch', gen_random_uuid())`,
+    );
+
+    const tooShort = await request(app)
+      .get('/api/v1/admin/playlists/search?prefix=a1')
+      .set(authHeader(admin.id, 'admin'));
+    expect(tooShort.status).toBe(200);
+    expect(tooShort.body.playlists).toEqual([]);
+
+    const response = await request(app)
+      .get('/api/v1/admin/playlists/search?prefix=a1b2c3')
+      .set(authHeader(admin.id, 'admin'));
+
+    expect(response.status).toBe(200);
+    expect(response.body.playlists).toHaveLength(2);
+    expect(response.body.playlists.map((p: { playlistId: string }) => p.playlistId)).toEqual([
+      'a1b2c3d5-0000-4000-8000-000000000002',
+      'a1b2c3d4-0000-4000-8000-000000000001',
+    ]);
+  });
 });
