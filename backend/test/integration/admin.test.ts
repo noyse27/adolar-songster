@@ -123,11 +123,11 @@ describe('admin invite management', () => {
   it('suggests tracked game playlists by id prefix for admins', async () => {
     const admin = await createUserDirect({ role: 'admin' });
     await pool.query(
-      `INSERT INTO game_playlist (id, table_id, table_name, game_id)
+      `INSERT INTO game_playlist (id, table_id, table_name, game_id, created_at)
        VALUES
-         ('a1b2c3d4-0000-4000-8000-000000000001', gen_random_uuid(), 'Alpha Tisch', gen_random_uuid()),
-         ('a1b2c3d5-0000-4000-8000-000000000002', gen_random_uuid(), 'Beta Tisch', gen_random_uuid()),
-         ('b1b2c3d4-0000-4000-8000-000000000003', gen_random_uuid(), 'Gamma Tisch', gen_random_uuid())`,
+         ('a1b2c3d4-0000-4000-8000-000000000001', gen_random_uuid(), 'Alpha Tisch', gen_random_uuid(), NOW() - INTERVAL '2 minutes'),
+         ('a1b2c3d5-0000-4000-8000-000000000002', gen_random_uuid(), 'Beta Tisch', gen_random_uuid(), NOW() - INTERVAL '1 minute'),
+         ('b1b2c3d4-0000-4000-8000-000000000003', gen_random_uuid(), 'Gamma Tisch', gen_random_uuid(), NOW())`,
     );
 
     const tooShort = await request(app)
