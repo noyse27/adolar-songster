@@ -9,6 +9,7 @@ import { setIO, tableRoom, lobbyRoom, gameRoom } from './io';
 import { broadcastGame } from './broadcast';
 import { loadActiveSeat, authorizeDisplayGame, authorizeGameViewer } from '../services/tableAuthorization';
 import { isReactionAssetId, loadConfiguredReaction, loadReactionPhase } from '../services/communication';
+import { logBetaDebug, storeGameEvent } from '../services/debugLogging';
 
 type RoomJoinAck = (result: { ok: boolean; error?: string }) => void;
 type ReactionAck = (result: { ok: boolean; error?: string }) => void;
@@ -139,6 +140,24 @@ export function createSocketServer(httpServer: HttpServer): Server {
 
   io.on('connection', (socket: Socket) => {
     let lastReactionAt = 0;
+    const userId = (socket.data as Partial<AuthedSocketData>).userId;
+    const displayTableId = (socket.data as Partial<DisplaySocketData>).displayTableId;
+    logBetaDebug('socket_connect', {
+      socketId: socket.id,
+      clientKind: displayTableId ? 'display' : 'player',
+      userId: userId ?? null,
+      tableId: displayTableId ?? null,
+      transport: socket.conn.transport.name,
+    });
+    socket.on('disconnect', (reason) => {
+      logBetaDebug('socket_disconnect', {
+        socketId: socket.id,
+        clientKind: displayTableId ? 'display' : 'player',
+        userId: userId ?? null,
+        tableId: displayTableId ?? null,
+        reason,
+      });
+    });
     // Lobby list and per-table detail are opt-in subscriptions rather than
     // every client always receiving both - a client deep in a game
     // shouldn't also get every public lobby table update. The lobby room
@@ -158,6 +177,12 @@ export function createSocketServer(httpServer: HttpServer): Server {
             return;
           }
           socket.join(tableRoom(tableId));
+          logBetaDebug('socket_table_join', {
+            socketId: socket.id,
+            tableId,
+            userId: (socket.data as Partial<AuthedSocketData>).userId ?? null,
+            clientKind: (socket.data as Partial<DisplaySocketData>).displayTableId ? 'display' : 'player',
+          });
           ack?.({ ok: true });
         })
         .catch(() => ack?.({ ok: false, error: 'internal error' }));
@@ -171,12 +196,29 @@ export function createSocketServer(httpServer: HttpServer): Server {
         return;
       }
       canJoinGameRoom(socket, gameId)
-        .then((allowed) => {
+        .then(async (allowed) => {
           if (!allowed) {
             ack?.({ ok: false, error: 'forbidden' });
             return;
           }
           socket.join(gameRoom(gameId));
+          const tableResult = await pool.query(`SELECT table_id FROM game WHERE id = $1`, [gameId]);
+          void storeGameEvent({
+            eventType: 'socket_game_join',
+            tableId: tableResult.rows[0]?.table_id ?? null,
+            gameId,
+            userId: (socket.data as Partial<AuthedSocketData>).userId ?? null,
+            payload: {
+              socketId: socket.id,
+              clientKind: (socket.data as Partial<DisplaySocketData>).displayTableId ? 'display' : 'player',
+            },
+          });
+          logBetaDebug('socket_game_join', {
+            socketId: socket.id,
+            gameId,
+            tableId: tableResult.rows[0]?.table_id ?? null,
+            userId: (socket.data as Partial<AuthedSocketData>).userId ?? null,
+          });
           ack?.({ ok: true });
         })
         .catch(() => ack?.({ ok: false, error: 'internal error' }));
@@ -251,7 +293,6 @@ export function createSocketServer(httpServer: HttpServer): Server {
     // (see gameState.ts's displayAnchorPresent) - no seat, no room-join
     // needed to track it, just flip the table's flag for as long as this
     // one connection lives.
-    const displayTableId = (socket.data as Partial<DisplaySocketData>).displayTableId;
     if (displayTableId) {
       setDisplayConnected(displayTableId, true);
       socket.on('disconnect', () => setDisplayConnected(displayTableId, false));

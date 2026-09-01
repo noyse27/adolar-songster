@@ -3,6 +3,7 @@ import { fetchLobbyTables, loadTableDetail } from '../services/tableQueries';
 import { loadGameState } from '../services/gameState';
 import { BONUS_WINDOW_MS, COUNTDOWN_MS, SONG_DURATION_MS } from '../services/roundConfig';
 import { ChatMessage, ReactionConfig } from '../services/communication';
+import { logBetaDebug, storeGameEvent } from '../services/debugLogging';
 
 /** Re-broadcasts the whole public/open table list. Table counts are small
  * (private-group scale, see FR-013), so a full refetch+broadcast on every
@@ -35,7 +36,27 @@ export async function broadcastGame(gameId: string): Promise<void> {
   if (!io) return;
   const state = await loadGameState(gameId, COUNTDOWN_MS, SONG_DURATION_MS, BONUS_WINDOW_MS);
   if (!state) return;
-  io.to(gameRoom(gameId)).emit('game:update', state);
+  const room = gameRoom(gameId);
+  const recipientSocketCount = io.sockets.adapter.rooms.get(room)?.size ?? 0;
+  const payload = {
+    gameId,
+    tableId: state.tableId,
+    roundId: state.currentRound?.roundId ?? null,
+    roundIndex: state.currentRound?.indexNo ?? null,
+    status: state.currentRound?.status ?? null,
+    mode: state.currentRound?.mode ?? null,
+    recipientSocketCount,
+  };
+  logBetaDebug('socket_game_update_broadcast', payload);
+  void storeGameEvent({
+    eventType: 'socket_game_update_broadcast',
+    tableId: state.tableId,
+    gameId,
+    roundId: state.currentRound?.roundId ?? null,
+    roundIndex: state.currentRound?.indexNo ?? null,
+    payload,
+  });
+  io.to(room).emit('game:update', state);
 }
 
 /** Chat is persisted through REST, then fanned out through the same rooms

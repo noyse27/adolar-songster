@@ -1,3 +1,5 @@
+import { flushClientDebugEvents, logClientEvent } from './debugLogging';
+
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '/api/v1';
 
 export class ApiError extends Error {
@@ -15,18 +17,34 @@ export async function apiFetch<T>(
   path: string,
   options: { method?: string; body?: unknown; token?: string } = {},
 ): Promise<T> {
+  const startedAt = performance.now();
+  const method = options.method ?? 'GET';
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (options.token) {
     headers.Authorization = `Bearer ${options.token}`;
   }
 
   const response = await fetch(`${API_BASE_URL}${path}`, {
-    method: options.method ?? 'GET',
+    method,
     headers,
     body: options.body ? JSON.stringify(options.body) : undefined,
   });
+  const requestId = response.headers.get('x-request-id');
+  const elapsedMs = Math.round(performance.now() - startedAt);
 
   const data = response.status === 204 ? null : await response.json().catch(() => null);
+  logClientEvent({
+    eventType: response.ok ? 'api_request_success' : 'api_request_failed',
+    payload: {
+      method,
+      path,
+      status: response.status,
+      requestId,
+      elapsedMs,
+      hasAuth: Boolean(options.token),
+      errorBody: response.ok ? undefined : data,
+    },
+  });
 
   if (!response.ok) {
     // A 401 on a call that *presented* a token means that token is no
@@ -38,6 +56,7 @@ export async function apiFetch<T>(
     if (response.status === 401 && options.token) {
       window.dispatchEvent(new CustomEvent('adolar-songster:unauthorized'));
     }
+    void flushClientDebugEvents(true);
     throw new ApiError(response.status, data);
   }
 

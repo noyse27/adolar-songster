@@ -15,7 +15,9 @@ import { adolarRouter } from './routes/adolar';
 import { songsRouter } from './routes/songs';
 import { communicationsRouter } from './routes/communications';
 import { hostDevicesRouter } from './routes/hostDevices';
+import { debugRouter } from './routes/debug';
 import { apiLimiter, authLimiter } from './middleware/rateLimit';
+import { requestIdMiddleware } from './middleware/requestId';
 
 export function createApp(): Express {
   const app = express();
@@ -34,6 +36,7 @@ export function createApp(): Express {
   app.use(helmet());
   app.use(cors());
   app.use(express.json());
+  app.use(requestIdMiddleware);
 
   app.use('/api/v1', healthRouter);
   app.use('/api/v1', apiLimiter);
@@ -52,6 +55,7 @@ export function createApp(): Express {
   app.use('/api/v1', songsRouter);
   app.use('/api/v1', communicationsRouter);
   app.use('/api/v1', hostDevicesRouter);
+  app.use('/api/v1', debugRouter);
 
   // Last-resort net: without this, an error thrown/rejected anywhere in a
   // route handler (now forwarded here automatically by express-async-errors)
