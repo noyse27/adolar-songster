@@ -88,6 +88,24 @@ describe('inactive-table cleanup (deleteInactiveTables)', () => {
     expect(tableRow.rowCount).toBe(1);
   });
 
+  it('does not delete a table that was touched after crossing the stale threshold', async () => {
+    const owner = await createUserDirect({});
+    const table = await request(app)
+      .post('/api/v1/tables')
+      .set(authHeader(owner.id, 'user'))
+      .send({ name: `Table_${uniqueSuffix()}`, visibility: 'public' });
+    const tableId = table.body.tableId;
+
+    await ageTable(tableId, INACTIVITY_DELETE_MS + 1000);
+    await request(app).post(`/api/v1/tables/${tableId}/keep-alive`).set(authHeader(owner.id, 'user')).expect(200);
+
+    const { deletedTableIds } = await deleteInactiveTables();
+    expect(deletedTableIds).not.toContain(tableId);
+
+    const tableRow = await pool.query('SELECT id FROM game_table WHERE id = $1', [tableId]);
+    expect(tableRow.rowCount).toBe(1);
+  });
+
   it('preserves karma/score ledger rows (nulling game_id) when their game is deleted along with the table', async () => {
     const owner = await createUserDirect({});
     await pool.query(
@@ -160,5 +178,22 @@ describe('GET /admin/tables', () => {
     const response = await request(app).get('/api/v1/admin/tables').set(authHeader(admin.id, 'admin'));
     const entry = response.body.tables.find((t: { tableId: string }) => t.tableId === table.body.tableId);
     expect(entry.inactive).toBe(false);
+  });
+
+  it('lets an admin delete a table manually', async () => {
+    const admin = await createUserDirect({ role: 'admin' });
+    const owner = await createUserDirect({});
+    const table = await request(app)
+      .post('/api/v1/tables')
+      .set(authHeader(owner.id, 'user'))
+      .send({ name: `Table_${uniqueSuffix()}`, visibility: 'public' });
+
+    const response = await request(app)
+      .delete(`/api/v1/admin/tables/${table.body.tableId}`)
+      .set(authHeader(admin.id, 'admin'));
+    expect(response.status).toBe(204);
+
+    const tableRow = await pool.query('SELECT id FROM game_table WHERE id = $1', [table.body.tableId]);
+    expect(tableRow.rowCount).toBe(0);
   });
 });

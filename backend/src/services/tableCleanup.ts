@@ -16,15 +16,13 @@ export interface TableCleanupResult {
 // applyEarlyLeavePenalty or games_played - those are for someone leaving
 // an active match, not for a table nobody came back to.
 export async function deleteInactiveTables(): Promise<TableCleanupResult> {
-  const staleResult = await pool.query(
-    `SELECT id FROM game_table WHERE last_activity_at <= NOW() - ($1 || ' milliseconds')::interval`,
+  const deletedResult = await pool.query(
+    `DELETE FROM game_table
+     WHERE last_activity_at <= NOW() - ($1 || ' milliseconds')::interval
+     RETURNING id`,
     [INACTIVITY_DELETE_MS],
   );
-  const deletedTableIds: string[] = [];
-  for (const row of staleResult.rows) {
-    await pool.query(`DELETE FROM game_table WHERE id = $1`, [row.id]);
-    deletedTableIds.push(row.id);
-  }
+  const deletedTableIds: string[] = deletedResult.rows.map((row) => row.id);
   if (deletedTableIds.length > 0) {
     await broadcastLobby();
   }
