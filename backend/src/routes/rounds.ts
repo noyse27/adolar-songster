@@ -71,8 +71,6 @@ roundsRouter.get('/games/:gameId', requireAuth, async (req: AuthenticatedRequest
     [gameId, game.table_id],
   );
 
-  await touchTableActivityForGame(gameId);
-
   res.status(200).json({
     gameId: game.id,
     tableId: game.table_id,
@@ -105,7 +103,6 @@ roundsRouter.get('/games/:gameId/state', requireAuth, async (req: AuthenticatedR
     res.status(404).json({ error: 'game not found' });
     return;
   }
-  await touchTableActivityForGame(req.params.gameId);
   res.status(200).json(state);
 });
 
@@ -127,9 +124,6 @@ roundsRouter.get('/games/display/:token/:gameId', async (req, res) => {
   }
 
   const state = await loadGameState(req.params.gameId, COUNTDOWN_MS, SONG_DURATION_MS, BONUS_WINDOW_MS);
-  if (state) {
-    await touchTableActivityForGame(req.params.gameId);
-  }
   res.status(200).json(state);
 });
 
@@ -257,8 +251,6 @@ roundsRouter.get('/games/:gameId/rounds/:roundId', requireAuth, async (req: Auth
       tokenWrongGuessYear = row.result === 'solo_wrong' ? row.wrong_year : null;
     }
   }
-
-  await touchTableActivityForGame(gameId);
 
   res.status(200).json({
     roundId: round.id,
