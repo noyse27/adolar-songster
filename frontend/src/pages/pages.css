@@ -166,6 +166,17 @@
 .admin-pill.warn { background: rgba(255,149,0,.14); color: var(--adolar-orange); }
 .admin-pill.bad { background: rgba(255,93,122,.14); color: #ff9fb2; }
 
+.admin-clock-icon {
+  position: relative; display: inline-block; width: 18px; height: 18px;
+  border: 1.8px solid var(--sh-text-faint); border-radius: 50%; vertical-align: middle;
+}
+.admin-clock-icon::before, .admin-clock-icon::after {
+  content: ""; position: absolute; left: 8px; top: 3px; width: 1.6px; border-radius: 999px;
+  background: var(--sh-text-faint); transform-origin: bottom center;
+}
+.admin-clock-icon::before { height: 5px; }
+.admin-clock-icon::after { height: 6px; transform: rotate(115deg); }
+
 .admin-btn-sm {
   border: 1px solid var(--sh-panel-border); background: rgba(255,255,255,.04); color: var(--sh-text-dim);
   border-radius: 8px; padding: 5px 10px; font-size: 12px; cursor: pointer; transition: all .15s ease;

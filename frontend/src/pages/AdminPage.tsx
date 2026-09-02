@@ -809,6 +809,13 @@ function InlineTrackCorrection({
   );
 }
 
+function formatDateTime(value: string): string {
+  return new Date(value).toLocaleString(undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  });
+}
+
 interface AdminTable {
   tableId: string;
   name: string;
@@ -862,6 +869,7 @@ function TablesSection({ token }: { token: string }) {
           <thead>
             <tr>
               <th>Name</th>
+              <th aria-label="Erstellt"></th>
               <th>Besitzer</th>
               <th>Sichtbarkeit</th>
               <th>Status</th>
@@ -875,6 +883,13 @@ function TablesSection({ token }: { token: string }) {
             {tables.map((t) => (
               <tr key={t.tableId}>
                 <td>{t.name}</td>
+                <td>
+                  <span
+                    className="admin-clock-icon"
+                    title={`Erstellt: ${formatDateTime(t.createdAt)}`}
+                    aria-label={`Erstellt: ${formatDateTime(t.createdAt)}`}
+                  />
+                </td>
                 <td>{t.ownerUsername}</td>
                 <td>{t.visibility === 'public' ? 'Öffentlich' : 'Privat'}</td>
                 <td>{t.state}</td>
@@ -896,7 +911,7 @@ function TablesSection({ token }: { token: string }) {
             ))}
             {tables.length === 0 && (
               <tr>
-                <td colSpan={8} style={{ color: 'var(--sh-text-faint)' }}>
+                <td colSpan={9} style={{ color: 'var(--sh-text-faint)' }}>
                   Keine Tische vorhanden.
                 </td>
               </tr>

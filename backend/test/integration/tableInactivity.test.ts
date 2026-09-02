@@ -73,6 +73,34 @@ describe('inactive-table cleanup (deleteInactiveTables)', () => {
     expect(seatRow.rowCount).toBe(0);
   });
 
+  it('hard-deletes a stale table whose game still has auto-ready preferences', async () => {
+    const owner = await createUserDirect({});
+    const table = await request(app)
+      .post('/api/v1/tables')
+      .set(authHeader(owner.id, 'user'))
+      .send({ name: `Table_${uniqueSuffix()}`, visibility: 'public' });
+    const tableId = table.body.tableId;
+    const sessionResult = await pool.query(`INSERT INTO table_session (table_id) VALUES ($1) RETURNING id`, [tableId]);
+    const gameResult = await pool.query(
+      `INSERT INTO game (table_id, table_session_id, status, started_at)
+       VALUES ($1, $2, 'active', NOW())
+       RETURNING id`,
+      [tableId, sessionResult.rows[0].id],
+    );
+    const gameId = gameResult.rows[0].id;
+    await pool.query(
+      `INSERT INTO round_ready_pref (game_id, user_id, auto_ready) VALUES ($1, $2, TRUE)`,
+      [gameId, owner.id],
+    );
+
+    await ageTable(tableId, INACTIVITY_DELETE_MS + 1000);
+    const { deletedTableIds } = await deleteInactiveTables();
+    expect(deletedTableIds).toContain(tableId);
+
+    const prefRow = await pool.query('SELECT game_id FROM round_ready_pref WHERE game_id = $1', [gameId]);
+    expect(prefRow.rowCount).toBe(0);
+  });
+
   it('leaves a recently-active table alone', async () => {
     const owner = await createUserDirect({});
     const table = await request(app)
@@ -195,5 +223,35 @@ describe('GET /admin/tables', () => {
 
     const tableRow = await pool.query('SELECT id FROM game_table WHERE id = $1', [table.body.tableId]);
     expect(tableRow.rowCount).toBe(0);
+  });
+
+  it('lets an admin delete a table whose game still has auto-ready preferences', async () => {
+    const admin = await createUserDirect({ role: 'admin' });
+    const owner = await createUserDirect({});
+    const table = await request(app)
+      .post('/api/v1/tables')
+      .set(authHeader(owner.id, 'user'))
+      .send({ name: `Table_${uniqueSuffix()}`, visibility: 'public' });
+    const tableId = table.body.tableId;
+    const sessionResult = await pool.query(`INSERT INTO table_session (table_id) VALUES ($1) RETURNING id`, [tableId]);
+    const gameResult = await pool.query(
+      `INSERT INTO game (table_id, table_session_id, status, started_at)
+       VALUES ($1, $2, 'active', NOW())
+       RETURNING id`,
+      [tableId, sessionResult.rows[0].id],
+    );
+    const gameId = gameResult.rows[0].id;
+    await pool.query(
+      `INSERT INTO round_ready_pref (game_id, user_id, auto_ready) VALUES ($1, $2, TRUE)`,
+      [gameId, owner.id],
+    );
+
+    await request(app)
+      .delete(`/api/v1/admin/tables/${tableId}`)
+      .set(authHeader(admin.id, 'admin'))
+      .expect(204);
+
+    const prefRow = await pool.query('SELECT game_id FROM round_ready_pref WHERE game_id = $1', [gameId]);
+    expect(prefRow.rowCount).toBe(0);
   });
 });
