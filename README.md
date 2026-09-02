@@ -100,3 +100,21 @@ npm run test:integration   # benoetigt DATABASE_URL gegen eine laufende Postgres
                             # backend/test/integration/globalSetup.js
 npm run build
 ```
+
+### Lokale Integrationstests mit Docker-Postgres
+
+Wenn `docker compose up` laeuft, ist Postgres lokal unter Port `15432`
+erreichbar. Fuer Integrationstests eine eigene Wegwerf-Datenbank verwenden,
+nicht die normale App-Datenbank:
+
+```powershell
+docker exec adolar-songster-db-1 sh -lc "createdb -U songster adolar_songster_test 2>/dev/null || true"
+$env:DATABASE_URL = "postgres://songster:songster@localhost:15432/adolar_songster_test"
+$env:JWT_SECRET = "integration-test-secret"
+npm run --workspace backend migrate:up
+npm run --workspace backend test:integration
+```
+
+`globalSetup` leert diese Datenbank vor jedem Integrationstestlauf komplett.
+Der Host `localhost` ist absichtlich erlaubt; entfernte Datenbankhosts werden
+ohne `ALLOW_DESTRUCTIVE_TEST_DB=true` blockiert.
