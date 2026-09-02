@@ -9,7 +9,7 @@ import {
   saveCommunicationSettings,
   validateReactionConfig,
 } from '../services/communication';
-import { broadcastReactionConfig } from '../realtime/broadcast';
+import { broadcastLobby, broadcastReactionConfig } from '../realtime/broadcast';
 import { getSyncState, triggerBackgroundSync } from '../services/adolarSync';
 import { listCatalogedPlaylists, listPlaylistsForAdmin, updatePlaylistOverrides } from '../services/adolarPlaylistCatalog';
 import { ADMIN_INACTIVE_MS } from '../services/tableActivity';
@@ -452,6 +452,17 @@ adminRouter.get('/tables', async (_req, res) => {
       inactive: row.inactive,
     })),
   });
+});
+
+adminRouter.delete('/tables/:tableId', async (req, res) => {
+  const result = await pool.query(`DELETE FROM game_table WHERE id = $1 RETURNING id`, [req.params.tableId]);
+  if (result.rowCount === 0) {
+    res.status(404).json({ error: 'table not found' });
+    return;
+  }
+
+  await broadcastLobby();
+  res.status(204).send();
 });
 
 // Playlist-Tracking (Fehleranalyse): Nachschlagen einer gespielten Playlist

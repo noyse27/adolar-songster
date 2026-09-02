@@ -172,6 +172,8 @@
 }
 .admin-btn-sm:hover { border-color: var(--adolar-cyan); color: var(--adolar-white); }
 .admin-btn-sm:disabled { opacity: .4; cursor: not-allowed; }
+.admin-btn-danger { color: #ff9fb2; border-color: rgba(255,93,122,.35); }
+.admin-btn-danger:hover { border-color: #ff9fb2; color: #ffd1da; background: rgba(255,93,122,.12); }
 
 .admin-inline-form { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 14px; }
 .admin-inline-form input, .admin-inline-form select {

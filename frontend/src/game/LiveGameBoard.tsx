@@ -4,7 +4,17 @@ import '../playboard/Playboard.css';
 import { useAuth } from '../auth/AuthContext';
 import { apiFetch, ApiError, API_BASE_URL } from '../api';
 import { getSocket } from '../realtime/socket';
-import { fetchGameState, setRoundReady, setAutoReady, submitPositionGuess, submitBonusGuess, claimToken, submitTokenGuess, restartTable } from './gameApi';
+import {
+  fetchGameState,
+  setRoundReady,
+  setAutoReady,
+  submitPositionGuess,
+  submitBonusGuess,
+  claimToken,
+  submitTokenGuess,
+  restartTable,
+  keepTableAlive,
+} from './gameApi';
 import { CurrentRoundState, GameState } from './types';
 import { buildGameSummaryPdf } from './gameSummaryPdf';
 import { embedTimeline, boxIndexToPackedIndex, packedIndexToBoxIndex, SLOT_COUNT } from './timelineSlots';
@@ -251,6 +261,16 @@ export function LiveGameBoard() {
       socket.emit('table:leave-room', tableId);
     };
   }, [auth, tableId, navigate]);
+
+  useEffect(() => {
+    if (!auth || !tableId || state?.status === 'finished') return;
+    const ping = () => {
+      keepTableAlive(tableId, auth.accessToken).catch(() => undefined);
+    };
+    ping();
+    const id = window.setInterval(ping, 5 * 60 * 1000);
+    return () => window.clearInterval(id);
+  }, [auth, tableId, state?.status]);
 
   // A new round means any local pending placement/guess from the previous
   // one is stale - reset it. Deliberately NOT keyed on the whole `state`

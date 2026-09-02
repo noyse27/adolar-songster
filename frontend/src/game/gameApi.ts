@@ -37,6 +37,10 @@ export function restartTable(tableId: string, token: string): Promise<{ tableId:
   return apiFetch(`/tables/${tableId}/restart`, { method: 'POST', token });
 }
 
+export function keepTableAlive(tableId: string, token: string): Promise<{ tableId: string }> {
+  return apiFetch(`/tables/${tableId}/keep-alive`, { method: 'POST', token });
+}
+
 export function submitTokenGuess(gameId: string, roundId: string, token: string, year: number): Promise<{ correct: boolean }> {
   return apiFetch(`/games/${gameId}/rounds/${roundId}/token-submit`, { method: 'POST', body: { year }, token });
 }

@@ -824,6 +824,8 @@ interface AdminTable {
 
 function TablesSection({ token }: { token: string }) {
   const [tables, setTables] = useState<AdminTable[]>([]);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   function load() {
     apiFetch<{ tables: AdminTable[] }>('/admin/tables', { token })
@@ -832,12 +834,29 @@ function TablesSection({ token }: { token: string }) {
   }
   useEffect(load, [token]);
 
+  async function deleteTable(table: AdminTable) {
+    const confirmed = window.confirm(`Tisch "${table.name}" wirklich löschen? Das entfernt auch laufende/gespeicherte Spieldaten dieses Tisches.`);
+    if (!confirmed) return;
+
+    setBusyId(table.tableId);
+    setError(null);
+    try {
+      await apiFetch<null>(`/admin/tables/${table.tableId}`, { method: 'DELETE', token });
+      setTables((prev) => prev.filter((entry) => entry.tableId !== table.tableId));
+    } catch {
+      setError('Tisch konnte nicht gelöscht werden.');
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   return (
     <>
       <p style={{ fontSize: 12, color: 'var(--sh-text-faint)', marginBottom: 12 }}>
         {tables.length} Tische - "Inaktiv" = seit 30 Minuten keine Interaktion. Ohne jede Interaktion für 60 Minuten
         wird ein Tisch automatisch gelöscht.
       </p>
+      {error && <div className="sh-error" style={{ marginBottom: 12 }}>{error}</div>}
       <div className="admin-table-wrap">
         <table className="admin-table">
           <thead>
@@ -849,6 +868,7 @@ function TablesSection({ token }: { token: string }) {
               <th>Spieler</th>
               <th>Zuschauer</th>
               <th>Aktivität</th>
+              <th></th>
             </tr>
           </thead>
           <tbody>
@@ -867,11 +887,16 @@ function TablesSection({ token }: { token: string }) {
                     <span className="admin-pill">aktiv</span>
                   )}
                 </td>
+                <td>
+                  <button className="admin-btn-sm admin-btn-danger" type="button" disabled={busyId === t.tableId} onClick={() => deleteTable(t)}>
+                    {busyId === t.tableId ? 'Löscht…' : 'Löschen'}
+                  </button>
+                </td>
               </tr>
             ))}
             {tables.length === 0 && (
               <tr>
-                <td colSpan={7} style={{ color: 'var(--sh-text-faint)' }}>
+                <td colSpan={8} style={{ color: 'var(--sh-text-faint)' }}>
                   Keine Tische vorhanden.
                 </td>
               </tr>
