@@ -26,7 +26,7 @@ import { karmaLeavePenalty, placeAt } from '../playboard/gameLogic';
 import { useWakeLock } from '../hooks/useWakeLock';
 import { ReactionBar } from '../components/ReactionBar';
 import { communicationPhase, GameReactionEvent, ReactionConfig } from './reactions';
-import { keepNewestGameState } from './stateOrdering';
+import { keepNewestGameState, orderPlayersForPersonalBoard } from './stateOrdering';
 import { describeAudioElement, flushClientDebugEvents, logClientEvent, snapshotClientDebugContext } from '../debugLogging';
 
 /*
@@ -669,6 +669,11 @@ export function LiveGameBoard() {
 
   const you = state?.players.find((p) => p.userId === auth?.user.id) ?? null;
   const currentUserAutoReady = Boolean(auth && state?.autoReadyUserIds.includes(auth.user.id));
+  const boardPlayers = useMemo(() => {
+    if (!state) return [];
+    if (compact && you) return [you];
+    return orderPlayersForPersonalBoard(state.players, auth?.user.id);
+  }, [auth?.user.id, compact, state, you]);
   const maxScore = useMemo(() => Math.max(0, ...(state?.players.map((p) => p.timeline.length) ?? [0])), [state]);
   // Global skill rank (see backend/src/services/rankScore.ts), not a
   // per-table placement in this one match - same number as the profile
@@ -1080,7 +1085,7 @@ export function LiveGameBoard() {
         )}
 
         <div className="pb-board">
-          {(compact && you ? [you] : state.players).map((p) => {
+          {boardPlayers.map((p) => {
             const isSelf = p.userId === you?.userId;
             const sittingOut = round?.sitOutUserIds.includes(p.userId) ?? false;
 
