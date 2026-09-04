@@ -6,8 +6,12 @@ import tseslint from '@typescript-eslint/eslint-plugin';
 import reactHooks from 'eslint-plugin-react-hooks';
 import globals from 'globals';
 
-const reactHooksRecommended =
-  reactHooks.configs['flat/recommended'] ?? reactHooks.configs.recommended;
+const reactHooksRecommended = reactHooks.configs['flat/recommended'] ?? {
+  plugins: {
+    'react-hooks': reactHooks,
+  },
+  rules: reactHooks.configs.recommended?.rules ?? {},
+};
 
 export default [
   js.configs.recommended,
