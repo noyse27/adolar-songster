@@ -6,10 +6,12 @@ import tseslint from '@typescript-eslint/eslint-plugin';
 import reactHooks from 'eslint-plugin-react-hooks';
 import globals from 'globals';
 
+const reactHooksRecommended = reactHooks.configs['flat/recommended'];
+
 export default [
   js.configs.recommended,
   ...tseslint.configs['flat/recommended'],
-  ...reactHooks.configs['flat/recommended'],
+  ...(Array.isArray(reactHooksRecommended) ? reactHooksRecommended : [reactHooksRecommended]),
   {
     languageOptions: {
       ecmaVersion: 2022,
