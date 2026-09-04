@@ -1,7 +1,7 @@
 # Used by CI's docker-image-scan job (adolar-songster:ci) and mirrors
 # backend/Dockerfile. Frontend has its own Dockerfile, composed together
 # via docker-compose.yml.
-FROM node:22-alpine AS build
+FROM node:26-alpine AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 COPY backend/package.json backend/package.json
@@ -10,7 +10,7 @@ RUN npm ci
 COPY backend ./backend
 RUN npm run build --workspace backend
 
-FROM node:22-alpine AS runtime
+FROM node:26-alpine AS runtime
 # Picks up whatever Alpine security patches (e.g. openssl/libcrypto3/libssl3)
 # have landed since this image tag was baked - CI's Trivy scan fails the
 # build on known-fixed HIGH/CRITICAL CVEs in the base image, and floating
