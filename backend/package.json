@@ -19,7 +19,7 @@
     "test": "jest"
   },
   "dependencies": {
-    "argon2": "^0.41.1",
+    "argon2": "^0.45.1",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.21.2",
@@ -41,16 +41,16 @@
     "@types/node-cron": "^3.0.11",
     "@types/pg": "^8.11.10",
     "@types/supertest": "^7.2.1",
-    "@typescript-eslint/eslint-plugin": "^8.67.0",
+    "@typescript-eslint/eslint-plugin": "^8.69.0",
     "@typescript-eslint/parser": "^8.67.0",
-    "eslint": "^10.9.0",
+    "eslint": "^10.9.1",
     "globals": "^17.11.0",
-    "jest": "^30.4.2",
+    "jest": "^30.5.0",
     "node-pg-migrate": "^9.0.0",
     "socket.io-client": "^4.8.3",
     "supertest": "^7.0.0",
     "ts-jest": "^29.2.5",
-    "tsx": "^4.23.12",
+    "tsx": "^4.23.13",
     "typescript": "^5.7.2"
   }
 }
