@@ -950,6 +950,35 @@ export function LiveGameBoard() {
     }
   }
 
+  let mobileTimer: { label: string; value: string; detail?: string } | null = null;
+  if (!dealt) {
+    mobileTimer = { label: 'Start', value: '...', detail: 'Karten werden verteilt' };
+  } else if (revealUntil !== null && now < revealUntil) {
+    mobileTimer = { label: 'Auflösung', value: `${Math.ceil((revealUntil - now) / 1000)}s` };
+  } else if (readyPhase?.startedAt) {
+    const remaining = Math.max(0, readyPhase.windowMs - (now - new Date(readyPhase.startedAt).getTime()));
+    mobileTimer = {
+      label: 'Bereit',
+      value: `${Math.ceil(remaining / 1000)}s`,
+      detail: `${readyPhase.readyUserIds.length}/${state.players.length} bereit`,
+    };
+  } else if (round?.status === 'countdown') {
+    const elapsed = now - new Date(round.startedAt).getTime();
+    const remaining = Math.max(0, round.countdownMs - elapsed);
+    mobileTimer = { label: 'Countdown', value: `${Math.ceil(remaining / 1000) || 1}s` };
+  } else if (round?.status === 'playing') {
+    const elapsed = now - new Date(round.startedAt).getTime() - round.countdownMs;
+    const remaining = Math.max(0, round.windowMs - elapsed);
+    const hurryUp = round.mode === 'bonus' && elapsed >= round.songPlaybackMs;
+    mobileTimer = { label: hurryUp ? 'Tippen' : 'Song', value: `${Math.ceil(remaining / 1000)}s` };
+  } else if (round?.status === 'token_solo' || round?.status === 'token_others') {
+    const startedAt = tokenPhaseStartRef.current?.at ?? now;
+    const remaining = Math.max(0, TOKEN_WINDOW_MS - (now - startedAt));
+    mobileTimer = { label: 'Token', value: `${Math.ceil(remaining / 1000)}s` };
+  } else if (readyPhase) {
+    mobileTimer = { label: 'Bereit', value: `${readyPhase.readyUserIds.length}/${state.players.length}`, detail: 'Tippe Ring oder Avatar' };
+  }
+
   const canReadyNow = dealt && Boolean(readyPhase);
   const iAmSittingOut = round ? round.sitOutUserIds.includes(you?.userId ?? '') : false;
   const canPlaceGuess = Boolean(dealt && round && round.status === 'playing' && round.mode === 'normal' && !iAmSittingOut);
@@ -1081,6 +1110,14 @@ export function LiveGameBoard() {
         {error && (
           <div className="sh-error" style={{ marginBottom: 4 }}>
             {error}
+          </div>
+        )}
+
+        {mobileTimer && (
+          <div className="pb-mobile-timer" aria-live="polite">
+            <span>{mobileTimer.label}</span>
+            <b>{mobileTimer.value}</b>
+            {mobileTimer.detail && <small>{mobileTimer.detail}</small>}
           </div>
         )}
 

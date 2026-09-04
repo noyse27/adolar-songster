@@ -27,6 +27,9 @@
     radial-gradient(1200px 600px at 15% -10%, #2a2380 0%, transparent 60%),
     radial-gradient(900px 500px at 110% 10%, #1c3d6b 0%, transparent 55%),
     var(--adolar-navy);
+  width: 100%;
+  max-width: 100dvw;
+  overflow-x: hidden;
 
   /* This is an app surface, not readable content - nothing here should
      ever be selected as text. Without this, tapping a clickable label on
@@ -51,11 +54,11 @@
 }
 .playboard h1, .playboard h2, .playboard h3 { font-family: var(--pb-font-display); margin: 0; text-wrap: balance; }
 
-.pb-app { max-width: 1220px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
+.pb-app { width: 100%; max-width: 1220px; min-width: 0; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
 
 /* header */
-.pb-topbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
-.pb-brand { display: flex; align-items: center; gap: 12px; }
+.pb-topbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-width: 0; }
+.pb-brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .pb-icon-btn {
   width: 34px; height: 34px; border-radius: 10px; border: 1px solid var(--pb-panel-border);
   background: var(--pb-panel); color: var(--pb-text-dim); font-family: var(--pb-font-display); font-weight: 700; font-size: 13px;
@@ -102,6 +105,38 @@
 .pb-round-pill b { color: var(--adolar-white); font-family: var(--pb-font-display); font-size: 12px; letter-spacing: .03em; }
 .pb-round-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--adolar-cyan); box-shadow: 0 0 10px 2px var(--adolar-cyan); }
 
+.pb-mobile-timer {
+  display: none;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 12px;
+  border: 1px solid var(--pb-panel-border-you);
+  border-radius: 12px;
+  background: rgba(49, 213, 255, .07);
+  color: var(--pb-text-dim);
+}
+.pb-mobile-timer span {
+  font-size: 11px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.pb-mobile-timer b {
+  color: var(--adolar-white);
+  font-family: var(--pb-font-display);
+  font-size: 20px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.pb-mobile-timer small {
+  min-width: 0;
+  color: var(--pb-text-faint);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* board */
 .pb-board { display: flex; flex-direction: column; gap: 10px; }
 
@@ -114,6 +149,7 @@
   border: 1px solid var(--pb-panel-border);
   border-radius: 16px;
   padding: 10px 14px;
+  min-width: 0;
   transition: box-shadow .25s ease, border-color .25s ease, opacity .2s ease, filter .2s ease;
 }
 .pb-row.pb-you {
@@ -489,23 +525,40 @@
 .pb-modal-btn.pb-danger { background: var(--pb-bad); color: #fff; }
 .pb-modal-btn.pb-primary { background: var(--adolar-violet); color: #fff; }
 
-@media (max-width: 780px) {
+@media (max-width: 780px), (hover: none) and (pointer: coarse) and (max-width: 1100px) {
+  .playboard { padding: 16px 14px 28px; }
+  .pb-app { max-width: 100%; }
+  .pb-app { gap: 14px; }
+  .pb-topbar { align-items: flex-start; flex-wrap: wrap; justify-content: flex-start; }
+  .pb-brand { flex: 1 1 100%; flex-wrap: wrap; gap: 10px; }
+  .pb-brand-mark { width: 42px; height: 42px; }
+  .pb-round-pill { flex: 0 1 auto; max-width: 100%; min-width: 0; }
+  .pb-round-pill span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pb-mobile-timer { display: flex; }
   .pb-row, .pb-row.pb-you { grid-template-columns: 1fr; }
+  .pb-row, .pb-row.pb-you { gap: 10px; padding: 12px; border-radius: 14px; }
   .pb-actions { justify-content: flex-start; }
   .pb-deck { grid-template-columns: 1fr; justify-items: center; }
   .pb-brand-ids { display: none; }
+  .pb-player { width: 100%; }
+  .pb-timeline { width: 100%; max-width: 100%; gap: 4px; padding-bottom: 9px; }
+  .pb-row.pb-you .pb-gap,
+  .pb-row.pb-you .pb-tile {
+    width: 58px;
+    height: 66px;
+    border-radius: 11px;
+  }
+  .pb-guessfield { align-items: stretch; width: min(100%, 180px); }
+  .pb-actions { gap: 10px; }
   .pb-reaction-bar { align-items: flex-start; flex-direction: column; }
   .pb-reaction-actions { justify-content: flex-start; }
   .pb-reaction-btn small { display: none; }
 }
 
-/* A phone rotated to landscape is usually *wider* than the 780px breakpoint
-   above (so none of it applies) but much *shorter* - the fixed-size ring
-   (224px) and page padding alone can exceed the whole viewport height,
-   forcing the browser into a zoomed-out view the player then has to
-   manually zoom back in from. Targets viewport height, not width, and only
-   shrinks sizes (never re-flows columns - the wide layout is exactly right
-   for landscape, it's just too tall). */
+/* Phones can report a wide layout viewport in mobile browsers, especially
+   with desktop-site settings. The touch-specific rule above opts those
+   screens into the same row flow as narrow mobile portrait; this height rule
+   still keeps the shared deck/ring compact for every short landscape view. */
 @media (max-height: 500px) and (orientation: landscape) {
   .playboard { padding: 12px 20px 20px; }
   .pb-app { gap: 10px; }
@@ -528,4 +581,26 @@
   .pb-deck { gap: 12px; margin-top: 2px; }
   .pb-status-card { padding: 8px 12px; min-width: 0; font-size: 11px; }
   .pb-hint { margin-top: -2px; font-size: 11px; }
+}
+
+@media (hover: none) and (pointer: coarse) and (max-height: 520px) and (orientation: landscape) {
+  .playboard { padding: 10px 12px 18px; }
+  .pb-topbar { gap: 8px; }
+  .pb-icon-btn { width: 38px; height: 38px; }
+  .pb-brand-title { font-size: 17px; }
+  .pb-brand-sub { font-size: 10px; }
+  .pb-board { gap: 8px; }
+  .pb-row.pb-you .pb-gap,
+  .pb-row.pb-you .pb-tile,
+  .pb-gap,
+  .pb-tile {
+    width: 50px;
+    height: 56px;
+    font-size: 12px;
+  }
+  .pb-row.pb-you .pb-tile { font-size: 13px; }
+  .pb-insert-handle { min-width: 12px; }
+  .pb-row.pb-you .pb-act-btn { width: 40px; height: 40px; }
+  .pb-reaction-bar { padding: 7px 10px; }
+  .pb-reaction-btn { min-height: 32px; padding: 5px 8px; }
 }
