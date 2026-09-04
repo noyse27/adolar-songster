@@ -1,7 +1,20 @@
 # Adolar Songster
 
-**Version: v0.5.1-beta** - privates Musik-Ratespiel fuer kleine Gruppen. Projektdokumentation siehe
+**Version: v0.5.2-beta** - privates Musik-Ratespiel fuer kleine Gruppen. Projektdokumentation siehe
 [docs/Adolar_Songster_Masterindex_v1_20260821.md](docs/Adolar_Songster_Masterindex_v1_20260821.md).
+
+## Neu in v0.5.2-beta
+
+- **Mobile-Countdown im Playboard:** mobile Spieler sehen den laufenden
+  Runden-Countdown direkt im Playboard, damit Start, Songfenster und Eingabe-
+  Sperre besser nachvollziehbar sind.
+- **Aktueller Spieler zuerst:** die eigene Timeline wird im Playboard priorisiert
+  angezeigt, damit mobile Runden schneller bedienbar bleiben.
+- **Robustere laufende Playboards:** aktive Playboards halten Tischsessions
+  lebendig und Admin-Aufraeumlaeufe entfernen inaktive Tische sicherer.
+- **Wartungspaket:** Dependabot, CI-Action-Updates, Node-/NPM-Dependency-
+  Aktualisierungen, React-Hooks-Lint-Konfiguration und lokale Integrations-
+  Testdokumentation sind zusammengezogen.
 
 ## Neu in v0.5.1-beta
 
