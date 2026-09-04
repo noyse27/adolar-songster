@@ -6,19 +6,23 @@ import tseslint from '@typescript-eslint/eslint-plugin';
 import reactHooks from 'eslint-plugin-react-hooks';
 import globals from 'globals';
 
-const reactHooksRecommended = reactHooks.configs['flat/recommended'] ?? {
+const reactHooksRecommendedRules =
+  reactHooks.configs['recommended-legacy']?.rules ??
+  reactHooks.configs['flat/recommended']?.[0]?.rules ??
+  reactHooks.configs.recommended?.rules ??
+  {};
+
+const reactHooksRecommended = {
   plugins: {
     'react-hooks': reactHooks,
   },
-  rules: reactHooks.configs.recommended?.rules ?? {},
+  rules: reactHooksRecommendedRules,
 };
 
 export default [
   js.configs.recommended,
   ...tseslint.configs['flat/recommended'],
-  ...(Array.isArray(reactHooksRecommended)
-    ? reactHooksRecommended
-    : [reactHooksRecommended].filter(Boolean)),
+  reactHooksRecommended,
   {
     languageOptions: {
       ecmaVersion: 2022,
