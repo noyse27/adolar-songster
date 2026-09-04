@@ -1,4 +1,3 @@
-import 'express-async-errors';
 import express, { Express, NextFunction, Request, Response } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
@@ -58,7 +57,7 @@ export function createApp(): Express {
   app.use('/api/v1', debugRouter);
 
   // Last-resort net: without this, an error thrown/rejected anywhere in a
-  // route handler (now forwarded here automatically by express-async-errors)
+  // route handler (forwarded here by Express 5's native async error handling)
   // would otherwise crash the whole Node process for every connected user -
   // as happened with a stale JWT referencing a user deleted by a DB reset,
   // which turned a routine 401 into a Postgres FK-violation crash. Answering
