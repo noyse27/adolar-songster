@@ -1,7 +1,14 @@
 # Adolar Songster
 
-**Version: v0.5.2-beta** - privates Musik-Ratespiel fuer kleine Gruppen. Projektdokumentation siehe
+**Version: v0.5.3-beta** - privates Musik-Ratespiel fuer kleine Gruppen. Projektdokumentation siehe
 [docs/Adolar_Songster_Masterindex_v1_20260821.md](docs/Adolar_Songster_Masterindex_v1_20260821.md).
+
+## Neu in v0.5.3-beta
+
+- **Security-Wartung:** Express wurde auf 5.2.1 angehoben und `qs` auf 6.16.0
+  gepinnt; `npm audit` meldet damit keine offenen Verwundbarkeiten mehr.
+- **Express-5-Aufraeumung:** `express-async-errors` wurde entfernt, weil
+  Express 5 async Route-Fehler nativ an den Error-Handler weiterreicht.
 
 ## Neu in v0.5.2-beta
 
