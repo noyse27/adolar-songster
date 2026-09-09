@@ -1,4 +1,5 @@
 import { NextFunction, Request, Response } from 'express';
+import type { ParamsDictionary } from 'express-serve-static-core';
 import jwt from 'jsonwebtoken';
 import { pool } from '../db/pool';
 
@@ -32,12 +33,17 @@ function resolveJwtSecret(): string {
 
 export const JWT_SECRET = resolveJwtSecret();
 
-export interface AuthenticatedRequest extends Request {
-  userId?: string;
-  userRole?: string;
-}
-
-export async function requireAuth(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
+// userId/userRole themselves are declared on Express.Request via
+// declaration merging (see types/express.d.ts) rather than a separate
+// AuthenticatedRequest subtype, so route handlers can leave `req` untyped
+// and keep Express 5's automatic per-route req.params inference. requireAuth
+// stays generic over P so it slots into that inference instead of pinning
+// every route it's used on to the default ParamsDictionary.
+export async function requireAuth<P = ParamsDictionary>(
+  req: Request<P>,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
   const header = req.headers.authorization;
   if (!header?.startsWith('Bearer ')) {
     res.status(401).json({ error: 'missing bearer token' });
@@ -87,7 +93,7 @@ export async function requireAuth(req: AuthenticatedRequest, res: Response, next
   next();
 }
 
-export function requireAdmin(req: AuthenticatedRequest, res: Response, next: NextFunction): void {
+export function requireAdmin<P = ParamsDictionary>(req: Request<P>, res: Response, next: NextFunction): void {
   if (req.userRole !== 'admin') {
     res.status(403).json({ error: 'admin role required' });
     return;

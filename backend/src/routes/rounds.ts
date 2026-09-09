@@ -1,6 +1,6 @@
 import { Response, Router } from 'express';
 import { pool } from '../db/pool';
-import { AuthenticatedRequest, requireAuth } from '../middleware/auth';
+import { requireAuth } from '../middleware/auth';
 import { RoundEngineError } from '../services/errors';
 import { claimToken, startRound, submitBonusGuess, submitGuess, submitTokenGuess } from '../services/roundEngine';
 import { setAutoReady, setRoundReady } from '../services/roundReady';
@@ -41,7 +41,7 @@ function handleEngineError(err: unknown, res: Response): boolean {
 // H-01: requires an active seat (player or spectator) at this game's table
 // - "logged in" alone used to be enough, so any account could read another
 // table's full game/player detail just by knowing/guessing a gameId.
-roundsRouter.get('/games/:gameId', requireAuth, async (req: AuthenticatedRequest, res) => {
+roundsRouter.get('/games/:gameId', requireAuth, async (req, res) => {
   const { gameId } = req.params;
 
   const access = await authorizeGameViewer(gameId, req.userId as string);
@@ -91,7 +91,7 @@ roundsRouter.get('/games/:gameId', requireAuth, async (req: AuthenticatedRequest
 // + current round incl. reveal-if-resolved) - what GET /games/:gameId and
 // GET .../rounds/:roundId each give separately, merged into the one shape
 // the socket broadcaster (broadcastGame) also emits on every state change.
-roundsRouter.get('/games/:gameId/state', requireAuth, async (req: AuthenticatedRequest, res) => {
+roundsRouter.get('/games/:gameId/state', requireAuth, async (req, res) => {
   const access = await authorizeGameViewer(req.params.gameId, req.userId as string);
   if (!access) {
     res.status(404).json({ error: 'game not found' });
@@ -132,7 +132,7 @@ roundsRouter.get('/games/display/:token/:gameId', async (req, res) => {
 // everyone is ready, or after the 30s window with stragglers sitting the
 // round out - there is no response payload describing the outcome, the
 // caller (and everyone else) finds out via the game:update broadcast.
-roundsRouter.post('/games/:gameId/ready', requireAuth, async (req: AuthenticatedRequest, res) => {
+roundsRouter.post('/games/:gameId/ready', requireAuth, async (req, res) => {
   const { ready = true } = req.body ?? {};
   if (typeof ready !== 'boolean') {
     res.status(400).json({ error: 'ready must be a boolean' });
@@ -157,7 +157,7 @@ roundsRouter.post('/games/:gameId/ready', requireAuth, async (req: Authenticated
 // "Auto bereit" lock (see roundReady.ts's setAutoReady): scoped to this
 // game only, toggled from the player's own avatar in the Playboard
 // (double-click), not a table-level admin setting.
-roundsRouter.post('/games/:gameId/ready/auto', requireAuth, async (req: AuthenticatedRequest, res) => {
+roundsRouter.post('/games/:gameId/ready/auto', requireAuth, async (req, res) => {
   const { autoReady } = req.body ?? {};
   if (typeof autoReady !== 'boolean') {
     res.status(400).json({ error: 'autoReady must be a boolean' });
@@ -181,7 +181,7 @@ roundsRouter.post('/games/:gameId/ready/auto', requireAuth, async (req: Authenti
 
 // Manual/admin override - see roundEngine.startRound's comment. Normal
 // play uses POST /games/:id/ready instead.
-roundsRouter.post('/games/:gameId/rounds', requireAuth, async (req: AuthenticatedRequest, res) => {
+roundsRouter.post('/games/:gameId/rounds', requireAuth, async (req, res) => {
   try {
     const round = await startRound(req.params.gameId, req.userId as string, req.userRole);
     await touchTableActivityForGame(req.params.gameId);
@@ -195,7 +195,7 @@ roundsRouter.post('/games/:gameId/rounds', requireAuth, async (req: Authenticate
 // must actually belong to the gameId in the path - previously a roundId
 // from a different game slipped through unbound, and any logged-in user
 // could read any round's detail regardless of membership.
-roundsRouter.get('/games/:gameId/rounds/:roundId', requireAuth, async (req: AuthenticatedRequest, res) => {
+roundsRouter.get('/games/:gameId/rounds/:roundId', requireAuth, async (req, res) => {
   const { gameId, roundId } = req.params;
 
   const access = await authorizeGameViewer(gameId, req.userId as string);
@@ -269,7 +269,7 @@ roundsRouter.get('/games/:gameId/rounds/:roundId', requireAuth, async (req: Auth
 roundsRouter.post(
   '/games/:gameId/rounds/:roundId/guess',
   requireAuth,
-  async (req: AuthenticatedRequest, res) => {
+  async (req, res) => {
     const { type, value } = req.body ?? {};
 
     try {
@@ -297,7 +297,7 @@ roundsRouter.post(
 roundsRouter.post(
   '/games/:gameId/rounds/:roundId/token-claim',
   requireAuth,
-  async (req: AuthenticatedRequest, res) => {
+  async (req, res) => {
     try {
       const result = await claimToken(req.params.gameId, req.params.roundId, req.userId as string);
       await touchTableActivityForGame(req.params.gameId);
@@ -311,7 +311,7 @@ roundsRouter.post(
 roundsRouter.post(
   '/games/:gameId/rounds/:roundId/token-submit',
   requireAuth,
-  async (req: AuthenticatedRequest, res) => {
+  async (req, res) => {
     const { year } = req.body ?? {};
 
     try {
