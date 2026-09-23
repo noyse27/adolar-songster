@@ -11,6 +11,11 @@ Zugangsdaten, echte Songs oder dauerhafte Nutzerdaten entstehen.
   Host-Device-Pairings und der Songpool werden gelöscht und neu befüllt
   mit:
   - einem festen Demo-Admin-Account,
+  - einem Demo-Spieler (`demo-anna`), der bereits einen offenen,
+    öffentlichen Demo-Tisch eröffnet hat und dort schon sitzt und bereit
+    ist - ein Besucher kann direkt beitreten, selbst auf "bereit" klicken
+    und das Spiel startet sofort, ganz ohne eigenen Tisch anlegen zu
+    müssen,
   - einem stehenden Einladungscode, mit dem sich Besucher selbst
     registrieren können,
   - einer synthetischen Song-Bibliothek (16 erfundene Titel, über sieben
@@ -36,6 +41,26 @@ Zugangsdaten, echte Songs oder dauerhafte Nutzerdaten entstehen.
   `routes/songs.ts`s Stream-Redirect) - keine Adolar-Anbindung nötig, die
   Felder `ADOLAR_BASE_URL`/`ADOLAR_API_TOKEN` bleiben in der Demo bewusst
   leer.
+
+## Zum Testen
+
+1. Mit dem Einladungscode selbst registrieren (oder direkt als
+   `demo-admin` anmelden) und in der Lobby den offenen "Demo-Tisch"
+   beitreten.
+2. Auf "bereit" klicken - `demo-anna`, die Tischbesitzerin, ist bereits
+   bereit, also startet die erste Runde sofort.
+3. Für eine zweite Runde muss auch `demo-anna` wieder auf "bereit"
+   klicken (die Runden-Bereit-Markierung gilt jeweils nur für die
+   laufende Partie) - dafür in einem zweiten Tab/Browser mit `demo-anna`
+   / `<DEMO_ADMIN_PASSWORD>` anmelden, oder dort den "Auto bereit"-
+   Schalter einmal aktivieren, dann läuft die Partie von allein weiter.
+
+`demo-anna` ist nur eine vorab in der Datenbank angelegte Zeile, niemand
+ist dauerhaft in ihrem Namen eingeloggt - `table_seat.ready` (das
+Tisch-Bereit-Flag, das den automatischen Spielstart auslöst) lässt sich
+beim Reset vorab setzen, das separate, pro-Partie geltende "Auto bereit"
+(`round_ready_pref`) dagegen nicht, weil es erst nach dem ersten
+Rundenstart eine Partie-ID gibt, an die es gebunden werden kann.
 
 ## Aktivierung
 

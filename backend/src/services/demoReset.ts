@@ -102,6 +102,38 @@ export async function resetDemoData(): Promise<void> {
       [DEMO_INVITE_CODE, adminId],
     );
 
+    const companionPasswordHash = await argon2.hash(DEMO_ADMIN_PASSWORD);
+    const companionResult = await client.query(
+      `INSERT INTO app_user (username, email, password_hash, role, status)
+       VALUES ('demo-anna', 'demo-anna@example.invalid', $1, 'user', 'active')
+       RETURNING id`,
+      [companionPasswordHash],
+    );
+    const companionId = companionResult.rows[0].id as string;
+
+    // A table a visitor can join and start playing right away, rather than
+    // landing on an empty lobby: owned and already seated by demo-anna, who
+    // is also marked ready at the table (table_seat.ready) - the same gate
+    // tableStart.ts's automatic start-on-everyone-ready check uses. A
+    // second player joining and readying up therefore starts a game
+    // immediately. demo-anna herself is a seeded row nobody is logged into,
+    // so round_ready_pref's per-game "auto ready" toggle can't be pre-set
+    // the same way - it only exists once a game row does - but that only
+    // affects whether she auto-readies for a *second* round; the first
+    // round always starts cleanly. docs/demo.md documents logging in as
+    // demo-anna in a second tab to keep a longer test session going.
+    const demoTableResult = await client.query(
+      `INSERT INTO game_table (owner_user_id, name, visibility, allow_spectators, max_players)
+       VALUES ($1, 'Demo-Tisch', 'public', TRUE, 5)
+       RETURNING id`,
+      [companionId],
+    );
+    await client.query(
+      `INSERT INTO table_seat (table_id, user_id, seat_type, ready)
+       VALUES ($1, $2, 'player', TRUE)`,
+      [demoTableResult.rows[0].id, companionId],
+    );
+
     for (const song of DEMO_SONGS) {
       await client.query(
         `INSERT INTO song_ref (source, source_song_id, title, year_value, duration_sec, stream_ref)
