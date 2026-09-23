@@ -15,6 +15,7 @@ import { songsRouter } from './routes/songs';
 import { communicationsRouter } from './routes/communications';
 import { hostDevicesRouter } from './routes/hostDevices';
 import { debugRouter } from './routes/debug';
+import { demoRouter } from './routes/demo';
 import { apiLimiter, authLimiter } from './middleware/rateLimit';
 import { requestIdMiddleware } from './middleware/requestId';
 
@@ -55,6 +56,7 @@ export function createApp(): Express {
   app.use('/api/v1', communicationsRouter);
   app.use('/api/v1', hostDevicesRouter);
   app.use('/api/v1', debugRouter);
+  app.use('/api/v1', demoRouter);
 
   // Last-resort net: without this, an error thrown/rejected anywhere in a
   // route handler (forwarded here by Express 5's native async error handling)
