@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import crypto from 'crypto';
 import { pool } from '../db/pool';
-import { AuthenticatedRequest, requireAuth } from '../middleware/auth';
+import { requireAuth } from '../middleware/auth';
 import { evaluateOwnerHandover } from '../services/tableHandover';
 import { computeYearRange, generateStartBlocks } from '../services/timeline';
 import { applyEarlyLeavePenalty } from '../services/matchOutcome';
@@ -49,7 +49,7 @@ function generateJoinCode(): string {
   return crypto.randomBytes(4).toString('hex').toUpperCase();
 }
 
-tablesRouter.post('/tables', requireAuth, async (req: AuthenticatedRequest, res) => {
+tablesRouter.post('/tables', requireAuth, async (req, res) => {
   const requesterId = req.userId as string;
   const {
     name,
@@ -176,7 +176,7 @@ tablesRouter.get('/tables/lobby', requireAuth, async (_req, res) => {
 // would let a stranger point a "shared screen" feed at a table they don't
 // own. See services/displayToken.ts for why this is a token, not a seat or
 // a login.
-tablesRouter.post('/tables/:tableId/display-link', requireAuth, async (req: AuthenticatedRequest, res) => {
+tablesRouter.post('/tables/:tableId/display-link', requireAuth, async (req, res) => {
   const requesterId = req.userId as string;
   const { tableId } = req.params;
 
@@ -233,7 +233,7 @@ tablesRouter.get('/tables/:tableId/preview', requireAuth, async (req, res) => {
 // join code, seat list and game id just by knowing/guessing the tableId.
 // Not-a-member and doesn't-exist both 404 identically, so a stranger can't
 // use this to confirm a given tableId is real.
-tablesRouter.get('/tables/:tableId', requireAuth, async (req: AuthenticatedRequest, res) => {
+tablesRouter.get('/tables/:tableId', requireAuth, async (req, res) => {
   const { tableId } = req.params;
   const requesterId = req.userId as string;
 
@@ -254,7 +254,7 @@ tablesRouter.get('/tables/:tableId', requireAuth, async (req: AuthenticatedReque
   res.status(200).json(table);
 });
 
-tablesRouter.post('/tables/:tableId/join', requireAuth, async (req: AuthenticatedRequest, res) => {
+tablesRouter.post('/tables/:tableId/join', requireAuth, async (req, res) => {
   const requesterId = req.userId as string;
   const { tableId } = req.params;
   const { joinAs, joinCode } = req.body ?? {};
@@ -395,7 +395,7 @@ tablesRouter.post('/tables/:tableId/join', requireAuth, async (req: Authenticate
   }
 });
 
-tablesRouter.post('/tables/:tableId/leave', requireAuth, async (req: AuthenticatedRequest, res) => {
+tablesRouter.post('/tables/:tableId/leave', requireAuth, async (req, res) => {
   const requesterId = req.userId as string;
   const { tableId } = req.params;
 
@@ -460,7 +460,7 @@ tablesRouter.post('/tables/:tableId/leave', requireAuth, async (req: Authenticat
 // just resets the clock. Anyone currently seated may call it, not just
 // the owner - whoever is watching this table is enough to prove it's
 // still in use.
-tablesRouter.post('/tables/:tableId/keep-alive', requireAuth, async (req: AuthenticatedRequest, res) => {
+tablesRouter.post('/tables/:tableId/keep-alive', requireAuth, async (req, res) => {
   const requesterId = req.userId as string;
   const { tableId } = req.params;
 
@@ -482,7 +482,7 @@ tablesRouter.post('/tables/:tableId/keep-alive', requireAuth, async (req: Authen
 // seated player is ready, even below the table's configured max player
 // count (see startTableGame). Reaching that max count with everyone ready
 // auto-starts without anyone needing to call this - see the /ready route.
-tablesRouter.post('/tables/:tableId/start', requireAuth, async (req: AuthenticatedRequest, res) => {
+tablesRouter.post('/tables/:tableId/start', requireAuth, async (req, res) => {
   const requesterId = req.userId as string;
   const requesterRole = req.userRole;
   const { tableId } = req.params;
@@ -513,7 +513,7 @@ tablesRouter.post('/tables/:tableId/start', requireAuth, async (req: Authenticat
 // Rematch: any still-seated player can send a finished table back to
 // 'open' within the 60s auto-close window (see tableRestart.ts), instead
 // of everyone having to leave and re-join from the lobby for another game.
-tablesRouter.post('/tables/:tableId/restart', requireAuth, async (req: AuthenticatedRequest, res) => {
+tablesRouter.post('/tables/:tableId/restart', requireAuth, async (req, res) => {
   const requesterId = req.userId as string;
   const { tableId } = req.params;
 
@@ -531,7 +531,7 @@ tablesRouter.post('/tables/:tableId/restart', requireAuth, async (req: Authentic
 // start. Auto-starts as soon as the configured player count is reached and
 // everyone is ready; otherwise the admin can force an early start via
 // POST /start once everyone currently seated is ready (see startTableGame).
-tablesRouter.post('/tables/:tableId/ready', requireAuth, async (req: AuthenticatedRequest, res) => {
+tablesRouter.post('/tables/:tableId/ready', requireAuth, async (req, res) => {
   const requesterId = req.userId as string;
   const { tableId } = req.params;
   const { ready = true } = req.body ?? {};
@@ -592,7 +592,7 @@ tablesRouter.post('/tables/:tableId/ready', requireAuth, async (req: Authenticat
 // player composition and table settings, without requiring anyone to
 // rejoin. AK-011: stays in the same table_session so the session-wide
 // song no-repeat-until-exhausted rule keeps applying across "Neue Partie".
-tablesRouter.post('/tables/:tableId/new-game', requireAuth, async (req: AuthenticatedRequest, res) => {
+tablesRouter.post('/tables/:tableId/new-game', requireAuth, async (req, res) => {
   const requesterId = req.userId as string;
   const requesterRole = req.userRole;
   const { tableId } = req.params;

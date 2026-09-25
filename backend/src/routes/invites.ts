@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import crypto from 'crypto';
 import { pool } from '../db/pool';
-import { AuthenticatedRequest, requireAuth } from '../middleware/auth';
+import { requireAuth } from '../middleware/auth';
 
 export const invitesRouter = Router();
 
@@ -30,7 +30,7 @@ export function resolveMaxUses(isAdmin: boolean, requestedMaxUses: unknown): num
     : 1;
 }
 
-invitesRouter.post('/invites', requireAuth, async (req: AuthenticatedRequest, res) => {
+invitesRouter.post('/invites', requireAuth, async (req, res) => {
   const { maxUses, expiresInDays } = req.body ?? {};
   const requesterId = req.userId as string;
 
@@ -92,7 +92,7 @@ invitesRouter.post('/invites', requireAuth, async (req: AuthenticatedRequest, re
   });
 });
 
-invitesRouter.get('/invites', requireAuth, async (req: AuthenticatedRequest, res) => {
+invitesRouter.get('/invites', requireAuth, async (req, res) => {
   const requesterId = req.userId as string;
   const requesterResult = await pool.query(`SELECT role FROM app_user WHERE id = $1`, [requesterId]);
   const isAdmin = requesterResult.rows[0]?.role === 'admin';
@@ -121,7 +121,7 @@ invitesRouter.get('/invites', requireAuth, async (req: AuthenticatedRequest, res
   });
 });
 
-invitesRouter.post('/invites/:inviteId/disable', requireAuth, async (req: AuthenticatedRequest, res) => {
+invitesRouter.post('/invites/:inviteId/disable', requireAuth, async (req, res) => {
   const requesterId = req.userId as string;
   const { inviteId } = req.params;
 
