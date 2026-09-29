@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import argon2 from 'argon2';
 import { pool } from '../db/pool';
-import { AuthenticatedRequest, requireAuth } from '../middleware/auth';
+import { requireAuth } from '../middleware/auth';
 import { RANK_SCORE_SQL } from '../services/rankScore';
 
 export const usersRouter = Router();
@@ -11,7 +11,7 @@ export const usersRouter = Router();
 // GET /leaderboard's top-100 slice, this is always available even for
 // someone far outside it, which the Rangliste page needs to show their
 // own row when they're not in the top 10.
-usersRouter.get('/users/me', requireAuth, async (req: AuthenticatedRequest, res) => {
+usersRouter.get('/users/me', requireAuth, async (req, res) => {
   const result = await pool.query(
     `WITH ranked AS (
        SELECT id, RANK() OVER (ORDER BY ${RANK_SCORE_SQL} DESC) AS rank_position FROM app_user
@@ -42,7 +42,7 @@ usersRouter.get('/users/me', requireAuth, async (req: AuthenticatedRequest, res)
   });
 });
 
-usersRouter.post('/users/me/change-password', requireAuth, async (req: AuthenticatedRequest, res) => {
+usersRouter.post('/users/me/change-password', requireAuth, async (req, res) => {
   const { currentPassword, newPassword } = req.body ?? {};
 
   if (!currentPassword || !newPassword || typeof newPassword !== 'string' || newPassword.length < 8) {

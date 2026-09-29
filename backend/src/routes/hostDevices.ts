@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { AuthenticatedRequest, requireAuth } from '../middleware/auth';
+import { requireAuth } from '../middleware/auth';
 import {
   attachHostDeviceToTable,
   authorizeHostDevice,
@@ -24,7 +24,7 @@ hostDevicesRouter.post('/host-devices/pairings', async (req, res) => {
   res.status(201).json(pairing);
 });
 
-hostDevicesRouter.post('/host-devices/authorize', requireAuth, async (req: AuthenticatedRequest, res) => {
+hostDevicesRouter.post('/host-devices/authorize', requireAuth, async (req, res) => {
   const { pairingCode } = req.body ?? {};
   if (typeof pairingCode !== 'string') {
     res.status(400).json({ error: 'pairingCode is required' });
@@ -76,11 +76,11 @@ hostDevicesRouter.delete('/host-devices/app/:deviceId', async (req, res) => {
   res.status(204).send();
 });
 
-hostDevicesRouter.get('/users/me/host-devices', requireAuth, async (req: AuthenticatedRequest, res) => {
+hostDevicesRouter.get('/users/me/host-devices', requireAuth, async (req, res) => {
   res.status(200).json({ devices: await listUserHostDevices(req.userId as string) });
 });
 
-hostDevicesRouter.delete('/users/me/host-devices/:deviceId', requireAuth, async (req: AuthenticatedRequest, res) => {
+hostDevicesRouter.delete('/users/me/host-devices/:deviceId', requireAuth, async (req, res) => {
   const revoked = await revokeHostDevice(req.params.deviceId, req.userId as string);
   if (!revoked) {
     res.status(404).json({ error: 'host device not found' });
@@ -89,11 +89,11 @@ hostDevicesRouter.delete('/users/me/host-devices/:deviceId', requireAuth, async 
   res.status(204).send();
 });
 
-hostDevicesRouter.get('/host-devices/available', requireAuth, async (req: AuthenticatedRequest, res) => {
+hostDevicesRouter.get('/host-devices/available', requireAuth, async (req, res) => {
   res.status(200).json({ devices: (await listUserHostDevices(req.userId as string)).filter((device) => device.online) });
 });
 
-hostDevicesRouter.post('/tables/:tableId/host-device', requireAuth, async (req: AuthenticatedRequest, res) => {
+hostDevicesRouter.post('/tables/:tableId/host-device', requireAuth, async (req, res) => {
   const { deviceId } = req.body ?? {};
   if (typeof deviceId !== 'string') {
     res.status(400).json({ error: 'deviceId is required' });

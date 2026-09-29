@@ -1,5 +1,5 @@
-import { Router } from 'express';
-import { AuthenticatedRequest, requireAuth } from '../middleware/auth';
+import { Request, Router } from 'express';
+import { requireAuth } from '../middleware/auth';
 import { emitChatMessage } from '../realtime/broadcast';
 import {
   CHAT_MAX_LENGTH,
@@ -16,11 +16,11 @@ communicationsRouter.get('/communications/lobby/messages', requireAuth, async (_
   res.status(200).json({ messages: await listChatMessages('lobby', null) });
 });
 
-communicationsRouter.post('/communications/lobby/messages', requireAuth, async (req: AuthenticatedRequest, res) => {
+communicationsRouter.post('/communications/lobby/messages', requireAuth, async (req, res) => {
   await createAndSend(req, res, 'lobby', null);
 });
 
-communicationsRouter.get('/tables/:tableId/messages', requireAuth, async (req: AuthenticatedRequest, res) => {
+communicationsRouter.get('/tables/:tableId/messages', requireAuth, async (req, res) => {
   const userId = req.userId as string;
   const { tableId } = req.params;
   if (!(await loadActiveSeat(tableId, userId))) {
@@ -30,7 +30,7 @@ communicationsRouter.get('/tables/:tableId/messages', requireAuth, async (req: A
   res.status(200).json({ messages: await listChatMessages('table', tableId) });
 });
 
-communicationsRouter.post('/tables/:tableId/messages', requireAuth, async (req: AuthenticatedRequest, res) => {
+communicationsRouter.post('/tables/:tableId/messages', requireAuth, async (req, res) => {
   const userId = req.userId as string;
   const { tableId } = req.params;
   if (!(await loadActiveSeat(tableId, userId))) {
@@ -40,8 +40,8 @@ communicationsRouter.post('/tables/:tableId/messages', requireAuth, async (req: 
   await createAndSend(req, res, 'table', tableId);
 });
 
-async function createAndSend(
-  req: AuthenticatedRequest,
+async function createAndSend<P>(
+  req: Request<P>,
   res: Parameters<Parameters<Router['post']>[1]>[1],
   scope: 'lobby' | 'table',
   tableId: string | null,
