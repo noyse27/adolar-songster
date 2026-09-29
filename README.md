@@ -61,6 +61,14 @@ echo "JWT_SECRET=$(openssl rand -hex 32)" >> .env
 docker compose up --build
 ```
 
+Alternativ per Setup-Skript, das `.env` (mit zufaelligem `JWT_SECRET`)
+bei Bedarf selbst anlegt und den passenden Compose-Stack startet:
+
+```bash
+./setup.sh production   # echte Installation
+./setup.sh demo         # isolierte oeffentliche Demo-Instanz, siehe docs/demo.md
+```
+
 Startet Postgres (nur auf localhost erreichbar), spielt die Migrationen ein
 und startet Backend und Frontend (Port 5173). Das Backend ist absichtlich
 nicht direkt vom Host aus erreichbar - Frontend/nginx ist der einzige
@@ -88,6 +96,12 @@ Eintrittspunkt und proxied `/api` und `/socket.io` intern.
 Danach per `POST /api/v1/auth/login` einloggen und mit dem `accessToken`
 weitere Invites erzeugen (`POST /api/v1/invites`). API-Details siehe
 [docs/Adolar_Songster_API_Spezifikation_v1_20260821.md](docs/Adolar_Songster_API_Spezifikation_v1_20260821.md).
+
+## Demomodus
+
+Fuer eine oeffentlich zugaengliche, isolierte Vorfuehrinstanz mit
+selbst-zuruecksetzenden Testdaten (kein echter Song-Inhalt, keine
+dauerhaften Accounts) siehe [docs/demo.md](docs/demo.md).
 
 ## Lokale Entwicklung ohne Docker
 

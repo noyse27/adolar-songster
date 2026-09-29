@@ -2,6 +2,7 @@ import { Route, Routes } from 'react-router-dom';
 import { useLocation } from 'react-router-dom';
 import { SetupWizard } from './components/SetupWizard';
 import { Footer } from './components/Footer';
+import { DemoBanner } from './components/DemoBanner';
 import { RootGate } from './pages/RootGate';
 import { LoginPage } from './pages/LoginPage';
 import { RegisterPage } from './pages/RegisterPage';
@@ -32,6 +33,7 @@ export function App() {
 
   return (
     <>
+      {!hideFooter && <DemoBanner />}
       <Routes>
         <Route path="/" element={<RootGate />} />
         <Route path="/setup" element={<SetupWizard />} />

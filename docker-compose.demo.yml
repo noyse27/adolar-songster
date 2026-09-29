@@ -1,0 +1,115 @@
+# Self-contained compose file for an isolated adolar-songster demo
+# deployment - NOT an override merged with docker-compose.yml (a merge
+# would have to reconcile the frontend's static-file setup with the demo
+# song volume below, and compose's merge-by-target rules for `volumes:`
+# across multiple `-f` files are easy to get subtly wrong). This file is
+# deliberately a complete, independent stack instead: every table/game/
+# account/song it holds is demo data, generated on every startup and reset
+# periodically (see DEMO_MODE and DEMO_RESET_MINUTES below, and
+# backend/src/services/demoReset.ts).
+#
+# Run with its own compose project name so it never collides with a real
+# adolar-songster deployment on the same host, and its own env file for
+# ports/admin credentials (copy .env.demo.example to .env.demo first):
+#
+#   docker compose -p adolar-songster-demo --env-file .env.demo -f docker-compose.demo.yml up -d --build
+#
+# See docs/demo.md for the full write-up.
+services:
+  demo-songs:
+    build:
+      context: ./demo
+    environment:
+      DEMO_SONG_SECONDS: ${DEMO_SONG_SECONDS:-25}
+    volumes:
+      - demo_songs_data:/songs
+
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: songster
+      POSTGRES_PASSWORD: songster
+      POSTGRES_DB: adolar_songster
+    # Bound to loopback only, same reasoning as docker-compose.yml's db
+    # service - and a different default port again, so a demo stack can
+    # run alongside a real adolar-songster instance on the same host.
+    ports:
+      - "127.0.0.1:${DB_HOST_PORT:-15434}:5432"
+    volumes:
+      - demo_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U songster -d adolar_songster"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  migrate:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      target: build
+    working_dir: /app/backend
+    command: npm run migrate:up
+    environment:
+      DATABASE_URL: postgres://songster:songster@db:5432/adolar_songster
+    depends_on:
+      db:
+        condition: service_healthy
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    restart: unless-stopped
+    environment:
+      PORT: 4000
+      DATABASE_URL: postgres://songster:songster@db:5432/adolar_songster
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env.demo - see .env.demo.example (openssl rand -hex 32)}
+      # Deliberately left unset: a demo instance has no real Adolar server
+      # to talk to, and isAdolarConfigured()/GET /adolar/playlists already
+      # degrade gracefully to "configured: false" without one.
+      ADOLAR_BASE_URL: ${ADOLAR_BASE_URL:-}
+      ADOLAR_API_TOKEN: ${ADOLAR_API_TOKEN:-}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5176}
+      BETA_DEBUG_LOGGING: ${BETA_DEBUG_LOGGING:-false}
+      DEMO_MODE: "true"
+      DEMO_RESET_MINUTES: ${DEMO_RESET_MINUTES:-60}
+      DEMO_ADMIN_USERNAME: ${DEMO_ADMIN_USERNAME:-demo-admin}
+      DEMO_ADMIN_EMAIL: ${DEMO_ADMIN_EMAIL:-demo-admin@example.invalid}
+      DEMO_ADMIN_PASSWORD: ${DEMO_ADMIN_PASSWORD:-songster-demo}
+      DEMO_INVITE_CODE: ${DEMO_INVITE_CODE:-demo}
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:4000/api/v1/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+      args:
+        DEMO_MODE: "true"
+        VITE_BETA_DEBUG_LOGGING: ${VITE_BETA_DEBUG_LOGGING:-false}
+    restart: unless-stopped
+    # Different again from docker-compose.yml's 5173, so a demo stack can
+    # run alongside a real adolar-songster instance on the same host.
+    ports:
+      - "${FRONTEND_HOST_PORT:-5176}:80"
+    volumes:
+      - demo_songs_data:/usr/share/nginx/demo-songs:ro
+    depends_on:
+      backend:
+        condition: service_started
+      demo-songs:
+        condition: service_completed_successfully
+
+volumes:
+  demo_db_data:
+  demo_songs_data:

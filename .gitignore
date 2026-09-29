@@ -4,6 +4,7 @@ build/
 .env
 .env.*
 !.env.example
+!.env.demo.example
 *.log
 Thumbs.db
 .DS_Store
