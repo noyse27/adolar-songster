@@ -7,6 +7,8 @@ export interface AuthUser {
   username: string;
   role: 'user' | 'admin';
   canCreateInvites: boolean;
+  mustChangePassword: boolean;
+  isSuperAdmin: boolean;
 }
 
 interface AuthState {
@@ -18,6 +20,7 @@ interface AuthContextValue {
   auth: AuthState | null;
   login: (usernameOrEmail: string, password: string) => Promise<AuthUser>;
   logout: () => void;
+  updateUser: (patch: Partial<AuthUser>) => void;
 }
 
 const STORAGE_KEY = 'adolar_songster_auth';
@@ -70,6 +73,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       logout() {
         clearStoredAuth();
         setAuth(null);
+      },
+      updateUser(patch: Partial<AuthUser>) {
+        setAuth((current) => {
+          if (!current) return current;
+          const next: AuthState = { ...current, user: { ...current.user, ...patch } };
+          window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+          return next;
+        });
       },
     }),
     [auth],

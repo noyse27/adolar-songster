@@ -1,7 +1,9 @@
 import { Router } from 'express';
 import crypto from 'crypto';
+import argon2 from 'argon2';
 import { pool } from '../db/pool';
-import { requireAdmin, requireAuth } from '../middleware/auth';
+import { AuthenticatedRequest, requireAdmin, requireAuth, requireSuperAdmin } from '../middleware/auth';
+import { generateTemporaryPassword } from '../services/temporaryPassword';
 import { getSetting } from '../services/systemSettings';
 import { blockInDemoMode } from '../middleware/demoBlock';
 import {
@@ -79,7 +81,8 @@ adminRouter.put('/communication-settings', blockInDemoMode('changing communicati
 // userId, and this is the only way to discover one.
 adminRouter.get('/users', async (_req, res) => {
   const result = await pool.query(
-    `SELECT id, username, email, role, status, can_create_invites, karma_points, score_points, created_at
+    `SELECT id, username, email, role, status, can_create_invites, karma_points, score_points, created_at,
+            is_super_admin, password_reset_requested_at
      FROM app_user ORDER BY created_at DESC`,
   );
 
@@ -94,9 +97,107 @@ adminRouter.get('/users', async (_req, res) => {
       karmaPoints: row.karma_points,
       scorePoints: row.score_points,
       createdAt: row.created_at,
+      isSuperAdmin: row.is_super_admin,
+      passwordResetRequestedAt: row.password_reset_requested_at,
     })),
   });
 });
+
+// Promote/demote a user's role. Restricted to the super-admin (the one
+// account the one-time /setup bootstrap flow created) - otherwise a
+// promoted admin could appoint an accomplice, or demote whoever appointed
+// them, with nothing left to stop them. Two extra guards: refusing to
+// demote the last remaining admin, and refusing to change the super-admin's
+// own role at all, since letting them demote themselves would strand the
+// system with zero accounts able to manage roles.
+adminRouter.post(
+  '/users/:userId/role',
+  requireSuperAdmin,
+  blockInDemoMode('changing user roles'),
+  async (req: AuthenticatedRequest, res) => {
+    const { userId } = req.params;
+    const { role } = req.body ?? {};
+
+    if (role !== 'user' && role !== 'admin') {
+      res.status(400).json({ error: "role must be 'user' or 'admin'" });
+      return;
+    }
+
+    const targetResult = await pool.query(
+      `SELECT id, role, is_super_admin FROM app_user WHERE id = $1`,
+      [userId],
+    );
+    if (targetResult.rowCount === 0) {
+      res.status(404).json({ error: 'user not found' });
+      return;
+    }
+    const target = targetResult.rows[0];
+
+    if (target.is_super_admin) {
+      res.status(409).json({ error: "the super-admin's own role cannot be changed" });
+      return;
+    }
+
+    if (target.role === 'admin' && role === 'user') {
+      const adminCountResult = await pool.query(
+        `SELECT COUNT(*)::int AS count FROM app_user WHERE role = 'admin'`,
+      );
+      if (adminCountResult.rows[0].count <= 1) {
+        res.status(409).json({ error: 'cannot demote the last remaining admin' });
+        return;
+      }
+    }
+
+    const result = await pool.query(
+      `UPDATE app_user SET role = $1 WHERE id = $2 RETURNING id, username, role`,
+      [role, userId],
+    );
+
+    res.status(200).json({
+      userId: result.rows[0].id,
+      username: result.rows[0].username,
+      role: result.rows[0].role,
+    });
+  },
+);
+
+// Admin-mediated password reset: issues a fresh random temporary password
+// (shown once in the response so the admin can relay it to the user),
+// forces a change on next login (must_change_password), clears the user's
+// own reset request, and bumps session_version so any previously-issued
+// token for this account is invalidated immediately.
+adminRouter.post(
+  '/users/:userId/reset-password',
+  blockInDemoMode('resetting a user password'),
+  async (req, res) => {
+    const { userId } = req.params;
+
+    const temporaryPassword = generateTemporaryPassword();
+    const passwordHash = await argon2.hash(temporaryPassword);
+
+    const result = await pool.query(
+      `UPDATE app_user
+       SET password_hash = $1,
+           must_change_password = TRUE,
+           password_reset_requested_at = NULL,
+           session_version = session_version + 1
+       WHERE id = $2
+       RETURNING id, username`,
+      [passwordHash, userId],
+    );
+
+    if (result.rowCount === 0) {
+      res.status(404).json({ error: 'user not found' });
+      return;
+    }
+
+    res.status(200).json({
+      userId: result.rows[0].id,
+      username: result.rows[0].username,
+      temporaryPassword,
+    });
+  },
+);
 
 // Grant or revoke a user's right to create invites. Blocked in demo mode
 // for the same reason as PUT /communication-settings above - the demo

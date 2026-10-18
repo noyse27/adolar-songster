@@ -86,7 +86,7 @@ authRouter.post('/auth/login', async (req, res) => {
   }
 
   const result = await pool.query(
-    `SELECT id, username, password_hash, role, status, can_create_invites
+    `SELECT id, username, password_hash, role, status, can_create_invites, must_change_password, is_super_admin
      FROM app_user
      WHERE username = $1 OR email = $1`,
     [usernameOrEmail],
@@ -131,7 +131,36 @@ authRouter.post('/auth/login', async (req, res) => {
   res.status(200).json({
     accessToken,
     expiresIn: JWT_EXPIRES_IN_SECONDS,
-    user: { id: user.id, username: user.username, role: user.role, canCreateInvites: user.can_create_invites },
+    user: {
+      id: user.id,
+      username: user.username,
+      role: user.role,
+      canCreateInvites: user.can_create_invites,
+      mustChangePassword: user.must_change_password,
+      isSuperAdmin: user.is_super_admin,
+    },
+  });
+});
+
+// Public and deliberately generic in both the success and no-such-account
+// cases, so this can't be used to enumerate valid usernames/emails. Just
+// flags the account; an admin sees the flag on /admin and issues a temporary
+// password (see routes/admin.ts's reset-password endpoint).
+authRouter.post('/auth/request-password-reset', async (req, res) => {
+  const { usernameOrEmail } = req.body ?? {};
+
+  if (!usernameOrEmail) {
+    res.status(400).json({ error: 'usernameOrEmail is required' });
+    return;
+  }
+
+  await pool.query(
+    `UPDATE app_user SET password_reset_requested_at = NOW() WHERE username = $1 OR email = $1`,
+    [usernameOrEmail],
+  );
+
+  res.status(200).json({
+    message: 'If an account exists for this username or email, a password reset has been requested.',
   });
 });
 

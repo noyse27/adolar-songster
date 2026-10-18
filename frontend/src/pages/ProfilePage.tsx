@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import './pages.css';
 import { useAuth } from '../auth/AuthContext';
 import { apiFetch, ApiError } from '../api';
@@ -33,7 +33,9 @@ interface HostDevice {
 }
 
 export function ProfilePage() {
-  const { auth } = useAuth();
+  const { auth, updateUser } = useAuth();
+  const location = useLocation();
+  const forcePasswordChange = Boolean((location.state as { forcePasswordChange?: boolean } | null)?.forcePasswordChange);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [rank, setRank] = useState<number | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -89,6 +91,7 @@ export function ProfilePage() {
       setCurrentPassword('');
       setNewPassword('');
       setNewPassword2('');
+      updateUser({ mustChangePassword: false });
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         setPwError('Aktuelles Passwort ist falsch.');
@@ -224,6 +227,11 @@ export function ProfilePage() {
         </div>
 
         <h2 style={{ fontSize: 15 }}>Passwort ändern</h2>
+        {forcePasswordChange && !pwSuccess && (
+          <div className="sh-error" style={{ marginBottom: 14 }}>
+            Du wurdest mit einem temporären Passwort angemeldet. Bitte setze jetzt ein eigenes Passwort.
+          </div>
+        )}
         {pwError && <div className="sh-error" style={{ marginBottom: 14 }}>{pwError}</div>}
         {pwSuccess && <div className="sh-info" style={{ marginBottom: 14 }}>Passwort geändert.</div>}
         <form className="sh-form" onSubmit={handleChangePassword}>
