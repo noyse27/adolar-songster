@@ -6,10 +6,12 @@ const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
 const LENGTH = 16;
 
 export function generateTemporaryPassword(): string {
-  const bytes = crypto.randomBytes(LENGTH);
+  // crypto.randomInt (not randomBytes()[i] % ALPHABET.length) - modulo on a
+  // byte introduces bias whenever 256 isn't a multiple of the alphabet
+  // length, randomInt is rejection-sampled internally to stay uniform.
   let password = '';
   for (let i = 0; i < LENGTH; i += 1) {
-    password += ALPHABET[bytes[i] % ALPHABET.length];
+    password += ALPHABET[crypto.randomInt(ALPHABET.length)];
   }
   return password;
 }
