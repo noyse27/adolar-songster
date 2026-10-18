@@ -55,4 +55,5 @@ export interface GameState {
   autoReadyUserIds: string[];
   displayAnchorPresent: boolean;
   reactionConfig: ReactionConfig;
+  isSolo: boolean;
 }

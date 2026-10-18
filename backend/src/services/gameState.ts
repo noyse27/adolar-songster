@@ -100,6 +100,12 @@ export interface GameState {
   // screen is doing the showing/playing for everyone.
   displayAnchorPresent: boolean;
   reactionConfig: ReactionConfig;
+  // Solo tables play against nobody, so the token-race mechanic (claim
+  // first, then everyone else gets a shot - see roundEngine.ts's
+  // claimToken) is disabled server-side entirely; the client uses this to
+  // hide the now-pointless token button instead of showing one that always
+  // errors.
+  isSolo: boolean;
 }
 
 export async function loadGameState(
@@ -109,7 +115,7 @@ export async function loadGameState(
   bonusWindowMs: number,
 ): Promise<GameState | null> {
   const gameResult = await pool.query(
-    `SELECT g.id, g.table_id, g.status, g.winner_user_id, t.match_ended_at,
+    `SELECT g.id, g.table_id, g.status, g.winner_user_id, t.match_ended_at, t.is_solo,
             t.display_connected_at IS NOT NULL AS display_anchor_present,
             gp.id AS playlist_id
      FROM game g
@@ -288,5 +294,6 @@ export async function loadGameState(
     autoReadyUserIds: autoReadyResult.rows.map((r) => r.user_id),
     displayAnchorPresent: game.display_anchor_present,
     reactionConfig: await loadReactionConfig(),
+    isSolo: game.is_solo,
   };
 }

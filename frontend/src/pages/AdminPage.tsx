@@ -28,6 +28,8 @@ interface AdminUser {
   karmaPoints: number;
   scorePoints: number;
   createdAt: string;
+  isSuperAdmin: boolean;
+  passwordResetRequestedAt: string | null;
 }
 
 export function AdminPage() {
@@ -84,7 +86,7 @@ export function AdminPage() {
           <TablesSection token={token as string} />
         </CollapsibleSection>
         <CollapsibleSection title="Nutzer">
-          <UsersSection token={token as string} />
+          <UsersSection token={token as string} currentUserId={auth.user.id} isSuperAdmin={auth.user.isSuperAdmin} />
         </CollapsibleSection>
       </div>
     </div>
@@ -923,9 +925,19 @@ function TablesSection({ token }: { token: string }) {
   );
 }
 
-function UsersSection({ token }: { token: string }) {
+function UsersSection({
+  token,
+  currentUserId,
+  isSuperAdmin,
+}: {
+  token: string;
+  currentUserId: string;
+  isSuperAdmin: boolean;
+}) {
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [resetResult, setResetResult] = useState<{ username: string; temporaryPassword: string } | null>(null);
+  const [roleError, setRoleError] = useState<string | null>(null);
 
   function load() {
     apiFetch<{ users: AdminUser[] }>('/admin/users', { token })
@@ -943,6 +955,34 @@ function UsersSection({ token }: { token: string }) {
         token,
       });
       load();
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function resetPassword(user: AdminUser) {
+    setBusyId(user.userId);
+    try {
+      const result = await apiFetch<{ username: string; temporaryPassword: string }>(
+        `/admin/users/${user.userId}/reset-password`,
+        { method: 'POST', token },
+      );
+      setResetResult({ username: result.username, temporaryPassword: result.temporaryPassword });
+      load();
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function changeRole(user: AdminUser, role: 'user' | 'admin') {
+    setRoleError(null);
+    setBusyId(user.userId);
+    try {
+      await apiFetch(`/admin/users/${user.userId}/role`, { method: 'POST', body: { role }, token });
+      load();
+    } catch (err) {
+      const body = (err as { body?: { error?: string } })?.body;
+      setRoleError(body?.error ?? 'Rolle konnte nicht geändert werden.');
     } finally {
       setBusyId(null);
     }
@@ -975,6 +1015,7 @@ function UsersSection({ token }: { token: string }) {
   return (
     <>
       <p style={{ fontSize: 12, color: 'var(--sh-text-faint)', marginBottom: 12 }}>{users.length} Nutzer</p>
+      {roleError && <div className="sh-error" style={{ marginBottom: 12 }}>{roleError}</div>}
       <div className="admin-table-wrap">
         <table className="admin-table">
           <thead>
@@ -990,8 +1031,18 @@ function UsersSection({ token }: { token: string }) {
           <tbody>
             {users.map((u) => (
               <tr key={u.userId}>
-                <td>{u.username}</td>
-                <td>{u.role === 'admin' ? <span className="admin-pill">Admin</span> : 'Mitglied'}</td>
+                <td>
+                  {u.username}
+                  {u.passwordResetRequestedAt && (
+                    <span className="admin-pill warn" style={{ marginLeft: 6 }}>
+                      Reset angefordert
+                    </span>
+                  )}
+                </td>
+                <td>
+                  {u.role === 'admin' ? <span className="admin-pill">Admin</span> : 'Mitglied'}
+                  {u.isSuperAdmin && <span className="admin-pill" style={{ marginLeft: 4 }}>Super-Admin</span>}
+                </td>
                 <td>
                   {u.status === 'active' ? <span className="admin-pill">aktiv</span> : <span className="admin-pill bad">gesperrt</span>}
                 </td>
@@ -1013,12 +1064,42 @@ function UsersSection({ token }: { token: string }) {
                       </button>
                     </>
                   )}
+                  {u.userId !== currentUserId && (
+                    <button className="admin-btn-sm" disabled={busyId === u.userId} onClick={() => resetPassword(u)}>
+                      Passwort zurücksetzen
+                    </button>
+                  )}
+                  {isSuperAdmin && u.userId !== currentUserId && !u.isSuperAdmin && (
+                    <button
+                      className="admin-btn-sm"
+                      disabled={busyId === u.userId}
+                      onClick={() => changeRole(u, u.role === 'admin' ? 'user' : 'admin')}
+                    >
+                      {u.role === 'admin' ? 'Zu Mitglied zurückstufen' : 'Zu Admin befördern'}
+                    </button>
+                  )}
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+
+      {resetResult && (
+        <div className="admin-modal-overlay" onClick={() => setResetResult(null)}>
+          <div className="admin-modal" onClick={(e) => e.stopPropagation()}>
+            <h3>Temporäres Passwort für {resetResult.username}</h3>
+            <p style={{ fontSize: 13, color: 'var(--sh-text-faint)' }}>
+              Dieses Passwort wird nur einmal angezeigt. Bitte dem Nutzer mitteilen - beim nächsten Login muss ein
+              eigenes Passwort gesetzt werden.
+            </p>
+            <code className="admin-modal-password">{resetResult.temporaryPassword}</code>
+            <button className="admin-btn-sm" onClick={() => setResetResult(null)}>
+              Schließen
+            </button>
+          </div>
+        </div>
+      )}
     </>
   );
 }

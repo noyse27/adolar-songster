@@ -21,6 +21,7 @@ function state(overrides: Partial<GameState> = {}): GameState {
     autoReadyUserIds: [],
     displayAnchorPresent: false,
     reactionConfig: emptyReactions,
+    isSolo: false,
     ...overrides,
   };
 }

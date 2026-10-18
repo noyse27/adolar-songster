@@ -983,7 +983,15 @@ export function LiveGameBoard() {
   const iAmSittingOut = round ? round.sitOutUserIds.includes(you?.userId ?? '') : false;
   const canPlaceGuess = Boolean(dealt && round && round.status === 'playing' && round.mode === 'normal' && !iAmSittingOut);
   const canUseToken =
-    Boolean(dealt && round && round.status === 'playing' && round.mode === 'normal' && !iAmSittingOut && (you?.tokensRemaining ?? 0) > 0);
+    Boolean(
+      dealt &&
+        round &&
+        round.status === 'playing' &&
+        round.mode === 'normal' &&
+        !iAmSittingOut &&
+        !state?.isSolo &&
+        (you?.tokensRemaining ?? 0) > 0,
+    );
 
   let guessFieldActive = false;
   let guessWrongValue: number | null = null;

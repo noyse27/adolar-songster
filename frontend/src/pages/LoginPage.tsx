@@ -2,7 +2,7 @@ import { FormEvent, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import './pages.css';
 import { useAuth } from '../auth/AuthContext';
-import { ApiError } from '../api';
+import { ApiError, apiFetch } from '../api';
 
 export function LoginPage() {
   const { login } = useAuth();
@@ -19,18 +19,46 @@ export function LoginPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [resetRequesting, setResetRequesting] = useState(false);
+  const [resetMessage, setResetMessage] = useState<string | null>(null);
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
     setError(null);
     setSubmitting(true);
     try {
-      await login(usernameOrEmail, password);
-      navigate(next);
+      const user = await login(usernameOrEmail, password);
+      if (user.mustChangePassword) {
+        navigate('/profil', { state: { forcePasswordChange: true } });
+      } else {
+        navigate(next);
+      }
     } catch (err) {
       setError(describeLoginError(err));
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function handleRequestReset() {
+    if (!usernameOrEmail) {
+      setError('Bitte zuerst Benutzername oder E-Mail eingeben.');
+      return;
+    }
+    setError(null);
+    setResetMessage(null);
+    setResetRequesting(true);
+    try {
+      await apiFetch('/auth/request-password-reset', { method: 'POST', body: { usernameOrEmail } });
+      setResetMessage(
+        'Falls ein Konto mit diesen Angaben existiert, wurde ein Passwort-Reset angefordert. Ein Admin wird dir ein neues Passwort mitteilen.',
+      );
+    } catch {
+      setResetMessage(
+        'Falls ein Konto mit diesen Angaben existiert, wurde ein Passwort-Reset angefordert. Ein Admin wird dir ein neues Passwort mitteilen.',
+      );
+    } finally {
+      setResetRequesting(false);
     }
   }
 
@@ -63,6 +91,14 @@ export function LoginPage() {
             {submitting ? 'Anmelden…' : 'Anmelden'}
           </button>
         </form>
+
+        {resetMessage && <div className="sh-info" style={{ marginTop: 14 }}>{resetMessage}</div>}
+
+        <div className="sh-footer-link">
+          <button type="button" className="sh-linklike" onClick={handleRequestReset} disabled={resetRequesting}>
+            Passwort vergessen?
+          </button>
+        </div>
 
         <div className="sh-footer-link">
           Noch kein Konto? <Link to="/register">Registrieren</Link>

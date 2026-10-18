@@ -59,13 +59,14 @@ export interface TablePreview {
   minKarmaPoints: number | null;
   minScorePoints: number | null;
   minGamesPlayed: number | null;
+  isSolo: boolean;
 }
 
 export async function loadTablePreview(tableId: string): Promise<TablePreview | null> {
   const result = await pool.query(
     `SELECT
         t.id, t.name, t.visibility, t.allow_spectators, t.max_players, t.max_spectators, t.state,
-        t.min_karma_points, t.min_score_points, t.min_games_played,
+        t.min_karma_points, t.min_score_points, t.min_games_played, t.is_solo,
         COUNT(*) FILTER (WHERE s.seat_type = 'player' AND s.left_at IS NULL) AS active_players,
         COUNT(*) FILTER (WHERE s.seat_type = 'spectator' AND s.left_at IS NULL) AS active_spectators
      FROM game_table t
@@ -90,6 +91,7 @@ export async function loadTablePreview(tableId: string): Promise<TablePreview | 
     minKarmaPoints: row.min_karma_points,
     minScorePoints: row.min_score_points,
     minGamesPlayed: row.min_games_played,
+    isSolo: row.is_solo,
   };
 }
 
@@ -110,6 +112,7 @@ export interface TableDetail {
   minScorePoints: number | null;
   minGamesPlayed: number | null;
   lastActivityAt: string;
+  isSolo: boolean;
   seats: { userId: string; username: string; seatType: string; ready: boolean }[];
   latestGameId: string | null;
 }
@@ -119,7 +122,7 @@ export async function loadTableDetail(tableId: string): Promise<TableDetail | nu
     `SELECT
         t.id, t.name, t.visibility, t.join_code, t.allow_spectators,
         t.max_players, t.max_spectators, t.state, t.owner_user_id, t.owner_left_at,
-        t.min_karma_points, t.min_score_points, t.min_games_played, t.last_activity_at,
+        t.min_karma_points, t.min_score_points, t.min_games_played, t.last_activity_at, t.is_solo,
         COUNT(*) FILTER (WHERE s.seat_type = 'player' AND s.left_at IS NULL) AS active_players,
         COUNT(*) FILTER (WHERE s.seat_type = 'spectator' AND s.left_at IS NULL) AS active_spectators
      FROM game_table t
@@ -162,6 +165,7 @@ export async function loadTableDetail(tableId: string): Promise<TableDetail | nu
     minScorePoints: table.min_score_points,
     minGamesPlayed: table.min_games_played,
     lastActivityAt: table.last_activity_at,
+    isSolo: table.is_solo,
     seats: seatsResult.rows.map((row) => ({
       userId: row.user_id,
       username: row.username,
