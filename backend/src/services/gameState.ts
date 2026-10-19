@@ -73,6 +73,9 @@ export interface RoundReadyPhase {
 
 export interface GameState {
   gameId: string;
+  // Startzeit der Partie (game.started_at): Basis fuer das synchrone Intro
+  // (Ladebildschirm) auf allen Geraeten, siehe frontend/src/game/GameIntro.tsx.
+  gameStartedAt: string;
   tableId: string;
   // Playlist-Tracking (Fehleranalyse): die nicht erratbare Playlist-ID
   // dieser Partie (siehe game_playlist, angelegt in tableStart.ts), gezeigt
@@ -115,7 +118,7 @@ export async function loadGameState(
   bonusWindowMs: number,
 ): Promise<GameState | null> {
   const gameResult = await pool.query(
-    `SELECT g.id, g.table_id, g.status, g.winner_user_id, t.match_ended_at, t.is_solo,
+    `SELECT g.id, g.table_id, g.status, g.winner_user_id, g.started_at, t.match_ended_at, t.is_solo,
             t.display_connected_at IS NOT NULL AS display_anchor_present,
             gp.id AS playlist_id
      FROM game g
@@ -282,6 +285,7 @@ export async function loadGameState(
 
   return {
     gameId: game.id,
+    gameStartedAt: game.started_at,
     tableId: game.table_id,
     playlistId: game.playlist_id,
     status: game.status,

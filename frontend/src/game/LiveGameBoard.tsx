@@ -27,6 +27,7 @@ import { useWakeLock } from '../hooks/useWakeLock';
 import { ReactionBar } from '../components/ReactionBar';
 import { communicationPhase, GameReactionEvent, ReactionConfig } from './reactions';
 import { keepNewestGameState, orderPlayersForPersonalBoard } from './stateOrdering';
+import { GameIntro } from './GameIntro';
 import { describeAudioElement, flushClientDebugEvents, logClientEvent, snapshotClientDebugContext } from '../debugLogging';
 
 /*
@@ -1015,6 +1016,7 @@ export function LiveGameBoard() {
 
   return (
     <div className="playboard">
+      <GameIntro gameStartedAt={state.gameStartedAt} />
       <div className="pb-app">
         <div className="pb-topbar">
           <div className="pb-brand">
