@@ -27,11 +27,16 @@ export function LoginPage() {
     setError(null);
     setSubmitting(true);
     try {
-      const user = await login(usernameOrEmail, password);
+      const { user, passwordResetRequestCleared } = await login(usernameOrEmail, password);
       if (user.mustChangePassword) {
-        navigate('/profil', { state: { forcePasswordChange: true } });
+        navigate('/profil', {
+          state: {
+            forcePasswordChange: true,
+            ...(passwordResetRequestCleared ? { passwordResetRequestCleared: true } : {}),
+          },
+        });
       } else {
-        navigate(next);
+        navigate(next, { state: passwordResetRequestCleared ? { passwordResetRequestCleared: true } : undefined });
       }
     } catch (err) {
       setError(describeLoginError(err));
