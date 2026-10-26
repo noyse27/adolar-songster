@@ -22,7 +22,7 @@ communicationsRouter.post('/communications/lobby/messages', requireAuth, async (
 
 communicationsRouter.get('/tables/:tableId/messages', requireAuth, async (req: AuthenticatedRequest, res) => {
   const userId = req.userId as string;
-  const { tableId } = req.params;
+  const { tableId } = req.params as Record<string, string>;
   if (!(await loadActiveSeat(tableId, userId))) {
     res.status(404).json({ error: 'table not found' });
     return;
@@ -32,7 +32,7 @@ communicationsRouter.get('/tables/:tableId/messages', requireAuth, async (req: A
 
 communicationsRouter.post('/tables/:tableId/messages', requireAuth, async (req: AuthenticatedRequest, res) => {
   const userId = req.userId as string;
-  const { tableId } = req.params;
+  const { tableId } = req.params as Record<string, string>;
   if (!(await loadActiveSeat(tableId, userId))) {
     res.status(404).json({ error: 'table not found' });
     return;

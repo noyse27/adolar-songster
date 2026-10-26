@@ -197,7 +197,7 @@ tablesRouter.get('/tables/lobby', requireAuth, async (_req, res) => {
 // a login.
 tablesRouter.post('/tables/:tableId/display-link', requireAuth, async (req: AuthenticatedRequest, res) => {
   const requesterId = req.userId as string;
-  const { tableId } = req.params;
+  const { tableId } = req.params as Record<string, string>;
 
   const tableResult = await pool.query(
     `SELECT visibility, owner_user_id FROM game_table WHERE id = $1`,
@@ -220,7 +220,7 @@ tablesRouter.post('/tables/:tableId/display-link', requireAuth, async (req: Auth
 // display token itself instead of a normal Bearer session - the display
 // device has no app_user login at all (see displayToken.ts).
 tablesRouter.get('/tables/display/:token', async (req, res) => {
-  const verified = verifyDisplayToken(req.params.token);
+  const verified = verifyDisplayToken((req.params.token as string));
   if (!verified || (verified.hostDeviceId && !(await isHostDisplayTokenActive(verified.hostDeviceId)))) {
     res.status(401).json({ error: 'invalid or expired display token' });
     return;
@@ -239,7 +239,7 @@ tablesRouter.get('/tables/display/:token', async (req, res) => {
 // working once the full detail below starts requiring membership. Never
 // includes joinCode, seats, ownerUserId or latestGameId.
 tablesRouter.get('/tables/:tableId/preview', requireAuth, async (req, res) => {
-  const preview = await loadTablePreview(req.params.tableId);
+  const preview = await loadTablePreview((req.params.tableId as string));
   if (!preview) {
     res.status(404).json({ error: 'table not found' });
     return;
@@ -253,7 +253,7 @@ tablesRouter.get('/tables/:tableId/preview', requireAuth, async (req, res) => {
 // Not-a-member and doesn't-exist both 404 identically, so a stranger can't
 // use this to confirm a given tableId is real.
 tablesRouter.get('/tables/:tableId', requireAuth, async (req: AuthenticatedRequest, res) => {
-  const { tableId } = req.params;
+  const { tableId } = req.params as Record<string, string>;
   const requesterId = req.userId as string;
 
   await evaluateOwnerHandover(tableId);
@@ -275,7 +275,7 @@ tablesRouter.get('/tables/:tableId', requireAuth, async (req: AuthenticatedReque
 
 tablesRouter.post('/tables/:tableId/join', requireAuth, async (req: AuthenticatedRequest, res) => {
   const requesterId = req.userId as string;
-  const { tableId } = req.params;
+  const { tableId } = req.params as Record<string, string>;
   const { joinAs, joinCode } = req.body ?? {};
 
   if (!['player', 'spectator'].includes(joinAs)) {
@@ -416,7 +416,7 @@ tablesRouter.post('/tables/:tableId/join', requireAuth, async (req: Authenticate
 
 tablesRouter.post('/tables/:tableId/leave', requireAuth, async (req: AuthenticatedRequest, res) => {
   const requesterId = req.userId as string;
-  const { tableId } = req.params;
+  const { tableId } = req.params as Record<string, string>;
 
   const client = await pool.connect();
   try {
@@ -481,7 +481,7 @@ tablesRouter.post('/tables/:tableId/leave', requireAuth, async (req: Authenticat
 // still in use.
 tablesRouter.post('/tables/:tableId/keep-alive', requireAuth, async (req: AuthenticatedRequest, res) => {
   const requesterId = req.userId as string;
-  const { tableId } = req.params;
+  const { tableId } = req.params as Record<string, string>;
 
   const seatResult = await pool.query(
     `SELECT id FROM table_seat WHERE table_id = $1 AND user_id = $2 AND left_at IS NULL`,
@@ -504,7 +504,7 @@ tablesRouter.post('/tables/:tableId/keep-alive', requireAuth, async (req: Authen
 tablesRouter.post('/tables/:tableId/start', requireAuth, async (req: AuthenticatedRequest, res) => {
   const requesterId = req.userId as string;
   const requesterRole = req.userRole;
-  const { tableId } = req.params;
+  const { tableId } = req.params as Record<string, string>;
 
   await evaluateOwnerHandover(tableId);
 
@@ -534,7 +534,7 @@ tablesRouter.post('/tables/:tableId/start', requireAuth, async (req: Authenticat
 // of everyone having to leave and re-join from the lobby for another game.
 tablesRouter.post('/tables/:tableId/restart', requireAuth, async (req: AuthenticatedRequest, res) => {
   const requesterId = req.userId as string;
-  const { tableId } = req.params;
+  const { tableId } = req.params as Record<string, string>;
 
   const outcome = await restartTable(tableId, requesterId);
   if (!outcome.ok) {
@@ -552,7 +552,7 @@ tablesRouter.post('/tables/:tableId/restart', requireAuth, async (req: Authentic
 // POST /start once everyone currently seated is ready (see startTableGame).
 tablesRouter.post('/tables/:tableId/ready', requireAuth, async (req: AuthenticatedRequest, res) => {
   const requesterId = req.userId as string;
-  const { tableId } = req.params;
+  const { tableId } = req.params as Record<string, string>;
   const { ready = true } = req.body ?? {};
 
   if (typeof ready !== 'boolean') {
@@ -614,7 +614,7 @@ tablesRouter.post('/tables/:tableId/ready', requireAuth, async (req: Authenticat
 tablesRouter.post('/tables/:tableId/new-game', requireAuth, async (req: AuthenticatedRequest, res) => {
   const requesterId = req.userId as string;
   const requesterRole = req.userRole;
-  const { tableId } = req.params;
+  const { tableId } = req.params as Record<string, string>;
 
   await evaluateOwnerHandover(tableId);
 
