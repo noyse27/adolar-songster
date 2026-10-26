@@ -20,10 +20,11 @@ export async function selectSongForGame(
   tableSessionId: string,
 ): Promise<SelectedSong> {
   const candidates = await fetchCandidates(client, gameId, tableSessionId);
+  const isSolo = await isSoloGame(client, gameId);
 
   if (candidates.length > 0) {
     const song = pickRandom(candidates);
-    await markPlayed(client, song.id);
+    if (!isSolo) await markPlayed(client, song.id);
     return song;
   }
 
@@ -53,7 +54,7 @@ export async function selectSongForGame(
     const candidatesAfterReset = await fetchCandidates(client, gameId, tableSessionId);
     if (candidatesAfterReset.length > 0) {
       const song = pickRandom(candidatesAfterReset);
-      await markPlayed(client, song.id);
+      if (!isSolo) await markPlayed(client, song.id);
       return song;
     }
   }
@@ -66,6 +67,21 @@ export async function selectSongForGame(
 // insert (see adolarBatch.ts, which deliberately leaves this untouched).
 async function markPlayed(client: Queryable, songId: string): Promise<void> {
   await client.query(`UPDATE song_ref SET last_played_at = NOW() WHERE id = $1`, [songId]);
+}
+
+// Solo tables draw from the same shared, Adolar-sourced pool as real
+// multiplayer tables but must never advance its cross-table anti-repeat
+// rotation (song_ref.last_played_at, read by adolarBatch.ts to prioritize
+// never/rarely played tracks) - otherwise heavy solo play would deplete
+// fresh songs out of the pool that real tables draw from. Session-local
+// repeat avoidance (session_song_history above) is unaffected: it only
+// ever governs repeats within this one solo table's own session.
+async function isSoloGame(client: Queryable, gameId: string): Promise<boolean> {
+  const result = await client.query(
+    `SELECT t.is_solo FROM game g JOIN game_table t ON t.id = g.table_id WHERE g.id = $1`,
+    [gameId],
+  );
+  return Boolean(result.rows[0]?.is_solo);
 }
 
 // A session with a scoped pool (table_session_song_pool) is restricted to

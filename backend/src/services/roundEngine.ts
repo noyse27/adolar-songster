@@ -657,6 +657,15 @@ export async function claimToken(
       throw new RoundEngineError('TOKEN_NOT_AVAILABLE', 'no token claim window is open');
     }
 
+    // Token races are a head-to-head mechanic (claim first, then everyone
+    // else gets a shot once the claimant misses - see resolveClaimRace/
+    // submitTokenGuess below) that has no meaning with nobody else at the
+    // table, so solo tables don't offer them at all.
+    const soloResult = await client.query(`SELECT is_solo FROM game_table WHERE id = $1`, [round.tableId]);
+    if (soloResult.rows[0]?.is_solo) {
+      throw new RoundEngineError('TOKEN_NOT_AVAILABLE', 'token claims are disabled in solo mode');
+    }
+
     await assertNotSittingOut(roundId, userId);
 
     const alreadyClaimedResult = await client.query(

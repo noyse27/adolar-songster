@@ -61,13 +61,31 @@ tablesRouter.post('/tables', requireAuth, async (req: AuthenticatedRequest, res)
     minKarmaPoints = null,
     minScorePoints = null,
     minGamesPlayed = null,
+    solo = false,
   } = req.body ?? {};
 
-  if (!name || !['public', 'private'].includes(visibility)) {
+  if (typeof solo !== 'boolean') {
+    res.status(400).json({ error: 'solo must be a boolean' });
+    return;
+  }
+
+  // Solo tables play against nobody, so the public-lobby/multi-player
+  // fields that would otherwise matter here are forced rather than taken
+  // from the request: private (no point listing an already-full,
+  // un-joinable table in a public lobby), exactly 1 seat, no spectators,
+  // and no join requirements (there's no one else who could fail them).
+  const effectiveVisibility = solo ? 'private' : visibility;
+  const effectiveMaxPlayers = solo ? 1 : maxPlayers;
+  const effectiveAllowSpectators = solo ? false : Boolean(allowSpectators);
+  const effectiveMinKarmaPoints = solo ? null : minKarmaPoints;
+  const effectiveMinScorePoints = solo ? null : minScorePoints;
+  const effectiveMinGamesPlayed = solo ? null : minGamesPlayed;
+
+  if (!name || !['public', 'private'].includes(effectiveVisibility)) {
     res.status(400).json({ error: 'name and visibility (public|private) are required' });
     return;
   }
-  if (!Number.isInteger(maxPlayers) || maxPlayers < 2 || maxPlayers > 5) {
+  if (!solo && (!Number.isInteger(maxPlayers) || maxPlayers < 2 || maxPlayers > 5)) {
     res.status(400).json({ error: 'maxPlayers must be between 2 and 5' });
     return;
   }
@@ -87,15 +105,15 @@ tablesRouter.post('/tables', requireAuth, async (req: AuthenticatedRequest, res)
   // player has exactly 0 of everything - one accidental sign/threshold slip
   // and newcomers can't join any table at all. A non-negative integer is
   // still required whenever a value is actually provided.
-  if (minKarmaPoints !== null && (!Number.isInteger(minKarmaPoints) || minKarmaPoints < 0)) {
+  if (!solo && minKarmaPoints !== null && (!Number.isInteger(minKarmaPoints) || minKarmaPoints < 0)) {
     res.status(400).json({ error: 'minKarmaPoints must be null or a non-negative integer' });
     return;
   }
-  if (minScorePoints !== null && (!Number.isInteger(minScorePoints) || minScorePoints < 0)) {
+  if (!solo && minScorePoints !== null && (!Number.isInteger(minScorePoints) || minScorePoints < 0)) {
     res.status(400).json({ error: 'minScorePoints must be null or a non-negative integer' });
     return;
   }
-  if (minGamesPlayed !== null && (!Number.isInteger(minGamesPlayed) || minGamesPlayed < 0)) {
+  if (!solo && minGamesPlayed !== null && (!Number.isInteger(minGamesPlayed) || minGamesPlayed < 0)) {
     res.status(400).json({ error: 'minGamesPlayed must be null or a non-negative integer' });
     return;
   }
@@ -121,7 +139,7 @@ tablesRouter.post('/tables', requireAuth, async (req: AuthenticatedRequest, res)
     }
   }
 
-  const joinCode = visibility === 'private' ? generateJoinCode() : null;
+  const joinCode = effectiveVisibility === 'private' ? generateJoinCode() : null;
 
   const client = await pool.connect();
   try {
@@ -130,12 +148,12 @@ tablesRouter.post('/tables', requireAuth, async (req: AuthenticatedRequest, res)
     const tableResult = await client.query(
       `INSERT INTO game_table
          (owner_user_id, name, visibility, join_code, allow_spectators, max_players, max_spectators,
-          source_playlist_id, min_karma_points, min_score_points, min_games_played)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-       RETURNING id, name, visibility, join_code, state, source_playlist_id`,
+          source_playlist_id, min_karma_points, min_score_points, min_games_played, is_solo)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+       RETURNING id, name, visibility, join_code, state, source_playlist_id, is_solo`,
       [
-        requesterId, name, visibility, joinCode, Boolean(allowSpectators), maxPlayers, maxSpectators,
-        sourcePlaylistId, minKarmaPoints, minScorePoints, minGamesPlayed,
+        requesterId, name, effectiveVisibility, joinCode, effectiveAllowSpectators, effectiveMaxPlayers, maxSpectators,
+        sourcePlaylistId, effectiveMinKarmaPoints, effectiveMinScorePoints, effectiveMinGamesPlayed, solo,
       ],
     );
     const table = tableResult.rows[0];
@@ -147,7 +165,7 @@ tablesRouter.post('/tables', requireAuth, async (req: AuthenticatedRequest, res)
 
     await client.query('COMMIT');
 
-    if (visibility === 'public') await broadcastLobby();
+    if (table.visibility === 'public') await broadcastLobby();
 
     res.status(201).json({
       tableId: table.id,
@@ -156,6 +174,7 @@ tablesRouter.post('/tables', requireAuth, async (req: AuthenticatedRequest, res)
       joinCode: table.join_code,
       state: table.state,
       sourcePlaylistId: table.source_playlist_id,
+      isSolo: table.is_solo,
     });
   } catch (err) {
     await client.query('ROLLBACK');
@@ -178,7 +197,7 @@ tablesRouter.get('/tables/lobby', requireAuth, async (_req, res) => {
 // a login.
 tablesRouter.post('/tables/:tableId/display-link', requireAuth, async (req: AuthenticatedRequest, res) => {
   const requesterId = req.userId as string;
-  const { tableId } = req.params;
+  const { tableId } = req.params as Record<string, string>;
 
   const tableResult = await pool.query(
     `SELECT visibility, owner_user_id FROM game_table WHERE id = $1`,
@@ -201,7 +220,7 @@ tablesRouter.post('/tables/:tableId/display-link', requireAuth, async (req: Auth
 // display token itself instead of a normal Bearer session - the display
 // device has no app_user login at all (see displayToken.ts).
 tablesRouter.get('/tables/display/:token', async (req, res) => {
-  const verified = verifyDisplayToken(req.params.token);
+  const verified = verifyDisplayToken((req.params.token as string));
   if (!verified || (verified.hostDeviceId && !(await isHostDisplayTokenActive(verified.hostDeviceId)))) {
     res.status(401).json({ error: 'invalid or expired display token' });
     return;
@@ -220,7 +239,7 @@ tablesRouter.get('/tables/display/:token', async (req, res) => {
 // working once the full detail below starts requiring membership. Never
 // includes joinCode, seats, ownerUserId or latestGameId.
 tablesRouter.get('/tables/:tableId/preview', requireAuth, async (req, res) => {
-  const preview = await loadTablePreview(req.params.tableId);
+  const preview = await loadTablePreview((req.params.tableId as string));
   if (!preview) {
     res.status(404).json({ error: 'table not found' });
     return;
@@ -234,7 +253,7 @@ tablesRouter.get('/tables/:tableId/preview', requireAuth, async (req, res) => {
 // Not-a-member and doesn't-exist both 404 identically, so a stranger can't
 // use this to confirm a given tableId is real.
 tablesRouter.get('/tables/:tableId', requireAuth, async (req: AuthenticatedRequest, res) => {
-  const { tableId } = req.params;
+  const { tableId } = req.params as Record<string, string>;
   const requesterId = req.userId as string;
 
   await evaluateOwnerHandover(tableId);
@@ -256,7 +275,7 @@ tablesRouter.get('/tables/:tableId', requireAuth, async (req: AuthenticatedReque
 
 tablesRouter.post('/tables/:tableId/join', requireAuth, async (req: AuthenticatedRequest, res) => {
   const requesterId = req.userId as string;
-  const { tableId } = req.params;
+  const { tableId } = req.params as Record<string, string>;
   const { joinAs, joinCode } = req.body ?? {};
 
   if (!['player', 'spectator'].includes(joinAs)) {
@@ -397,7 +416,7 @@ tablesRouter.post('/tables/:tableId/join', requireAuth, async (req: Authenticate
 
 tablesRouter.post('/tables/:tableId/leave', requireAuth, async (req: AuthenticatedRequest, res) => {
   const requesterId = req.userId as string;
-  const { tableId } = req.params;
+  const { tableId } = req.params as Record<string, string>;
 
   const client = await pool.connect();
   try {
@@ -462,7 +481,7 @@ tablesRouter.post('/tables/:tableId/leave', requireAuth, async (req: Authenticat
 // still in use.
 tablesRouter.post('/tables/:tableId/keep-alive', requireAuth, async (req: AuthenticatedRequest, res) => {
   const requesterId = req.userId as string;
-  const { tableId } = req.params;
+  const { tableId } = req.params as Record<string, string>;
 
   const seatResult = await pool.query(
     `SELECT id FROM table_seat WHERE table_id = $1 AND user_id = $2 AND left_at IS NULL`,
@@ -485,7 +504,7 @@ tablesRouter.post('/tables/:tableId/keep-alive', requireAuth, async (req: Authen
 tablesRouter.post('/tables/:tableId/start', requireAuth, async (req: AuthenticatedRequest, res) => {
   const requesterId = req.userId as string;
   const requesterRole = req.userRole;
-  const { tableId } = req.params;
+  const { tableId } = req.params as Record<string, string>;
 
   await evaluateOwnerHandover(tableId);
 
@@ -515,7 +534,7 @@ tablesRouter.post('/tables/:tableId/start', requireAuth, async (req: Authenticat
 // of everyone having to leave and re-join from the lobby for another game.
 tablesRouter.post('/tables/:tableId/restart', requireAuth, async (req: AuthenticatedRequest, res) => {
   const requesterId = req.userId as string;
-  const { tableId } = req.params;
+  const { tableId } = req.params as Record<string, string>;
 
   const outcome = await restartTable(tableId, requesterId);
   if (!outcome.ok) {
@@ -533,7 +552,7 @@ tablesRouter.post('/tables/:tableId/restart', requireAuth, async (req: Authentic
 // POST /start once everyone currently seated is ready (see startTableGame).
 tablesRouter.post('/tables/:tableId/ready', requireAuth, async (req: AuthenticatedRequest, res) => {
   const requesterId = req.userId as string;
-  const { tableId } = req.params;
+  const { tableId } = req.params as Record<string, string>;
   const { ready = true } = req.body ?? {};
 
   if (typeof ready !== 'boolean') {
@@ -595,7 +614,7 @@ tablesRouter.post('/tables/:tableId/ready', requireAuth, async (req: Authenticat
 tablesRouter.post('/tables/:tableId/new-game', requireAuth, async (req: AuthenticatedRequest, res) => {
   const requesterId = req.userId as string;
   const requesterRole = req.userRole;
-  const { tableId } = req.params;
+  const { tableId } = req.params as Record<string, string>;
 
   await evaluateOwnerHandover(tableId);
 

@@ -43,6 +43,7 @@ export interface RoundReadyPhase {
 
 export interface GameState {
   gameId: string;
+  gameStartedAt: string;
   tableId: string;
   playlistId: string;
   status: string;
@@ -55,4 +56,5 @@ export interface GameState {
   autoReadyUserIds: string[];
   displayAnchorPresent: boolean;
   reactionConfig: ReactionConfig;
+  isSolo: boolean;
 }

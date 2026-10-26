@@ -13,10 +13,14 @@ export type TableStartOutcome =
  * Shared by the table-admin's manual POST /tables/:id/start and the
  * automatic start triggered from POST /tables/:id/ready once every seated
  * player is ready (see tables.ts). Both require the same preconditions -
- * table still open, >=2 active players, everyone seated ready - the only
- * difference is *who* is allowed to call this early (only the admin, via
- * the route's own auth check) vs. the automatic path, which only ever
+ * table still open, enough active players, everyone seated ready - the
+ * only difference is *who* is allowed to call this early (only the admin,
+ * via the route's own auth check) vs. the automatic path, which only ever
  * fires once the readiness condition is already satisfied for everyone.
+ *
+ * "Enough active players" is normally >=2; a solo table (is_solo, forced
+ * to max_players=1 at creation - see routes/tables.ts) allows exactly 1,
+ * since it's played against nobody by design.
  */
 export async function startTableGame(tableId: string): Promise<TableStartOutcome> {
   const client = await pool.connect();
@@ -24,7 +28,7 @@ export async function startTableGame(tableId: string): Promise<TableStartOutcome
     await client.query('BEGIN');
 
     const tableResult = await client.query(
-      `SELECT id, name, state, source_playlist_id FROM game_table WHERE id = $1 FOR UPDATE`,
+      `SELECT id, name, state, source_playlist_id, is_solo FROM game_table WHERE id = $1 FOR UPDATE`,
       [tableId],
     );
     if (tableResult.rowCount === 0) {
@@ -43,13 +47,14 @@ export async function startTableGame(tableId: string): Promise<TableStartOutcome
       [tableId],
     );
     const activePlayerIds: string[] = seatsResult.rows.map((row) => row.user_id);
-    if (activePlayerIds.length < 2) {
+    const minActivePlayers = table.is_solo ? 1 : 2;
+    if (activePlayerIds.length < minActivePlayers) {
       await client.query('ROLLBACK');
       return {
         ok: false,
         status: 400,
         code: 'NOT_ENOUGH_PLAYERS',
-        message: 'at least 2 active players are required to start',
+        message: `at least ${minActivePlayers} active player(s) are required to start`,
       };
     }
     if (seatsResult.rows.some((row) => !row.ready)) {
