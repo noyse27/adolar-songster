@@ -9,6 +9,7 @@ const emptyReactions: ReactionConfig = {
 function state(overrides: Partial<GameState> = {}): GameState {
   return {
     gameId: 'game',
+    gameStartedAt: new Date().toISOString(),
     tableId: 'table',
     playlistId: 'playlist',
     status: 'active',
@@ -21,6 +22,7 @@ function state(overrides: Partial<GameState> = {}): GameState {
     autoReadyUserIds: [],
     displayAnchorPresent: false,
     reactionConfig: emptyReactions,
+    isSolo: false,
     ...overrides,
   };
 }

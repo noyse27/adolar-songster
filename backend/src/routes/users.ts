@@ -17,7 +17,7 @@ usersRouter.get('/users/me', requireAuth, async (req: AuthenticatedRequest, res)
        SELECT id, RANK() OVER (ORDER BY ${RANK_SCORE_SQL} DESC) AS rank_position FROM app_user
      )
      SELECT u.id, u.username, u.email, u.role, u.can_create_invites, u.karma_points, u.score_points,
-            u.games_played, ${RANK_SCORE_SQL} AS rank_score, r.rank_position, u.created_at
+            u.games_played, u.must_change_password, ${RANK_SCORE_SQL} AS rank_score, r.rank_position, u.created_at
      FROM app_user u JOIN ranked r ON r.id = u.id
      WHERE u.id = $1`,
     [req.userId],
@@ -36,6 +36,7 @@ usersRouter.get('/users/me', requireAuth, async (req: AuthenticatedRequest, res)
     karmaPoints: user.karma_points,
     scorePoints: user.score_points,
     gamesPlayed: user.games_played,
+    mustChangePassword: user.must_change_password,
     rankScore: Number(user.rank_score),
     rankPosition: Number(user.rank_position),
     createdAt: user.created_at,
@@ -63,7 +64,10 @@ usersRouter.post('/users/me/change-password', requireAuth, async (req: Authentic
   }
 
   const newHash = await argon2.hash(newPassword);
-  await pool.query(`UPDATE app_user SET password_hash = $1 WHERE id = $2`, [newHash, req.userId]);
+  await pool.query(
+    `UPDATE app_user SET password_hash = $1, must_change_password = FALSE WHERE id = $2`,
+    [newHash, req.userId],
+  );
 
   res.status(200).json({ ok: true });
 });

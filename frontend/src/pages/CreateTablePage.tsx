@@ -16,6 +16,7 @@ export function CreateTablePage() {
   const navigate = useNavigate();
 
   const [name, setName] = useState('');
+  const [solo, setSolo] = useState(false);
   const [visibility, setVisibility] = useState<'public' | 'private'>('public');
   const [allowSpectators, setAllowSpectators] = useState(true);
   const [maxPlayers, setMaxPlayers] = useState(5);
@@ -63,6 +64,7 @@ export function CreateTablePage() {
         method: 'POST',
         body: {
           name,
+          solo,
           visibility,
           allowSpectators,
           maxPlayers,
@@ -111,102 +113,119 @@ export function CreateTablePage() {
           </div>
 
           <div className="sh-field">
-            <label htmlFor="visibility">Sichtbarkeit</label>
-            <select
-              id="visibility"
-              value={visibility}
-              onChange={(e) => setVisibility(e.target.value as 'public' | 'private')}
-            >
-              <option value="public">Öffentlich (in der Lobby sichtbar)</option>
-              <option value="private">Privat (nur per Link/Code)</option>
-            </select>
-          </div>
-
-          <div className="sh-field">
-            <label htmlFor="maxPlayers">Max. Spieler (2-5)</label>
-            <input
-              id="maxPlayers"
-              type="number"
-              min={2}
-              max={5}
-              value={maxPlayers}
-              onChange={(e) => setMaxPlayers(Number(e.target.value))}
-            />
-          </div>
-
-          <div className="sh-field">
             <label style={{ flexDirection: 'row', display: 'flex', alignItems: 'center', gap: 8 }}>
-              <input type="checkbox" checked={allowSpectators} onChange={(e) => setAllowSpectators(e.target.checked)} />
-              Zuschauer erlauben
+              <input type="checkbox" checked={solo} onChange={(e) => setSolo(e.target.checked)} />
+              Solo-Modus (alleine spielen)
             </label>
+            {solo && (
+              <p style={{ fontSize: '0.85em', opacity: 0.8, margin: '4px 0 0' }}>
+                Ein Solo-Tisch ist privat, hat genau 1 Spielplatz und startet sofort. Er zählt nicht für
+                Spielpunkte, Karmapunkte oder die Bestenliste.
+              </p>
+            )}
           </div>
 
-          {allowSpectators && (
-            <div className="sh-field">
-              <label htmlFor="maxSpectators">Max. Zuschauer (0-50)</label>
-              <input
-                id="maxSpectators"
-                type="number"
-                min={0}
-                max={50}
-                value={maxSpectators}
-                onChange={(e) => setMaxSpectators(Number(e.target.value))}
-              />
-            </div>
+          {!solo && (
+            <>
+              <div className="sh-field">
+                <label htmlFor="visibility">Sichtbarkeit</label>
+                <select
+                  id="visibility"
+                  value={visibility}
+                  onChange={(e) => setVisibility(e.target.value as 'public' | 'private')}
+                >
+                  <option value="public">Öffentlich (in der Lobby sichtbar)</option>
+                  <option value="private">Privat (nur per Link/Code)</option>
+                </select>
+              </div>
+
+              <div className="sh-field">
+                <label htmlFor="maxPlayers">Max. Spieler (2-5)</label>
+                <input
+                  id="maxPlayers"
+                  type="number"
+                  min={2}
+                  max={5}
+                  value={maxPlayers}
+                  onChange={(e) => setMaxPlayers(Number(e.target.value))}
+                />
+              </div>
+
+              <div className="sh-field">
+                <label style={{ flexDirection: 'row', display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <input type="checkbox" checked={allowSpectators} onChange={(e) => setAllowSpectators(e.target.checked)} />
+                  Zuschauer erlauben
+                </label>
+              </div>
+
+              {allowSpectators && (
+                <div className="sh-field">
+                  <label htmlFor="maxSpectators">Max. Zuschauer (0-50)</label>
+                  <input
+                    id="maxSpectators"
+                    type="number"
+                    min={0}
+                    max={50}
+                    value={maxSpectators}
+                    onChange={(e) => setMaxSpectators(Number(e.target.value))}
+                  />
+                </div>
+              )}
+
+              <div className="sh-form-section-label">Zusätzliche Optionen</div>
+              <p style={{ fontSize: '0.85em', opacity: 0.8, margin: '-8px 0 0' }}>
+                Wer diese Mindestwerte nicht erfüllt, kann dem Tisch nur als Zuschauer beitreten.
+              </p>
+
+              <div className="sh-field">
+                <label style={{ flexDirection: 'row', display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <input type="checkbox" checked={minKarmaEnabled} onChange={(e) => setMinKarmaEnabled(e.target.checked)} />
+                  Karmapunkte min.
+                </label>
+                {minKarmaEnabled && (
+                  <input
+                    id="minKarmaPoints"
+                    type="number"
+                    min={0}
+                    value={minKarmaPoints}
+                    onChange={(e) => setMinKarmaPoints(Math.max(0, Number(e.target.value)))}
+                  />
+                )}
+              </div>
+
+              <div className="sh-field">
+                <label style={{ flexDirection: 'row', display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <input type="checkbox" checked={minScoreEnabled} onChange={(e) => setMinScoreEnabled(e.target.checked)} />
+                  Spielpunkte min.
+                </label>
+                {minScoreEnabled && (
+                  <input
+                    id="minScorePoints"
+                    type="number"
+                    min={0}
+                    value={minScorePoints}
+                    onChange={(e) => setMinScorePoints(Math.max(0, Number(e.target.value)))}
+                  />
+                )}
+              </div>
+
+              <div className="sh-field">
+                <label style={{ flexDirection: 'row', display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <input type="checkbox" checked={minGamesEnabled} onChange={(e) => setMinGamesEnabled(e.target.checked)} />
+                  Anzahl Spiele min.
+                </label>
+                {minGamesEnabled && (
+                  <input
+                    id="minGamesPlayed"
+                    type="number"
+                    min={0}
+                    value={minGamesPlayed}
+                    onChange={(e) => setMinGamesPlayed(Math.max(0, Number(e.target.value)))}
+                  />
+                )}
+              </div>
+            </>
           )}
-
-          <div className="sh-form-section-label">Zusätzliche Optionen</div>
-          <p style={{ fontSize: '0.85em', opacity: 0.8, margin: '-8px 0 0' }}>
-            Wer diese Mindestwerte nicht erfüllt, kann dem Tisch nur als Zuschauer beitreten.
-          </p>
-
-          <div className="sh-field">
-            <label style={{ flexDirection: 'row', display: 'flex', alignItems: 'center', gap: 8 }}>
-              <input type="checkbox" checked={minKarmaEnabled} onChange={(e) => setMinKarmaEnabled(e.target.checked)} />
-              Karmapunkte min.
-            </label>
-            {minKarmaEnabled && (
-              <input
-                id="minKarmaPoints"
-                type="number"
-                min={0}
-                value={minKarmaPoints}
-                onChange={(e) => setMinKarmaPoints(Math.max(0, Number(e.target.value)))}
-              />
-            )}
-          </div>
-
-          <div className="sh-field">
-            <label style={{ flexDirection: 'row', display: 'flex', alignItems: 'center', gap: 8 }}>
-              <input type="checkbox" checked={minScoreEnabled} onChange={(e) => setMinScoreEnabled(e.target.checked)} />
-              Spielpunkte min.
-            </label>
-            {minScoreEnabled && (
-              <input
-                id="minScorePoints"
-                type="number"
-                min={0}
-                value={minScorePoints}
-                onChange={(e) => setMinScorePoints(Math.max(0, Number(e.target.value)))}
-              />
-            )}
-          </div>
-
-          <div className="sh-field">
-            <label style={{ flexDirection: 'row', display: 'flex', alignItems: 'center', gap: 8 }}>
-              <input type="checkbox" checked={minGamesEnabled} onChange={(e) => setMinGamesEnabled(e.target.checked)} />
-              Anzahl Spiele min.
-            </label>
-            {minGamesEnabled && (
-              <input
-                id="minGamesPlayed"
-                type="number"
-                min={0}
-                value={minGamesPlayed}
-                onChange={(e) => setMinGamesPlayed(Math.max(0, Number(e.target.value)))}
-              />
-            )}
-          </div>
 
           <div className="sh-field">
             <label htmlFor="playlist">Songquelle (Adolar-Playlist, optional)</label>

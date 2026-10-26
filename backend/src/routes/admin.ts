@@ -1,8 +1,11 @@
 import { Router } from 'express';
 import crypto from 'crypto';
+import argon2 from 'argon2';
 import { pool } from '../db/pool';
-import { requireAdmin, requireAuth } from '../middleware/auth';
+import { AuthenticatedRequest, requireAdmin, requireAuth, requireSuperAdmin } from '../middleware/auth';
+import { generateTemporaryPassword } from '../services/temporaryPassword';
 import { getSetting } from '../services/systemSettings';
+import { blockInDemoMode } from '../middleware/demoBlock';
 import {
   loadCommunicationSettings,
   normalizeBlockedWords,
@@ -52,7 +55,11 @@ adminRouter.get('/communication-settings', async (_req, res) => {
   res.status(200).json(await loadCommunicationSettings());
 });
 
-adminRouter.put('/communication-settings', async (req, res) => {
+// Blocked in demo mode: the fixed demo-admin login is public knowledge
+// (see docs/demo.md), so anyone can reach this - letting them change chat
+// settings for every visitor on the shared instance would make the demo
+// unusable for others until the next reset.
+adminRouter.put('/communication-settings', blockInDemoMode('changing communication settings'), async (req, res) => {
   const textChat = req.body?.textChat;
   const blockedWords = normalizeBlockedWords(textChat?.blockedWords);
   const reactions = validateReactionConfig(req.body?.reactions);
@@ -74,7 +81,8 @@ adminRouter.put('/communication-settings', async (req, res) => {
 // userId, and this is the only way to discover one.
 adminRouter.get('/users', async (_req, res) => {
   const result = await pool.query(
-    `SELECT id, username, email, role, status, can_create_invites, karma_points, score_points, created_at
+    `SELECT id, username, email, role, status, can_create_invites, karma_points, score_points, created_at,
+            is_super_admin, password_reset_requested_at
      FROM app_user ORDER BY created_at DESC`,
   );
 
@@ -89,12 +97,113 @@ adminRouter.get('/users', async (_req, res) => {
       karmaPoints: row.karma_points,
       scorePoints: row.score_points,
       createdAt: row.created_at,
+      isSuperAdmin: row.is_super_admin,
+      passwordResetRequestedAt: row.password_reset_requested_at,
     })),
   });
 });
 
-// Grant or revoke a user's right to create invites.
-adminRouter.post('/users/:userId/invite-permission', async (req, res) => {
+// Promote/demote a user's role. Restricted to the super-admin (the one
+// account the one-time /setup bootstrap flow created) - otherwise a
+// promoted admin could appoint an accomplice, or demote whoever appointed
+// them, with nothing left to stop them. Two extra guards: refusing to
+// demote the last remaining admin, and refusing to change the super-admin's
+// own role at all, since letting them demote themselves would strand the
+// system with zero accounts able to manage roles.
+adminRouter.post(
+  '/users/:userId/role',
+  requireSuperAdmin,
+  blockInDemoMode('changing user roles'),
+  async (req: AuthenticatedRequest, res) => {
+    const { userId } = req.params;
+    const { role } = req.body ?? {};
+
+    if (role !== 'user' && role !== 'admin') {
+      res.status(400).json({ error: "role must be 'user' or 'admin'" });
+      return;
+    }
+
+    const targetResult = await pool.query(
+      `SELECT id, role, is_super_admin FROM app_user WHERE id = $1`,
+      [userId],
+    );
+    if (targetResult.rowCount === 0) {
+      res.status(404).json({ error: 'user not found' });
+      return;
+    }
+    const target = targetResult.rows[0];
+
+    if (target.is_super_admin) {
+      res.status(409).json({ error: "the super-admin's own role cannot be changed" });
+      return;
+    }
+
+    if (target.role === 'admin' && role === 'user') {
+      const adminCountResult = await pool.query(
+        `SELECT COUNT(*)::int AS count FROM app_user WHERE role = 'admin'`,
+      );
+      if (adminCountResult.rows[0].count <= 1) {
+        res.status(409).json({ error: 'cannot demote the last remaining admin' });
+        return;
+      }
+    }
+
+    const result = await pool.query(
+      `UPDATE app_user SET role = $1 WHERE id = $2 RETURNING id, username, role`,
+      [role, userId],
+    );
+
+    res.status(200).json({
+      userId: result.rows[0].id,
+      username: result.rows[0].username,
+      role: result.rows[0].role,
+    });
+  },
+);
+
+// Admin-mediated password reset: issues a fresh random temporary password
+// (shown once in the response so the admin can relay it to the user),
+// forces a change on next login (must_change_password), clears the user's
+// own reset request, and bumps session_version so any previously-issued
+// token for this account is invalidated immediately.
+adminRouter.post(
+  '/users/:userId/reset-password',
+  blockInDemoMode('resetting a user password'),
+  async (req, res) => {
+    const { userId } = req.params;
+
+    const temporaryPassword = generateTemporaryPassword();
+    const passwordHash = await argon2.hash(temporaryPassword);
+
+    const result = await pool.query(
+      `UPDATE app_user
+       SET password_hash = $1,
+           must_change_password = TRUE,
+           password_reset_requested_at = NULL,
+           session_version = session_version + 1
+       WHERE id = $2
+       RETURNING id, username`,
+      [passwordHash, userId],
+    );
+
+    if (result.rowCount === 0) {
+      res.status(404).json({ error: 'user not found' });
+      return;
+    }
+
+    res.status(200).json({
+      userId: result.rows[0].id,
+      username: result.rows[0].username,
+      temporaryPassword,
+    });
+  },
+);
+
+// Grant or revoke a user's right to create invites. Blocked in demo mode
+// for the same reason as PUT /communication-settings above - the demo
+// admin login is public, so this would let a visitor lock others out of
+// creating invites.
+adminRouter.post('/users/:userId/invite-permission', blockInDemoMode('changing invite permissions'), async (req, res) => {
   const { userId } = req.params;
   const { canCreateInvites } = req.body ?? {};
 
@@ -124,7 +233,8 @@ adminRouter.post('/users/:userId/invite-permission', async (req, res) => {
 // - invalidateCreatedInvites: disable every invite the user created
 // - deactivateRegisteredUsers: block every account that registered via one
 //   of that user's invites
-adminRouter.post('/users/:userId/revoke-invites', async (req, res) => {
+// Blocked in demo mode - can deactivate other visitors' accounts.
+adminRouter.post('/users/:userId/revoke-invites', blockInDemoMode('revoking invites'), async (req, res) => {
   const { userId } = req.params;
   const { invalidateCreatedInvites, deactivateRegisteredUsers } = req.body ?? {};
 
@@ -249,7 +359,14 @@ adminRouter.get('/invites/log', async (_req, res) => {
 // songs from the configured Adolar server) is out of scope for this
 // sprint; until it exists, an admin can seed song_ref rows directly so the
 // round engine has a playlist to draw from.
-adminRouter.post('/songs', async (req, res) => {
+// Blocked in demo mode: lets an operator seed real songs normally, but
+// with the demo-admin login being public knowledge, leaving it open would
+// let any visitor inject arbitrary song_ref rows (including a stream_ref
+// URL of their choosing - see routes/songs.ts's 302 redirect for
+// non-Adolar sources) into the shared instance. The demo library is
+// reseeded from demoSongLibrary.ts on every reset instead - see
+// services/demoReset.ts.
+adminRouter.post('/songs', blockInDemoMode('adding songs'), async (req, res) => {
   const { title, year, durationSec, streamRef, source = 'local' } = req.body ?? {};
 
   if (!title || !Number.isInteger(year) || year < 1900 || year > 2100) {
@@ -454,7 +571,9 @@ adminRouter.get('/tables', async (_req, res) => {
   });
 });
 
-adminRouter.delete('/tables/:tableId', async (req, res) => {
+// Blocked in demo mode - would let one visitor delete another's active
+// table/game with the public demo-admin login.
+adminRouter.delete('/tables/:tableId', blockInDemoMode('deleting tables'), async (req, res) => {
   const result = await pool.query(`DELETE FROM game_table WHERE id = $1 RETURNING id`, [req.params.tableId]);
   if (result.rowCount === 0) {
     res.status(404).json({ error: 'table not found' });

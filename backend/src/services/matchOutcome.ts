@@ -52,47 +52,61 @@ export async function finishGame(
   gameId: string,
   winnerUserId: string,
 ): Promise<void> {
-  const gameResult = await client.query(`SELECT table_id FROM game WHERE id = $1`, [gameId]);
+  const gameResult = await client.query(
+    `SELECT g.table_id, t.is_solo FROM game g JOIN game_table t ON t.id = g.table_id WHERE g.id = $1`,
+    [gameId],
+  );
   const tableId = gameResult.rows[0].table_id;
+  const isSolo = gameResult.rows[0].is_solo;
 
   const standings = await fetchStandings(client, gameId, tableId);
-  const opponentCount = Math.max(0, standings.length - 1);
-  const winPoints = 1 + opponentCount;
 
-  await client.query(
-    `INSERT INTO score_ledger (user_id, game_id, delta, reason) VALUES ($1, $2, $3, 'match_win')`,
-    [winnerUserId, gameId, winPoints],
-  );
-  await client.query(`UPDATE app_user SET score_points = score_points + $1 WHERE id = $2`, [
-    winPoints,
-    winnerUserId,
-  ]);
+  // A solo table is played against nobody - it trivially "wins" every
+  // match, and games_played is also the rank-score formula's damping
+  // denominator (see rankScore.ts), so even a reward-free completion would
+  // otherwise still improve rank. None of score_points/karma_points/
+  // games_played or the global games-finished counter move for solo
+  // matches; only the game/table close-out below (which solo tables need
+  // just as much as real matches) is unconditional.
+  if (!isSolo) {
+    const opponentCount = Math.max(0, standings.length - 1);
+    const winPoints = 1 + opponentCount;
 
-  for (const standing of standings) {
     await client.query(
-      `INSERT INTO karma_ledger (user_id, game_id, delta, reason) VALUES ($1, $2, 5, 'match_completed')`,
-      [standing.userId, gameId],
+      `INSERT INTO score_ledger (user_id, game_id, delta, reason) VALUES ($1, $2, $3, 'match_win')`,
+      [winnerUserId, gameId, winPoints],
     );
-    await client.query(`UPDATE app_user SET karma_points = karma_points + 5 WHERE id = $1`, [
-      standing.userId,
+    await client.query(`UPDATE app_user SET score_points = score_points + $1 WHERE id = $2`, [
+      winPoints,
+      winnerUserId,
     ]);
 
-    // games_played counts "sat at the table and played at least one round"
-    // - a guess row is the actual signal for having played a round, not
-    // just having been seated. Only credited here, alongside the +5 karma,
-    // to the players still active at match end - same set early-leavers
-    // (applyEarlyLeavePenalty below) are excluded from, for consistency.
-    const playedResult = await client.query(
-      `SELECT EXISTS(
-         SELECT 1 FROM guess g JOIN round r ON r.id = g.round_id
-         WHERE r.game_id = $1 AND g.user_id = $2
-       ) AS played`,
-      [gameId, standing.userId],
-    );
-    if (playedResult.rows[0].played) {
-      await client.query(`UPDATE app_user SET games_played = games_played + 1 WHERE id = $1`, [
+    for (const standing of standings) {
+      await client.query(
+        `INSERT INTO karma_ledger (user_id, game_id, delta, reason) VALUES ($1, $2, 5, 'match_completed')`,
+        [standing.userId, gameId],
+      );
+      await client.query(`UPDATE app_user SET karma_points = karma_points + 5 WHERE id = $1`, [
         standing.userId,
       ]);
+
+      // games_played counts "sat at the table and played at least one round"
+      // - a guess row is the actual signal for having played a round, not
+      // just having been seated. Only credited here, alongside the +5 karma,
+      // to the players still active at match end - same set early-leavers
+      // (applyEarlyLeavePenalty below) are excluded from, for consistency.
+      const playedResult = await client.query(
+        `SELECT EXISTS(
+           SELECT 1 FROM guess g JOIN round r ON r.id = g.round_id
+           WHERE r.game_id = $1 AND g.user_id = $2
+         ) AS played`,
+        [gameId, standing.userId],
+      );
+      if (playedResult.rows[0].played) {
+        await client.query(`UPDATE app_user SET games_played = games_played + 1 WHERE id = $1`, [
+          standing.userId,
+        ]);
+      }
     }
   }
 
@@ -104,15 +118,17 @@ export async function finishGame(
 
   await snapshotPlaylistTracks(client, gameId);
 
-  // See the persistent-games-played-counter migration: game.table_id
-  // cascades away with its table an hour after the last activity
-  // (tableCleanup.ts), so the home screen's "gespielte Spiele auf dem
-  // Server" stat can't just COUNT(*) the game table anymore - this counter
-  // is the one thing that's meant to survive that cleanup.
-  await client.query(
-    `INSERT INTO system_setting (key, value) VALUES ('total_games_finished', '1')
-     ON CONFLICT (key) DO UPDATE SET value = (system_setting.value::int + 1)::text, updated_at = NOW()`,
-  );
+  if (!isSolo) {
+    // See the persistent-games-played-counter migration: game.table_id
+    // cascades away with its table an hour after the last activity
+    // (tableCleanup.ts), so the home screen's "gespielte Spiele auf dem
+    // Server" stat can't just COUNT(*) the game table anymore - this counter
+    // is the one thing that's meant to survive that cleanup.
+    await client.query(
+      `INSERT INTO system_setting (key, value) VALUES ('total_games_finished', '1')
+       ON CONFLICT (key) DO UPDATE SET value = (system_setting.value::int + 1)::text, updated_at = NOW()`,
+    );
+  }
 }
 
 // Playlist-Tracking (Fehleranalyse): schreibt den Track-Snapshot fuer die
@@ -153,6 +169,11 @@ export async function applyEarlyLeavePenalty(
   tableId: string,
   userId: string,
 ): Promise<void> {
+  const tableResult = await client.query(`SELECT is_solo FROM game_table WHERE id = $1`, [tableId]);
+  if (tableResult.rows[0]?.is_solo) {
+    return;
+  }
+
   const alreadyPenalizedResult = await client.query(
     `SELECT id FROM karma_ledger WHERE user_id = $1 AND game_id = $2 AND reason = 'early_leave'`,
     [userId, gameId],
