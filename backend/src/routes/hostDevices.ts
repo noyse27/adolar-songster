@@ -46,7 +46,7 @@ hostDevicesRouter.get('/host-devices/app/:deviceId', async (req, res) => {
     return;
   }
 
-  const device = await heartbeatHostDevice(req.params.deviceId, deviceSecret);
+  const device = await heartbeatHostDevice((req.params.deviceId as string), deviceSecret);
   if (!device) {
     res.status(404).json({ error: 'host device not found' });
     return;
@@ -72,7 +72,7 @@ hostDevicesRouter.delete('/host-devices/app/:deviceId', async (req, res) => {
     res.status(401).json({ error: 'missing host device secret' });
     return;
   }
-  await closeHostDeviceFromApp(req.params.deviceId, deviceSecret);
+  await closeHostDeviceFromApp((req.params.deviceId as string), deviceSecret);
   res.status(204).send();
 });
 
@@ -81,7 +81,7 @@ hostDevicesRouter.get('/users/me/host-devices', requireAuth, async (req: Authent
 });
 
 hostDevicesRouter.delete('/users/me/host-devices/:deviceId', requireAuth, async (req: AuthenticatedRequest, res) => {
-  const revoked = await revokeHostDevice(req.params.deviceId, req.userId as string);
+  const revoked = await revokeHostDevice((req.params.deviceId as string), req.userId as string);
   if (!revoked) {
     res.status(404).json({ error: 'host device not found' });
     return;
@@ -100,7 +100,7 @@ hostDevicesRouter.post('/tables/:tableId/host-device', requireAuth, async (req: 
     return;
   }
 
-  const tableResult = await pool.query(`SELECT visibility, owner_user_id FROM game_table WHERE id = $1`, [req.params.tableId]);
+  const tableResult = await pool.query(`SELECT visibility, owner_user_id FROM game_table WHERE id = $1`, [(req.params.tableId as string)]);
   const table = tableResult.rows[0];
   if (!table) {
     res.status(404).json({ error: 'table not found' });
@@ -111,11 +111,11 @@ hostDevicesRouter.post('/tables/:tableId/host-device', requireAuth, async (req: 
     return;
   }
 
-  const displayToken = await attachHostDeviceToTable(deviceId, req.userId as string, req.params.tableId);
+  const displayToken = await attachHostDeviceToTable(deviceId, req.userId as string, (req.params.tableId as string));
   if (!displayToken) {
     res.status(404).json({ error: 'active host device not found' });
     return;
   }
 
-  res.status(200).json({ tableId: req.params.tableId, displayToken });
+  res.status(200).json({ tableId: (req.params.tableId as string), displayToken });
 });
