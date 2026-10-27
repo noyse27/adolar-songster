@@ -42,7 +42,7 @@ function handleEngineError(err: unknown, res: Response): boolean {
 // - "logged in" alone used to be enough, so any account could read another
 // table's full game/player detail just by knowing/guessing a gameId.
 roundsRouter.get('/games/:gameId', requireAuth, async (req: AuthenticatedRequest, res) => {
-  const { gameId } = req.params;
+  const { gameId } = req.params as Record<string, string>;
 
   const access = await authorizeGameViewer(gameId, req.userId as string);
   if (!access) {
@@ -92,13 +92,13 @@ roundsRouter.get('/games/:gameId', requireAuth, async (req: AuthenticatedRequest
 // GET .../rounds/:roundId each give separately, merged into the one shape
 // the socket broadcaster (broadcastGame) also emits on every state change.
 roundsRouter.get('/games/:gameId/state', requireAuth, async (req: AuthenticatedRequest, res) => {
-  const access = await authorizeGameViewer(req.params.gameId, req.userId as string);
+  const access = await authorizeGameViewer((req.params.gameId as string), req.userId as string);
   if (!access) {
     res.status(404).json({ error: 'game not found' });
     return;
   }
 
-  const state = await loadGameState(req.params.gameId, COUNTDOWN_MS, SONG_DURATION_MS, BONUS_WINDOW_MS);
+  const state = await loadGameState((req.params.gameId as string), COUNTDOWN_MS, SONG_DURATION_MS, BONUS_WINDOW_MS);
   if (!state) {
     res.status(404).json({ error: 'game not found' });
     return;
@@ -111,19 +111,19 @@ roundsRouter.get('/games/:gameId/state', requireAuth, async (req: AuthenticatedR
 // the token's tableId actually owns this game before returning anything, so
 // a display token from one table can't be pointed at another table's game.
 roundsRouter.get('/games/display/:token/:gameId', async (req, res) => {
-  const verified = verifyDisplayToken(req.params.token);
+  const verified = verifyDisplayToken((req.params.token as string));
   if (!verified || (verified.hostDeviceId && !(await isHostDisplayTokenActive(verified.hostDeviceId)))) {
     res.status(401).json({ error: 'invalid or expired display token' });
     return;
   }
 
-  const gameResult = await pool.query(`SELECT table_id FROM game WHERE id = $1`, [req.params.gameId]);
+  const gameResult = await pool.query(`SELECT table_id FROM game WHERE id = $1`, [(req.params.gameId as string)]);
   if (gameResult.rowCount === 0 || gameResult.rows[0].table_id !== verified.tableId) {
     res.status(404).json({ error: 'game not found' });
     return;
   }
 
-  const state = await loadGameState(req.params.gameId, COUNTDOWN_MS, SONG_DURATION_MS, BONUS_WINDOW_MS);
+  const state = await loadGameState((req.params.gameId as string), COUNTDOWN_MS, SONG_DURATION_MS, BONUS_WINDOW_MS);
   res.status(200).json(state);
 });
 
@@ -139,11 +139,11 @@ roundsRouter.post('/games/:gameId/ready', requireAuth, async (req: Authenticated
     return;
   }
   try {
-    await setRoundReady(req.params.gameId, req.userId as string, ready);
-    await touchTableActivityForGame(req.params.gameId);
+    await setRoundReady((req.params.gameId as string), req.userId as string, ready);
+    await touchTableActivityForGame((req.params.gameId as string));
     void storeGameEvent({
       eventType: 'player_ready_changed',
-      gameId: req.params.gameId,
+      gameId: (req.params.gameId as string),
       userId: req.userId as string,
       requestId: (req as RequestWithId).requestId,
       payload: { ready },
@@ -164,11 +164,11 @@ roundsRouter.post('/games/:gameId/ready/auto', requireAuth, async (req: Authenti
     return;
   }
   try {
-    await setAutoReady(req.params.gameId, req.userId as string, autoReady);
-    await touchTableActivityForGame(req.params.gameId);
+    await setAutoReady((req.params.gameId as string), req.userId as string, autoReady);
+    await touchTableActivityForGame((req.params.gameId as string));
     void storeGameEvent({
       eventType: 'player_auto_ready_changed',
-      gameId: req.params.gameId,
+      gameId: (req.params.gameId as string),
       userId: req.userId as string,
       requestId: (req as RequestWithId).requestId,
       payload: { autoReady },
@@ -183,8 +183,8 @@ roundsRouter.post('/games/:gameId/ready/auto', requireAuth, async (req: Authenti
 // play uses POST /games/:id/ready instead.
 roundsRouter.post('/games/:gameId/rounds', requireAuth, async (req: AuthenticatedRequest, res) => {
   try {
-    const round = await startRound(req.params.gameId, req.userId as string, req.userRole);
-    await touchTableActivityForGame(req.params.gameId);
+    const round = await startRound((req.params.gameId as string), req.userId as string, req.userRole);
+    await touchTableActivityForGame((req.params.gameId as string));
     res.status(201).json(round);
   } catch (err) {
     if (!handleEngineError(err, res)) throw err;
@@ -196,7 +196,7 @@ roundsRouter.post('/games/:gameId/rounds', requireAuth, async (req: Authenticate
 // from a different game slipped through unbound, and any logged-in user
 // could read any round's detail regardless of membership.
 roundsRouter.get('/games/:gameId/rounds/:roundId', requireAuth, async (req: AuthenticatedRequest, res) => {
-  const { gameId, roundId } = req.params;
+  const { gameId, roundId } = req.params as Record<string, string>;
 
   const access = await authorizeGameViewer(gameId, req.userId as string);
   if (!access) {
@@ -274,16 +274,22 @@ roundsRouter.post(
 
     try {
       if (type === 'position') {
-        const result = await submitGuess(req.params.gameId, req.params.roundId, req.userId as string, value === null ? null : Number(value), confirmed === true);
-        await touchTableActivityForGame(req.params.gameId);
+        const result = await submitGuess(
+          req.params.gameId as string,
+          req.params.roundId as string,
+          req.userId as string,
+          value === null ? null : Number(value),
+          confirmed === true,
+        );
+        await touchTableActivityForGame(req.params.gameId as string);
         res.status(200).json(result);
         return;
       }
       if (type === 'exact_year') {
         // Bonus-round (Stichsong) exact-year guess (FR-041); the token
         // mechanic's exact-year guess has its own dedicated endpoint.
-        const result = await submitBonusGuess(req.params.gameId, req.params.roundId, req.userId as string, Number(value));
-        await touchTableActivityForGame(req.params.gameId);
+        const result = await submitBonusGuess((req.params.gameId as string), (req.params.roundId as string), req.userId as string, Number(value));
+        await touchTableActivityForGame((req.params.gameId as string));
         res.status(200).json(result);
         return;
       }
@@ -299,8 +305,8 @@ roundsRouter.post(
   requireAuth,
   async (req: AuthenticatedRequest, res) => {
     try {
-      const result = await claimToken(req.params.gameId, req.params.roundId, req.userId as string);
-      await touchTableActivityForGame(req.params.gameId);
+      const result = await claimToken((req.params.gameId as string), (req.params.roundId as string), req.userId as string);
+      await touchTableActivityForGame((req.params.gameId as string));
       res.status(202).json(result);
     } catch (err) {
       if (!handleEngineError(err, res)) throw err;
@@ -315,8 +321,8 @@ roundsRouter.post(
     const { year } = req.body ?? {};
 
     try {
-      const result = await submitTokenGuess(req.params.gameId, req.params.roundId, req.userId as string, Number(year));
-      await touchTableActivityForGame(req.params.gameId);
+      const result = await submitTokenGuess((req.params.gameId as string), (req.params.roundId as string), req.userId as string, Number(year));
+      await touchTableActivityForGame((req.params.gameId as string));
       res.status(200).json(result);
     } catch (err) {
       if (!handleEngineError(err, res)) throw err;
