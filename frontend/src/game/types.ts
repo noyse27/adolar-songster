@@ -27,6 +27,7 @@ export interface CurrentRoundState {
   tokenClaimantUserId: string | null;
   tokenWrongGuessYear: number | null;
   exactYearAttemptedUserIds: string[];
+  positionSubmittedUserIds: string[];
   sitOutUserIds: string[];
   songStreamPath: string | null;
   songTitle: string | null;

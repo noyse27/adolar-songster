@@ -152,8 +152,15 @@ describe('round lifecycle (FR-021/022/025/026)', () => {
     const correctGuess = await request(app)
       .post(`/api/v1/games/${gameId}/rounds/${roundId}/guess`)
       .set(authHeader(owner.id, 'user'))
-      .send({ type: 'position', value: 1 });
+      .send({ type: 'position', value: 1, confirmed: true });
     expect(correctGuess.status).toBe(200);
+
+    const changedGuess = await request(app)
+      .post(`/api/v1/games/${gameId}/rounds/${roundId}/guess`)
+      .set(authHeader(owner.id, 'user'))
+      .send({ type: 'position', value: 0 });
+    expect(changedGuess.status).toBe(409);
+    expect(changedGuess.body.error).toBe('ROUND_LOCKED');
 
     const wrongGuess = await request(app)
       .post(`/api/v1/games/${gameId}/rounds/${roundId}/guess`)

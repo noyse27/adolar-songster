@@ -722,33 +722,35 @@ export function LiveGameBoard() {
     // direction placeAt shifted in is a display choice only (see
     // timelineSlots.ts's boxIndexToPackedIndex comment).
     setPendingLocal({ slots: result.slots, landingIndex: result.landingIndex, desiredIndex, base });
-
-    // Submit immediately, not just on the later Confirm click - a 25s
-    // countdown is no place to rely on players noticing a second required
-    // step, and re-clicking a different gap simply resubmits (the server
-    // keeps whichever guess was submitted last), so this stays exactly as
-    // correctable as the two-step version was.
     const packedIndex = boxIndexToPackedIndex(desiredIndex, base);
     try {
       await submitPositionGuess(gameId, state.currentRound.roundId, auth.accessToken, packedIndex);
+      setError(null);
     } catch {
-      setError('Platzierung konnte nicht übermittelt werden.');
+      setError('Auswahl konnte nicht gespeichert werden.');
     }
   }
 
-  function handleClear() {
+  async function handleClear() {
     setPendingLocal(null);
+    if (!auth || !gameId || !state?.currentRound) return;
+    try {
+      await submitPositionGuess(gameId, state.currentRound.roundId, auth.accessToken, null);
+      setError(null);
+    } catch {
+      setError('Auswahl konnte nicht verworfen werden.');
+    }
   }
 
-  // Placement is already submitted on click (see handlePlaceClick above) -
-  // Confirm is a harmless resend for the rare case that request failed
-  // silently, matching the prototype's own "already committed on click"
-  // design (playboard/Playboard.tsx's onConfirm).
   async function handleConfirm() {
     if (!auth || !gameId || !state?.currentRound || !you || pendingLocal === null) return;
     const packedIndex = boxIndexToPackedIndex(pendingLocal.desiredIndex, pendingLocal.base);
     try {
-      await submitPositionGuess(gameId, state.currentRound.roundId, auth.accessToken, packedIndex);
+      await submitPositionGuess(gameId, state.currentRound.roundId, auth.accessToken, packedIndex, true);
+      setState((current) => current?.currentRound
+        ? { ...current, currentRound: { ...current.currentRound, positionSubmittedUserIds: [...new Set([...current.currentRound.positionSubmittedUserIds, auth.user.id])] } }
+        : current);
+      setError(null);
     } catch {
       setError('Platzierung konnte nicht übermittelt werden.');
     }
@@ -982,7 +984,8 @@ export function LiveGameBoard() {
 
   const canReadyNow = dealt && Boolean(readyPhase);
   const iAmSittingOut = round ? round.sitOutUserIds.includes(you?.userId ?? '') : false;
-  const canPlaceGuess = Boolean(dealt && round && round.status === 'playing' && round.mode === 'normal' && !iAmSittingOut);
+  const placementLocked = round?.positionSubmittedUserIds.includes(you?.userId ?? '') ?? false;
+  const canPlaceGuess = Boolean(dealt && round && round.status === 'playing' && round.mode === 'normal' && !iAmSittingOut && !placementLocked);
   const canUseToken =
     Boolean(
       dealt &&
@@ -1212,10 +1215,11 @@ export function LiveGameBoard() {
                 canReady={dealt && isSelf && canReadyNow}
                 onToggleReady={() => handleSetReady(!(readyPhase?.readyUserIds.includes(p.userId) ?? false))}
                 onToggleAutoReady={isSelf ? handleToggleAutoReady : undefined}
-                onGapClick={isSelf ? handlePlaceClick : undefined}
-                onHandleClick={isSelf ? handlePlaceClick : undefined}
+                onGapClick={isSelf && canPlaceGuess ? handlePlaceClick : undefined}
+                onHandleClick={isSelf && canPlaceGuess ? handlePlaceClick : undefined}
                 onConfirm={isSelf ? handleConfirm : undefined}
                 onClear={isSelf ? handleClear : undefined}
+                placementLocked={isSelf && placementLocked}
                 currentSongYear={round?.songYear ?? null}
                 guessValue={guessInput}
                 guessActive={fieldActiveForThisPlayer}
