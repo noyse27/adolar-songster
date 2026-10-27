@@ -38,6 +38,7 @@ export interface CurrentRoundState {
   tokenClaimantUserId: string | null;
   tokenWrongGuessYear: number | null;
   exactYearAttemptedUserIds: string[];
+  positionSubmittedUserIds: string[];
   sitOutUserIds: string[];
   // Unlike title/artist/year below, the audio itself is safe to expose as
   // soon as a round has a song at all (countdown/playing/token_*) - hearing
@@ -188,6 +189,11 @@ export async function loadGameState(
   if ((roundResult.rowCount ?? 0) > 0) {
     const round = roundResult.rows[0];
 
+    const positionSubmittedResult = await pool.query(
+      `SELECT DISTINCT user_id FROM guess WHERE round_id = $1 AND guess_type = 'position' AND confirmed_at IS NOT NULL`,
+      [round.id],
+    );
+    const positionSubmittedUserIds = positionSubmittedResult.rows.map((row) => row.user_id as string);
     let results: CurrentRoundState['results'] = [];
     if (round.status === 'resolved' && round.mode !== 'token') {
       const guessType = round.mode === 'bonus' ? 'exact_year' : 'position';
@@ -253,6 +259,7 @@ export async function loadGameState(
       tokenClaimantUserId,
       tokenWrongGuessYear,
       exactYearAttemptedUserIds: attemptedResult.rows.map((r) => r.user_id),
+      positionSubmittedUserIds,
       sitOutUserIds: sitOutResult.rows.map((r) => r.user_id),
       songStreamPath: `/songs/${round.song_id}/stream`,
       songTitle: round.song_title,

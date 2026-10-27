@@ -21,6 +21,7 @@ interface PlayerRowProps {
   onHandleClick?: (index: number) => void;
   onConfirm?: () => void;
   onClear?: () => void;
+  placementLocked?: boolean;
   currentSongYear: number | null;
   guessValue: string;
   guessActive: boolean;
@@ -42,6 +43,7 @@ export function PlayerRow({
   onHandleClick,
   onConfirm,
   onClear,
+  placementLocked = false,
   currentSongYear,
   guessValue,
   guessActive,
@@ -251,14 +253,16 @@ export function PlayerRow({
           <button
             className="pb-act-btn pb-act-confirm"
             onClick={guessActive ? onGuessSubmit : onConfirm}
-            disabled={guessActive ? !guessValue : p.pendingSlot === null}
+            disabled={guessActive ? !guessValue : p.pendingSlot === null || placementLocked}
+            title={!guessActive && placementLocked ? 'Platzierung fest bestätigt' : undefined}
           >
             &#10003;
           </button>
           <button
             className="pb-act-btn pb-act-clear"
             onClick={guessActive ? () => onGuessChange?.('') : onClear}
-            disabled={guessActive ? !guessValue : p.pendingSlot === null}
+            disabled={guessActive ? !guessValue : p.pendingSlot === null || placementLocked}
+            title={!guessActive && placementLocked ? 'Bestätigte Platzierung kann nicht mehr geändert werden' : undefined}
           >
             &#10005;
           </button>

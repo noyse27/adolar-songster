@@ -13,10 +13,10 @@ export function setAutoReady(gameId: string, token: string, autoReady: boolean):
   return apiFetch(`/games/${gameId}/ready/auto`, { method: 'POST', body: { autoReady }, token });
 }
 
-export function submitPositionGuess(gameId: string, roundId: string, token: string, index: number): Promise<{ accepted: true }> {
+export function submitPositionGuess(gameId: string, roundId: string, token: string, index: number | null, confirmed = false): Promise<{ accepted: true }> {
   return apiFetch(`/games/${gameId}/rounds/${roundId}/guess`, {
     method: 'POST',
-    body: { type: 'position', value: index },
+    body: { type: 'position', value: index, confirmed },
     token,
   });
 }
